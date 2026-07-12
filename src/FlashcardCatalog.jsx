@@ -942,7 +942,7 @@ function Breadcrumb({ trail, onJump }) {
   );
 }
 const crumbStyle = {
-  background: "none", border: "none", fontFamily: "Inter, sans-serif",
+  background: "none", border: "none", fontFamily: "Inter, sans-serif", color: "#8CA0C2",
   fontSize: 13, padding: "8px 4px", minHeight: 36, display: "flex", alignItems: "center", gap: 4,
   WebkitTapHighlightColor: "transparent",
 };
