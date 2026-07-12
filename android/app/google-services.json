@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "387262316933",
+    "project_id": "centering-timer-502020-h0",
+    "storage_bucket": "centering-timer-502020-h0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:387262316933:android:084c2833355c01b40344ec",
+        "android_client_info": {
+          "package_name": "com.flashcardcatalog.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "387262316933-8qr6bl5cgjc0d6toovuchfhkalqttkoe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.flashcardcatalog.app",
+            "certificate_hash": "ca8e9460abbe5361d2f403a699dcd5a221896c85"
+          }
+        },
+        {
+          "client_id": "387262316933-pa3449ojdvtgpinlon32usjme7atjvpi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBW4oxo8mhuo0FVQXY0ANtW6k8wIiM14BE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "387262316933-h9et82c99r27d9n23ets1445ba67qadb.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
