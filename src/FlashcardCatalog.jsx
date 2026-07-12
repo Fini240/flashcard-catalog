@@ -436,6 +436,14 @@ const bannerStyle = {
   textAlign: "center",
 };
 
+const addMenuItemStyle = {
+  display: "flex", alignItems: "center", gap: 8,
+  background: "transparent", border: "none", borderRadius: 6,
+  padding: "10px 10px", minHeight: 40, width: "100%", textAlign: "left",
+  color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontSize: 13.5, fontWeight: 500,
+  WebkitTapHighlightColor: "transparent", cursor: "pointer",
+};
+
 // ---------- shell / theme ----------
 function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSettings, darkMode }) {
   return (
@@ -609,6 +617,7 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
   const [cardForm, setCardForm] = useState(null); // {nodeId, editingId?}
   const [importOpen, setImportOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   // Hardware back button pops one folder level at a time, same as tapping
   // the parent breadcrumb. Only registered while actually inside a folder —
@@ -776,9 +785,40 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
         <h2 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontStyle: "italic", fontSize: 22, color: "#F2C572", margin: 0 }}>
           {currentNode.name}
         </h2>
-        <IconBtn title="Delete this folder" danger onClick={() => deleteNode(currentNode.id)}>
-          <Trash2 size={16} color="#D97757" />
-        </IconBtn>
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <div style={{ position: "relative" }}>
+            <IconBtn title="Add" onClick={() => setAddMenuOpen(v => !v)}>
+              <Plus size={16} color="#EDE6D3" />
+            </IconBtn>
+            {addMenuOpen && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 39 }} onClick={() => setAddMenuOpen(false)} />
+                <div style={{
+                  position: "absolute", top: "100%", right: 0, marginTop: 6, zIndex: 40,
+                  background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 10,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.35)", padding: 6, minWidth: 190,
+                  display: "flex", flexDirection: "column", gap: 2,
+                }}>
+                  <button onClick={() => { setAddingSubcategory(true); setAddMenuOpen(false); }} style={addMenuItemStyle}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  >
+                    <Layers size={15} /> Add subcategory
+                  </button>
+                  <button onClick={() => { setCardForm({ nodeId: currentNode.id }); setAddMenuOpen(false); }} style={addMenuItemStyle}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  >
+                    <Plus size={15} /> Add card
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <IconBtn title="Delete this folder" danger onClick={() => deleteNode(currentNode.id)}>
+            <Trash2 size={16} color="#D97757" />
+          </IconBtn>
+        </div>
       </div>
 
       {currentChildren.length > 0 && (
@@ -797,25 +837,18 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
         </div>
       )}
 
-      {addingSubcategory ? (
+      {addingSubcategory && (
         <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
           <TextField value={newSubcategoryName} onChange={e => setNewSubcategoryName(e.target.value)} placeholder="Subcategory name" />
           <IconBtn title="Save" onClick={addSubcategory}><Check size={18} color="#5C7A44" /></IconBtn>
           <IconBtn title="Cancel" onClick={() => setAddingSubcategory(false)}><X size={18} color="#B5533C" /></IconBtn>
         </div>
-      ) : (
-        <GhostButton onClick={() => setAddingSubcategory(true)} style={{ marginBottom: 22 }}>
-          <Plus size={16} /> Add subcategory
-        </GhostButton>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" }}>
+      <div style={{ margin: "4px 0 10px" }}>
         <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: "#8CA0C2", letterSpacing: 0.5, textTransform: "uppercase" }}>
           Cards in this folder ({nodeCards.length})
         </span>
-        <IconBtn title="Add card" onClick={() => setCardForm({ nodeId: currentNode.id })}>
-          <Plus size={16} color="#EDE6D3" />
-        </IconBtn>
       </div>
 
       {nodeCards.length === 0 ? (
