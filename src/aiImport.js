@@ -37,6 +37,8 @@ function getClient() {
 const CARDS_SCHEMA = {
   type: "object",
   properties: {
+    subject: { type: "string", description: "A short, general subject name for this material (e.g. 'Biology', 'Spanish'). Reuse one of the existing subjects given, exactly as spelled, if the content clearly fits it; otherwise invent a concise new one." },
+    subcategory: { type: "string", description: "A short, more specific subcategory within the subject (e.g. 'Cell structure', 'Verb conjugation'). Reuse an existing subcategory of the matched subject if one fits." },
     cards: {
       type: "array",
       items: {
@@ -50,21 +52,33 @@ const CARDS_SCHEMA = {
       },
     },
   },
-  required: ["cards"],
+  required: ["subject", "subcategory", "cards"],
   additionalProperties: false,
 };
 
-const EXTRACTION_INSTRUCTIONS =
-  "Extract flashcard-worthy question/answer or term/definition pairs from this " +
-  "material. Use exact wording from the source where possible. Skip content that " +
-  "isn't suited to a flashcard, such as page headers, chapter titles alone, or " +
-  "page numbers. If nothing suitable is found, return an empty cards array.";
+function buildInstructions(existingSubjects) {
+  const base =
+    "Extract flashcard-worthy question/answer or term/definition pairs from this " +
+    "material. Use exact wording from the source where possible. Skip content that " +
+    "isn't suited to a flashcard, such as page headers, chapter titles alone, or " +
+    "page numbers. If nothing suitable is found, return an empty cards array. Also " +
+    "decide which subject and subcategory this material belongs under.";
+  if (!Array.isArray(existingSubjects) || existingSubjects.length === 0) return base;
+  const list = existingSubjects
+    .map((s) => `${s.name}${s.subcategories?.length ? " (subcategories: " + s.subcategories.join(", ") + ")" : ""}`)
+    .join("; ");
+  return `${base} Existing subjects: ${list}. Reuse one of these exactly (same spelling/case) if the content clearly matches; otherwise pick a sensible new subject and subcategory.`;
+}
 
 function parseCardsResponse(response) {
   const block = response.content.find((b) => b.type === "text");
-  if (!block) return [];
+  if (!block) return { subject: "", subcategory: "", cards: [] };
   const parsed = JSON.parse(block.text);
-  return (parsed.cards || []).filter((c) => c.front && c.back);
+  return {
+    subject: parsed.subject || "",
+    subcategory: parsed.subcategory || "",
+    cards: (parsed.cards || []).filter((c) => c.front && c.back),
+  };
 }
 
 // The app owner's own Google account gets flashcard extraction for free
@@ -96,12 +110,12 @@ async function tryFreeFunction(payload) {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "AI import request failed.");
-  return { available: true, cards: data.cards || [] };
+  return { available: true, subject: data.subject || "", subcategory: data.subcategory || "", cards: data.cards || [] };
 }
 
-export async function extractCardsFromImage(base64Data, mediaType) {
-  const free = await tryFreeFunction({ type: "image", imageBase64: base64Data, mediaType });
-  if (free.available) return free.cards;
+export async function extractCardsFromImage(base64Data, mediaType, existingSubjects) {
+  const free = await tryFreeFunction({ type: "image", imageBase64: base64Data, mediaType, existingSubjects });
+  if (free.available) return { subject: free.subject, subcategory: free.subcategory, cards: free.cards };
 
   const client = getClient();
   const response = await client.messages.create({
@@ -113,7 +127,7 @@ export async function extractCardsFromImage(base64Data, mediaType) {
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
-          { type: "text", text: `This is a photo of a book page or study material. ${EXTRACTION_INSTRUCTIONS}` },
+          { type: "text", text: `This is a photo of a book page or study material. ${buildInstructions(existingSubjects)}` },
         ],
       },
     ],
@@ -121,9 +135,9 @@ export async function extractCardsFromImage(base64Data, mediaType) {
   return parseCardsResponse(response);
 }
 
-export async function extractCardsFromText(text) {
-  const free = await tryFreeFunction({ type: "text", text });
-  if (free.available) return free.cards;
+export async function extractCardsFromText(text, existingSubjects) {
+  const free = await tryFreeFunction({ type: "text", text, existingSubjects });
+  if (free.available) return { subject: free.subject, subcategory: free.subcategory, cards: free.cards };
 
   const client = getClient();
   const response = await client.messages.create({
@@ -133,7 +147,7 @@ export async function extractCardsFromText(text) {
     messages: [
       {
         role: "user",
-        content: `${EXTRACTION_INSTRUCTIONS}\n\n---\n\n${text.slice(0, 50000)}`,
+        content: `${buildInstructions(existingSubjects)}\n\n---\n\n${text.slice(0, 50000)}`,
       },
     ],
   });

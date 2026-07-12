@@ -616,7 +616,7 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
   const [addingSubcategory, setAddingSubcategory] = useState(false);
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
   const [cardForm, setCardForm] = useState(null); // {nodeId, editingId?}
-  const [importOpen, setImportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(null); // null | { mode: "paste"|"file"|"photo" }
   const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   // Hardware back button pops one folder level at a time, same as tapping
@@ -723,7 +723,7 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
             {subjects.length} subject{subjects.length !== 1 ? "s" : ""} · {totalCards} card{totalCards !== 1 ? "s" : ""}
           </p>
           <div style={{ display: "flex", gap: 8 }}>
-            <GhostButton onClick={() => setImportOpen(true)}>
+            <GhostButton onClick={() => setImportOpen({ mode: "paste" })}>
               <Upload size={16} /> Import
             </GhostButton>
             <PrimaryButton onClick={goStudy} disabled={totalCards === 0}>
@@ -763,7 +763,8 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
         {importOpen && (
           <ImportModal
             subjects={subjects}
-            onClose={() => setImportOpen(false)}
+            initialMode={importOpen.mode}
+            onClose={() => setImportOpen(null)}
             onImport={importCards}
             googleUser={googleUser}
             onOpenSettings={onOpenSettings}
@@ -810,6 +811,19 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                   >
                     <Plus size={15} /> Add card
+                  </button>
+                  <div style={{ height: 1, background: "var(--card-border)", margin: "2px 0" }} />
+                  <button onClick={() => { setImportOpen({ mode: "file" }); setAddMenuOpen(false); }} style={addMenuItemStyle}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  >
+                    <FileUp size={15} /> Import file
+                  </button>
+                  <button onClick={() => { setImportOpen({ mode: "photo" }); setAddMenuOpen(false); }} style={addMenuItemStyle}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  >
+                    <Camera size={15} /> Import photo
                   </button>
                 </div>
               </>
@@ -880,6 +894,19 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
             }
             setCardForm(null);
           }}
+        />
+      )}
+
+      {importOpen && (
+        <ImportModal
+          subjects={subjects}
+          initialMode={importOpen.mode}
+          initialSubjectName={trail[0].name}
+          initialCategoryName={currentNode.id !== trail[0].id ? currentNode.name : ""}
+          onClose={() => setImportOpen(null)}
+          onImport={importCards}
+          googleUser={googleUser}
+          onOpenSettings={onOpenSettings}
         />
       )}
     </div>
@@ -1218,10 +1245,10 @@ const IMPORT_MODES = [
   { id: "photo", label: "Photo", icon: Camera },
 ];
 
-function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings }) {
-  const [importMode, setImportMode] = useState("paste");
-  const [subjectName, setSubjectName] = useState("");
-  const [categoryName, setCategoryName] = useState("");
+function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, initialMode, initialSubjectName, initialCategoryName }) {
+  const [importMode, setImportMode] = useState(initialMode || "paste");
+  const [subjectName, setSubjectName] = useState(initialSubjectName || "");
+  const [categoryName, setCategoryName] = useState(initialCategoryName || "");
   const [mode, setMode] = useState("flip");
   const [text, setText] = useState("");
   const [result, setResult] = useState("");
@@ -1234,6 +1261,10 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings }
   useEffect(() => pushBackHandler(onClose), []);
 
   const matchedSubject = subjects.find(s => s.name.toLowerCase() === subjectName.trim().toLowerCase());
+  // Given to Claude so it can reuse an existing subject/subcategory name
+  // instead of always inventing a new one, and to auto-fill Subject/
+  // Subcategory below when the user hasn't already typed (or been given) one.
+  const existingSubjects = subjects.map(s => ({ name: s.name, subcategories: (s.children || []).map(c => c.name) }));
   // Photo mode always needs Claude, so gate it upfront. File mode doesn't —
   // plain "Front | Back" text files parse for free — so it only finds out it
   // needs a key if local parsing comes up empty (handled in handleFile below).
@@ -1280,9 +1311,11 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings }
       } else if (!googleUser && !aiImport.hasApiKey()) {
         setError("NEEDS_KEY");
       } else {
-        const aiPairs = await aiImport.extractCardsFromText(raw);
+        const { subject, subcategory, cards: aiPairs } = await aiImport.extractCardsFromText(raw, existingSubjects);
         if (aiPairs.length === 0) throw new Error("Claude couldn't find any flashcard-worthy content in this file.");
         setPendingCards(aiPairs);
+        if (!subjectName.trim() && subject) setSubjectName(subject);
+        if (!categoryName.trim() && subcategory) setCategoryName(subcategory);
       }
     } catch (e) {
       setError(e.message === "NO_KEY" ? "NEEDS_KEY" : (e.message || "Couldn't read that file."));
@@ -1295,9 +1328,11 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings }
     setError(""); setResult(""); setPendingCards(null); setBusy(true);
     try {
       const base64 = await fileToBase64(file);
-      const pairs = await aiImport.extractCardsFromImage(base64, file.type || "image/jpeg");
+      const { subject, subcategory, cards: pairs } = await aiImport.extractCardsFromImage(base64, file.type || "image/jpeg", existingSubjects);
       if (pairs.length === 0) throw new Error("Claude couldn't find any flashcard-worthy content in that photo.");
       setPendingCards(pairs);
+      if (!subjectName.trim() && subject) setSubjectName(subject);
+      if (!categoryName.trim() && subcategory) setCategoryName(subcategory);
     } catch (e) {
       setError(e.message === "NO_KEY" ? "NEEDS_KEY" : (e.message || "Couldn't analyze that photo."));
     } finally {
