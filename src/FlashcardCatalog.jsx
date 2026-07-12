@@ -1245,6 +1245,12 @@ const IMPORT_MODES = [
   { id: "photo", label: "Photo", icon: Camera },
 ];
 
+// Anthropic's API only accepts these formats. Filtering the picker to them
+// heads off HEIC/HEIF photos (common on Android's high-efficiency photo
+// storage) from ever being selectable, rather than failing after upload.
+const SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const SUPPORTED_IMAGE_ACCEPT = SUPPORTED_IMAGE_TYPES.join(",");
+
 function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, initialMode, initialSubjectName, initialCategoryName }) {
   const [importMode, setImportMode] = useState(initialMode || "paste");
   const [subjectName, setSubjectName] = useState(initialSubjectName || "");
@@ -1328,8 +1334,11 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
   const handlePhoto = async (file) => {
     setError(""); setResult(""); setPendingCards(null); setBusy(true);
     try {
+      if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
+        throw new Error("That photo's format isn't supported — please use a JPEG, PNG, GIF, or WEBP image.");
+      }
       const base64 = await fileToBase64(file);
-      const { subject, subcategory, cards: pairs } = await aiImport.extractCardsFromImage(base64, file.type || "image/jpeg", existingSubjects);
+      const { subject, subcategory, cards: pairs } = await aiImport.extractCardsFromImage(base64, file.type, existingSubjects);
       if (pairs.length === 0) throw new Error("Claude couldn't find any flashcard-worthy content in that photo.");
       setPendingCards(pairs);
       if (!subjectName.trim() && subject) setSubjectName(subject);
@@ -1445,12 +1454,12 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
               <ApiKeyPrompt onOpenSettings={onOpenSettings} />
             ) : (
               <div style={{ display: "flex", gap: 8 }}>
-                <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+                <input ref={photoInputRef} type="file" accept={SUPPORTED_IMAGE_ACCEPT} capture="environment" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
                 <GhostButton onClick={() => photoInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
                   <Camera size={16} /> {busy ? "Analyzing…" : "Take photo"}
                 </GhostButton>
-                <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: "none" }}
+                <input ref={galleryInputRef} type="file" accept={SUPPORTED_IMAGE_ACCEPT} style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
                 <GhostButton onClick={() => galleryInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
                   <ImageIcon size={16} /> {busy ? "Analyzing…" : "From gallery"}
