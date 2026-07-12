@@ -1,7 +1,9 @@
+import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import Anthropic from "@anthropic-ai/sdk";
 
 const KEY_STORAGE = "anthropic-api-key";
 const MODEL = "claude-opus-4-8";
+const FUNCTION_URL = "https://us-central1-centering-timer-502020-h0.cloudfunctions.net/generateFlashcards";
 
 export function getApiKey() {
   try {
@@ -25,10 +27,10 @@ export function hasApiKey() {
 
 function getClient() {
   const apiKey = getApiKey();
-  if (!apiKey) throw new Error("No Anthropic API key set.");
-  // Direct browser access: the key lives on this device and calls Anthropic
-  // straight from the WebView/browser. Fine for a single-user personal app;
-  // don't reuse this pattern for anything with untrusted users.
+  if (!apiKey) throw new Error("NO_KEY");
+  // Fallback for everyone besides the app owner: calls Anthropic straight from
+  // this device with the customer's own key. The owner's account never hits
+  // this — tryFreeFunction below succeeds first.
   return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 }
 
@@ -65,7 +67,42 @@ function parseCardsResponse(response) {
   return (parsed.cards || []).filter((c) => c.front && c.back);
 }
 
+// The app owner's own Google account gets flashcard extraction for free
+// through a Cloud Function holding a server-side Anthropic key. The function
+// rejects every other account with 401/403 — we treat that as "not
+// available" and fall through to the customer's own key, not as an error.
+async function tryFreeFunction(payload) {
+  let token;
+  try {
+    ({ token } = await FirebaseAuthentication.getIdToken());
+  } catch (e) {
+    return { available: false };
+  }
+  if (!token) return { available: false };
+
+  let res;
+  try {
+    res = await fetch(FUNCTION_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    // Network failure, CORS block, or the function isn't deployed yet —
+    // treat it the same as "not the owner" and let BYOK handle it.
+    return { available: false };
+  }
+  if (res.status === 401 || res.status === 403 || res.status === 404) return { available: false };
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "AI import request failed.");
+  return { available: true, cards: data.cards || [] };
+}
+
 export async function extractCardsFromImage(base64Data, mediaType) {
+  const free = await tryFreeFunction({ type: "image", imageBase64: base64Data, mediaType });
+  if (free.available) return free.cards;
+
   const client = getClient();
   const response = await client.messages.create({
     model: MODEL,
@@ -85,6 +122,9 @@ export async function extractCardsFromImage(base64Data, mediaType) {
 }
 
 export async function extractCardsFromText(text) {
+  const free = await tryFreeFunction({ type: "text", text });
+  if (free.available) return free.cards;
+
   const client = getClient();
   const response = await client.messages.create({
     model: MODEL,

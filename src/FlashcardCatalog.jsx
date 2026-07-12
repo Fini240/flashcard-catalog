@@ -398,6 +398,7 @@ export default function FlashcardCatalog() {
           subjects={subjects} setSubjects={setSubjects}
           cards={cards} setCards={setCards}
           goStudy={() => setView("study")}
+          googleUser={googleUser}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
@@ -600,7 +601,7 @@ function TextField({ value, onChange, placeholder, area, style, ...rest }) {
 }
 
 // ---------- LIBRARY ----------
-function Library({ subjects, setSubjects, cards, setCards, goStudy, onOpenSettings }) {
+function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, onOpenSettings }) {
   const [path, setPath] = useState([]); // node ids from root subject down
   const [addingSubject, setAddingSubject] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
@@ -755,6 +756,7 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, onOpenSettin
             subjects={subjects}
             onClose={() => setImportOpen(false)}
             onImport={importCards}
+            googleUser={googleUser}
             onOpenSettings={onOpenSettings}
           />
         )}
@@ -1183,7 +1185,7 @@ const IMPORT_MODES = [
   { id: "photo", label: "Photo", icon: Camera },
 ];
 
-function ImportModal({ subjects, onClose, onImport, onOpenSettings }) {
+function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings }) {
   const [importMode, setImportMode] = useState("paste");
   const [subjectName, setSubjectName] = useState("");
   const [categoryName, setCategoryName] = useState("");
@@ -1199,12 +1201,14 @@ function ImportModal({ subjects, onClose, onImport, onOpenSettings }) {
   useEffect(() => pushBackHandler(onClose), []);
 
   const matchedSubject = subjects.find(s => s.name.toLowerCase() === subjectName.trim().toLowerCase());
-  // Photo mode always needs a key, so gate it upfront. File mode doesn't —
+  // Photo mode always needs Claude, so gate it upfront. File mode doesn't —
   // plain "Front | Back" text files parse for free — so it only finds out it
   // needs a key if local parsing comes up empty (handled in handleFile below).
-  // Settings is a sibling overlay on top of this modal — closing it re-renders
-  // this tree, so re-reading the key here always reflects the latest value.
-  const needsApiKeyUpfront = importMode === "photo" && !aiImport.hasApiKey();
+  // Being signed in isn't itself sufficient — it's only a proxy for "might be
+  // the app owner, who gets a free server-side path" — so a signed-in customer
+  // with no key of their own still gets caught by the NO_KEY check inside the
+  // actual request and routed to the same prompt afterward.
+  const needsApiKeyUpfront = importMode === "photo" && !googleUser && !aiImport.hasApiKey();
 
   const switchMode = (id) => {
     setImportMode(id);
@@ -1240,7 +1244,7 @@ function ImportModal({ subjects, onClose, onImport, onOpenSettings }) {
       const localPairs = isTextFile(file.name) ? parseDelimitedPairs(raw) : [];
       if (localPairs.length > 0) {
         setPendingCards(localPairs);
-      } else if (!aiImport.hasApiKey()) {
+      } else if (!googleUser && !aiImport.hasApiKey()) {
         setError("NEEDS_KEY");
       } else {
         const aiPairs = await aiImport.extractCardsFromText(raw);
@@ -1248,7 +1252,7 @@ function ImportModal({ subjects, onClose, onImport, onOpenSettings }) {
         setPendingCards(aiPairs);
       }
     } catch (e) {
-      setError(e.message || "Couldn't read that file.");
+      setError(e.message === "NO_KEY" ? "NEEDS_KEY" : (e.message || "Couldn't read that file."));
     } finally {
       setBusy(false);
     }
@@ -1262,7 +1266,7 @@ function ImportModal({ subjects, onClose, onImport, onOpenSettings }) {
       if (pairs.length === 0) throw new Error("Claude couldn't find any flashcard-worthy content in that photo.");
       setPendingCards(pairs);
     } catch (e) {
-      setError(e.message || "Couldn't analyze that photo.");
+      setError(e.message === "NO_KEY" ? "NEEDS_KEY" : (e.message || "Couldn't analyze that photo."));
     } finally {
       setBusy(false);
     }
