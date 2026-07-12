@@ -23,7 +23,7 @@ const SUBJECT_COLORS = [
   { bg: "#7B4B94", tab: "#623C78" }, // plum
   { bg: "#B5533C", tab: "#943F2C" }, // brick
   { bg: "#5C7A44", tab: "#496035" }, // moss
-  { bg: "#3D5A80", tab: "#2F4762" }, // steel blue
+  { bg: "#A6435E", tab: "#87344A" }, // rose
 ];
 const STORAGE_KEY = "flashcard-catalog-data";
 const THEME_KEY = "flashcard-catalog-dark-mode";
