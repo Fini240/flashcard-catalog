@@ -1153,7 +1153,7 @@ function ImagePicker({ imageId, onPick, onRemove, label }) {
         <div>
           <img src={src} alt="" style={{ maxWidth: "100%", maxHeight: 180, borderRadius: 8, display: "block" }} />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <GhostButton onClick={() => inputRef.current?.click()} style={{ fontSize: 13, padding: "9px 14px", minHeight: 38 }}>
+            <GhostButton onClick={() => inputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", fontSize: 13, padding: "9px 14px", minHeight: 38 }}>
               <ImageIcon size={14} /> {busy ? "Saving…" : "Replace"}
             </GhostButton>
             <GhostButton onClick={onRemove} style={{ color: "#B5533C", borderColor: "#B5533C", fontSize: 13, padding: "9px 14px", minHeight: 38 }}>
@@ -1162,7 +1162,7 @@ function ImagePicker({ imageId, onPick, onRemove, label }) {
           </div>
         </div>
       ) : (
-        <GhostButton onClick={() => inputRef.current?.click()} style={{ width: "100%" }}>
+        <GhostButton onClick={() => inputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }}>
           <ImageIcon size={16} /> {busy ? "Saving picture…" : `Choose picture for ${label}`}
         </GhostButton>
       )}
@@ -1357,7 +1357,7 @@ function ImportModal({ subjects, onClose, onImport, onOpenSettings }) {
             </p>
             <input ref={fileInputRef} type="file" accept=".txt,.csv,.tsv,.md,.pdf,.docx" style={{ display: "none" }}
               onChange={e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ""; }} />
-            <GhostButton onClick={() => fileInputRef.current?.click()} style={{ width: "100%" }} >
+            <GhostButton onClick={() => fileInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }} >
               <FileUp size={16} /> {busy ? "Reading file…" : "Choose file"}
             </GhostButton>
           </>
@@ -1374,7 +1374,7 @@ function ImportModal({ subjects, onClose, onImport, onOpenSettings }) {
               <>
                 <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
-                <GhostButton onClick={() => photoInputRef.current?.click()} style={{ width: "100%" }}>
+                <GhostButton onClick={() => photoInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }}>
                   <Camera size={16} /> {busy ? "Analyzing photo…" : "Take or choose photo"}
                 </GhostButton>
               </>
@@ -1517,10 +1517,10 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
-          <GhostButton onClick={() => openExternal("https://console.anthropic.com/settings/keys")}>
+          <GhostButton onClick={() => openExternal("https://console.anthropic.com/settings/keys")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
             <ExternalLink size={16} /> Get an API key
           </GhostButton>
-          <GhostButton onClick={() => openExternal("https://console.anthropic.com/settings/billing")}>
+          <GhostButton onClick={() => openExternal("https://console.anthropic.com/settings/billing")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
             <CreditCard size={16} /> Add credits / billing
           </GhostButton>
         </div>
