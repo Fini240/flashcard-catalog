@@ -1257,6 +1257,7 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
   const [pendingCards, setPendingCards] = useState(null);
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
 
   useEffect(() => pushBackHandler(onClose), []);
 
@@ -1438,18 +1439,23 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
         {importMode === "photo" && !pendingCards && (
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
-              <Sparkles size={13} color="#C98A2B" /> Take a photo of a book page or your notes — Claude reads it and builds the cards.
+              <Sparkles size={13} color="#C98A2B" /> Take or choose a photo of a book page or your notes — Claude reads it and builds the cards.
             </p>
             {needsApiKeyUpfront ? (
               <ApiKeyPrompt onOpenSettings={onOpenSettings} />
             ) : (
-              <>
+              <div style={{ display: "flex", gap: 8 }}>
                 <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
-                <GhostButton onClick={() => photoInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }}>
-                  <Camera size={16} /> {busy ? "Analyzing photo…" : "Take or choose photo"}
+                <GhostButton onClick={() => photoInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
+                  <Camera size={16} /> {busy ? "Analyzing…" : "Take photo"}
                 </GhostButton>
-              </>
+                <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: "none" }}
+                  onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
+                <GhostButton onClick={() => galleryInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
+                  <ImageIcon size={16} /> {busy ? "Analyzing…" : "From gallery"}
+                </GhostButton>
+              </div>
             )}
           </>
         )}
