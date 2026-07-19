@@ -229,9 +229,18 @@ export default function FlashcardCatalog() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const shouldPush = !skipNextPush.current;
     skipNextPush.current = false;
+    // Bump the local edit timestamp right away, not inside the debounced
+    // callback below. Otherwise, for the whole 400ms debounce window after a
+    // real edit, updatedAtRef still holds the *previous* edit's timestamp —
+    // and if a Firestore snapshot from another signed-in device arrives
+    // during that window (acceptRemoteIfNewer, above), it looks "newer than
+    // local" and silently overwrites the edit before it was ever saved.
+    // Skip this when the change came from applyRemote (shouldPush false) —
+    // it already set updatedAtRef to the remote's own timestamp, which is
+    // more accurate than "now" for judging future incoming snapshots.
+    if (shouldPush) updatedAtRef.current = Date.now();
+    const payload = { subjects, cards, updatedAt: updatedAtRef.current, ownerUid: ownerUidRef.current };
     saveTimer.current = setTimeout(async () => {
-      updatedAtRef.current = Date.now();
-      const payload = { subjects, cards, updatedAt: updatedAtRef.current, ownerUid: ownerUidRef.current };
       try {
         const result = await storage.set(STORAGE_KEY, JSON.stringify(payload));
         if (!result) setError("Couldn't save — your last change may not persist.");
