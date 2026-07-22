@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
-  FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type
+  FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -1559,14 +1559,10 @@ function Switch({ checked, onChange }) {
 }
 
 function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
-  const [apiKey, setApiKeyState] = useState(aiImport.getApiKey());
+  const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
+  const [hasKey, setHasKey] = useState(aiImport.hasApiKey());
 
   useEffect(() => pushBackHandler(onClose), []);
-
-  const updateApiKey = (value) => {
-    setApiKeyState(value);
-    aiImport.setApiKey(value);
-  };
 
   return (
     <div style={{
@@ -1605,11 +1601,23 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
         </p>
 
         <Label><Key size={11} style={{ verticalAlign: -1, marginRight: 4 }} />Anthropic API key</Label>
-        <TextField value={apiKey} onChange={e => updateApiKey(e.target.value)}
-          placeholder="sk-ant-..." type="password"
-          style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 4 }} />
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 8,
+          padding: "12px 14px", marginBottom: 4,
+        }}>
+          <span style={{ fontSize: 14, color: hasKey ? "var(--text-strong)" : "var(--text-faint)", fontFamily: "'IBM Plex Mono', monospace" }}>
+            {hasKey ? "sk-ant-••••••••••••" : "Not set"}
+          </span>
+          <GhostButton onClick={() => setApiKeyEditorOpen(true)} style={{
+            color: "var(--text-secondary)", borderColor: "var(--card-border)",
+            padding: "8px 14px", minHeight: 36, fontSize: 13,
+          }}>
+            {hasKey ? "View / change" : "Add key"}
+          </GhostButton>
+        </div>
         <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 18px" }}>
-          Stored only on this device — never synced to your account.
+          Stored only on this device — never synced to your account. Opens in its own window so you can check it without risking an accidental edit here.
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
@@ -1623,6 +1631,69 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
         <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "10px 0 0" }}>
           Both open Anthropic's console in your browser. Sign up, add a card, generate a key, then paste it above — usage is billed by Anthropic directly, a few cents per file or photo.
         </p>
+      </div>
+
+      {apiKeyEditorOpen && (
+        <ApiKeyModal
+          onClose={() => setApiKeyEditorOpen(false)}
+          onSaved={() => setHasKey(aiImport.hasApiKey())}
+        />
+      )}
+    </div>
+  );
+}
+
+function ApiKeyModal({ onClose, onSaved }) {
+  const [value, setValue] = useState(aiImport.getApiKey());
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => pushBackHandler(onClose), []);
+
+  const save = () => {
+    aiImport.setApiKey(value);
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(10,16,30,0.7)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 70,
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: "var(--card-bg)", borderRadius: 12, width: "100%", maxWidth: 400,
+        padding: 22, animation: "popIn 0.15s ease-out",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18, color: "var(--text-strong)", margin: 0 }}>
+            Anthropic API key
+          </h3>
+          <IconBtn onClick={onClose}><X size={18} color="var(--text-secondary)" /></IconBtn>
+        </div>
+
+        <Label>Key</Label>
+        <div style={{ position: "relative", marginBottom: 4 }}>
+          <TextField value={value} onChange={e => setValue(e.target.value)}
+            placeholder="sk-ant-..." type={visible ? "text" : "password"}
+            style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", paddingRight: 44 }} />
+          <button onClick={() => setVisible(v => !v)} title={visible ? "Hide" : "Show"} style={{
+            position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
+            background: "transparent", border: "none", padding: 8, display: "flex",
+            color: "var(--text-secondary)", cursor: "pointer", WebkitTapHighlightColor: "transparent",
+          }}>
+            {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+        <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 18px" }}>
+          Nothing here is saved until you tap Save — safe to look without changing anything.
+        </p>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <PrimaryButton onClick={save} style={{ flex: 1 }}>
+            <Check size={16} /> Save
+          </PrimaryButton>
+          <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>Cancel</GhostButton>
+        </div>
       </div>
     </div>
   );
