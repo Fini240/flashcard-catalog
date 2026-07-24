@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
-  FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff
+  FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -76,6 +76,21 @@ const shuffle = (arr) => {
 const normalize = (s) =>
   (s || "").trim().toLowerCase().replace(/[.,!?;:'"]/g, "").replace(/\s+/g, " ");
 
+// ---------- spaced repetition (Leitner boxes) ----------
+// Every card carries an optional srsBox (0-5) and srsDue timestamp. A correct
+// answer moves it up one box, pushing the next review further out; a miss
+// drops it back to box 0 (due immediately). Cards without these fields are
+// brand new and always count as due.
+const SRS_INTERVAL_DAYS = [0, 1, 3, 7, 14, 30];
+const DAY_MS = 24 * 60 * 60 * 1000;
+function applyGrade(card, correct) {
+  const box = correct ? Math.min((card.srsBox || 0) + 1, SRS_INTERVAL_DAYS.length - 1) : 0;
+  return { ...card, srsBox: box, srsDue: Date.now() + SRS_INTERVAL_DAYS[box] * DAY_MS };
+}
+const isDue = (card) => card.srsDue == null || card.srsDue <= Date.now();
+const srsStage = (card) =>
+  card.srsBox == null ? "new" : card.srsBox >= 4 ? "mastered" : "learning";
+
 // ---------- tree helpers (subjects/subcategories nest to any depth) ----------
 function collectIds(node) {
   let ids = [node.id];
@@ -87,6 +102,14 @@ function findNodeById(nodes, id) {
     if (n.id === id) return n;
     const found = findNodeById(n.children || [], id);
     if (found) return found;
+  }
+  return null;
+}
+function findPathTo(nodes, id, acc = []) {
+  for (const n of nodes) {
+    if (n.id === id) return [...acc, n.id];
+    const sub = findPathTo(n.children || [], id, [...acc, n.id]);
+    if (sub) return sub;
   }
   return null;
 }
@@ -166,6 +189,7 @@ export default function FlashcardCatalog() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(getStoredDarkMode);
   const sessionQueueRef = useRef([]);
+  const sessionOriginRef = useRef("study"); // where Exit/back leads from a session
   const updatedAtRef = useRef(0);
   const skipNextPush = useRef(false);
   const currentDataRef = useRef({ subjects: [], cards: [] });
@@ -193,7 +217,7 @@ export default function FlashcardCatalog() {
   // the hardware back button behaves like the on-screen back/exit buttons.
   useEffect(() => {
     if (view === "study") return pushBackHandler(() => setView("library"));
-    if (view === "session") return pushBackHandler(() => setView("study"));
+    if (view === "session") return pushBackHandler(() => setView(sessionOriginRef.current));
   }, [view]);
 
   // ---------- load ----------
@@ -374,6 +398,18 @@ export default function FlashcardCatalog() {
     setSyncState("idle");
   };
 
+  const startSession = (queue, origin) => {
+    sessionQueueRef.current = queue;
+    sessionOriginRef.current = origin;
+    setView("session");
+  };
+
+  // A card's first answer in a session moves it through the Leitner boxes;
+  // the updated cards flow through the normal debounced save + cloud sync.
+  const gradeCard = (cardId, correct) => {
+    setCards(cs => cs.map(c => (c.id === cardId ? applyGrade(c, correct) : c)));
+  };
+
   const toggleDarkMode = () => {
     setDarkMode((d) => {
       const next = !d;
@@ -407,6 +443,7 @@ export default function FlashcardCatalog() {
           subjects={subjects} setSubjects={setSubjects}
           cards={cards} setCards={setCards}
           goStudy={() => setView("study")}
+          startReview={(queue) => startSession(queue, "library")}
           googleUser={googleUser}
           onOpenSettings={() => setSettingsOpen(true)}
         />
@@ -422,14 +459,15 @@ export default function FlashcardCatalog() {
         <StudySetup
           subjects={subjects} cards={cards}
           onBack={() => setView("library")}
-          onStart={(queue) => { sessionQueueRef.current = queue; setView("session"); }}
+          onStart={(queue) => startSession(queue, "study")}
         />
       )}
       {view === "session" && (
         <Session
           initialQueue={sessionQueueRef.current}
           allCards={cards}
-          onExit={() => setView("study")}
+          onGrade={gradeCard}
+          onExit={() => setView(sessionOriginRef.current)}
         />
       )}
     </Shell>
@@ -618,8 +656,9 @@ function TextField({ value, onChange, placeholder, area, style, ...rest }) {
 }
 
 // ---------- LIBRARY ----------
-function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, onOpenSettings }) {
+function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview, googleUser, onOpenSettings }) {
   const [path, setPath] = useState([]); // node ids from root subject down
+  const [searchQuery, setSearchQuery] = useState("");
   const [addingSubject, setAddingSubject] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [addingSubcategory, setAddingSubcategory] = useState(false);
@@ -725,6 +764,22 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
 
   // ---------- top level: list of subjects ----------
   if (path.length === 0) {
+    const dueCards = cards.filter(isDue);
+    const query = searchQuery.trim().toLowerCase();
+    const searchResults = query
+      ? cards.filter(c =>
+          (c.front || "").toLowerCase().includes(query) ||
+          (c.back || "").toLowerCase().includes(query)
+        ).slice(0, 50)
+      : [];
+    const openSearchResult = (card) => {
+      const p = findPathTo(subjects, card.nodeId);
+      if (!p) return;
+      setSearchQuery("");
+      setPath(p);
+      setCardForm({ nodeId: card.nodeId, editingId: card.id });
+    };
+
     return (
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
@@ -740,6 +795,83 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
             </PrimaryButton>
           </div>
         </div>
+
+        {totalCards > 0 && (
+          <div style={{ position: "relative", marginBottom: 14 }}>
+            <Search size={15} color="#8CA0C2" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+            <TextField
+              value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search all cards…"
+              style={{ paddingLeft: 36 }}
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} title="Clear search" style={{
+                position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", padding: 10, minHeight: 40,
+                display: "flex", alignItems: "center", WebkitTapHighlightColor: "transparent", cursor: "pointer",
+              }}><X size={15} color="#8CA0C2" /></button>
+            )}
+          </div>
+        )}
+
+        {query ? (
+          searchResults.length === 0 ? (
+            <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>
+              No cards match "{searchQuery.trim()}".
+            </p>
+          ) : (
+            <div style={{ background: "var(--card-bg)", borderRadius: 10, padding: "4px 16px", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }}>
+              {searchResults.map(c => {
+                const p = findPathTo(subjects, c.nodeId) || [];
+                const folderNames = getTrail(subjects, p).map(n => n.name).join(" › ");
+                return (
+                  <button key={c.id} onClick={() => openSearchResult(c)} style={{
+                    display: "block", width: "100%", textAlign: "left", background: "none", border: "none",
+                    borderBottom: "1px solid var(--card-border)", padding: "12px 0", minHeight: 48,
+                    WebkitTapHighlightColor: "transparent", cursor: "pointer",
+                  }}>
+                    <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600, color: "var(--text-strong)" }}>
+                      {c.front || "(picture)"}
+                    </span>
+                    <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
+                      {c.back || "(picture)"}
+                    </span>
+                    {folderNames && (
+                      <span style={{ display: "block", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8CA0C2", marginTop: 4 }}>
+                        {folderNames}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )
+        ) : (
+        <>
+        {totalCards > 0 && dueCards.length > 0 && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+            background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 10,
+            padding: "14px 16px", marginBottom: 18, boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+          }}>
+            <div>
+              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, color: "var(--text-strong)", margin: 0 }}>
+                {dueCards.length} card{dueCards.length !== 1 ? "s" : ""} ready to review
+              </p>
+              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "3px 0 0" }}>
+                Reviewing on time is what makes cards stick.
+              </p>
+            </div>
+            <PrimaryButton onClick={() => startReview(shuffle(dueCards))}>
+              <RotateCcw size={15} /> Review
+            </PrimaryButton>
+          </div>
+        )}
+        {totalCards > 0 && dueCards.length === 0 && (
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "#8CA0C2", margin: "0 0 16px" }}>
+            All caught up — nothing due for review right now. 🎉
+          </p>
+        )}
 
         {subjects.length === 0 && !addingSubject && (
           <EmptyState onAdd={() => setAddingSubject(true)} />
@@ -768,6 +900,8 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, googleUser, 
             <GhostButton onClick={() => setAddingSubject(true)}><Plus size={16} /> New subject</GhostButton>
           )}
         </div>
+        </>
+        )}
 
         {importOpen && (
           <ImportModal
@@ -1702,9 +1836,15 @@ function ApiKeyModal({ onClose, onSaved }) {
 // ---------- STUDY SETUP ----------
 function StudySetup({ subjects, cards, onBack, onStart }) {
   const [nodeId, setNodeId] = useState("all");
+  const [scope, setScope] = useState("due"); // due | all
   const flat = flattenTree(subjects);
   const selected = flat.find(f => f.id === nodeId);
   const pool = nodeId === "all" ? cards : cards.filter(c => selected && selected.ids.includes(c.nodeId));
+  const duePool = pool.filter(isDue);
+  const useDue = scope === "due" && duePool.length > 0;
+  const startPool = useDue ? duePool : pool;
+  const stageCount = { new: 0, learning: 0, mastered: 0 };
+  pool.forEach(c => { stageCount[srsStage(c)]++; });
 
   return (
     <div>
@@ -1725,16 +1865,40 @@ function StudySetup({ subjects, cards, onBack, onStart }) {
         ))}
       </select>
 
+      <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+        {[
+          { id: "due", label: `Due now (${duePool.length})` },
+          { id: "all", label: `All cards (${pool.length})` },
+        ].map(opt => {
+          const active = opt.id === "due" ? useDue : !useDue;
+          return (
+            <button key={opt.id} onClick={() => setScope(opt.id)}
+              disabled={opt.id === "due" && duePool.length === 0}
+              style={{
+                flex: 1, padding: "12px 10px", minHeight: 46, borderRadius: 8,
+                border: `1px solid ${active ? "#F2C572" : "rgba(255,255,255,0.14)"}`,
+                background: active ? "rgba(242,197,114,0.12)" : "transparent",
+                color: active ? "#F2C572" : opt.id === "due" && duePool.length === 0 ? "#5A6B8C" : "#EDE6D3",
+                fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
+                WebkitTapHighlightColor: "transparent",
+              }}>{opt.label}</button>
+          );
+        })}
+      </div>
+
       <div style={{
-        marginTop: 22, padding: 16, borderRadius: 10, background: "rgba(255,255,255,0.04)",
+        marginTop: 14, padding: 16, borderRadius: 10, background: "rgba(255,255,255,0.04)",
         border: "1px solid rgba(255,255,255,0.08)", fontFamily: "Inter, sans-serif",
       }}>
         <p style={{ color: "#EDE6D3", fontSize: 14, margin: 0 }}>
-          {pool.length} card{pool.length !== 1 ? "s" : ""} ready to study
+          {stageCount.new} new · {stageCount.learning} learning · {stageCount.mastered} mastered
+        </p>
+        <p style={{ color: "#8CA0C2", fontSize: 12.5, margin: "6px 0 0" }}>
+          Cards you get right come back after longer and longer breaks — missed cards stay due.
         </p>
       </div>
 
-      <PrimaryButton onClick={() => onStart(shuffle(pool))} disabled={pool.length === 0} style={{ marginTop: 18, width: "100%" }}>
+      <PrimaryButton onClick={() => onStart(shuffle(startPool))} disabled={startPool.length === 0} style={{ marginTop: 18, width: "100%" }}>
         <Shuffle size={16} /> Start session
       </PrimaryButton>
     </div>
@@ -1746,15 +1910,22 @@ const selectStyle = {
 };
 
 // ---------- SESSION ----------
-function Session({ initialQueue, allCards, onExit }) {
+function Session({ initialQueue, allCards, onGrade, onExit }) {
   const [queue, setQueue] = useState(initialQueue);
   const [index, setIndex] = useState(0);
   const [missed, setMissed] = useState([]);
   const [correctCount, setCorrectCount] = useState(0);
   const [round, setRound] = useState(1);
+  // Only a card's FIRST answer this session moves it through the review
+  // schedule — retry rounds are practice, not proof it'll stick tomorrow.
+  const gradedIds = useRef(new Set());
   const current = queue[index];
 
   const handleResult = (wasCorrect) => {
+    if (onGrade && !gradedIds.current.has(current.id)) {
+      gradedIds.current.add(current.id);
+      onGrade(current.id, wasCorrect);
+    }
     if (wasCorrect) setCorrectCount(n => n + 1);
     else setMissed(m => [...m, current]);
     if (index + 1 < queue.length) {
@@ -1795,8 +1966,11 @@ function Session({ initialQueue, allCards, onExit }) {
           <p style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 22, color: "var(--text-strong)", margin: "0 0 6px" }}>
             Round {round} complete
           </p>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15, color: "var(--text-secondary)", margin: "0 0 20px" }}>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15, color: "var(--text-secondary)", margin: "0 0 8px" }}>
             {correctCount} of {queue.length} correct
+          </p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "0 0 20px" }}>
+            Cards you got right will come back for review later — missed ones stay due.
           </p>
           {perfect && (
             <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "#5C7A44", fontWeight: 600, margin: "0 0 16px" }}>
