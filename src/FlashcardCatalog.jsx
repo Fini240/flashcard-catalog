@@ -188,6 +188,9 @@ export default function FlashcardCatalog() {
   const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | error
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(getStoredDarkMode);
+  // Which folder the study screen should open on — set when Study is tapped
+  // from inside a folder, so you land on that deck instead of "All subjects".
+  const [studyNodeId, setStudyNodeId] = useState("all");
   const sessionQueueRef = useRef([]);
   const sessionOriginRef = useRef("study"); // where Exit/back leads from a session
   const updatedAtRef = useRef(0);
@@ -442,7 +445,7 @@ export default function FlashcardCatalog() {
         <Library
           subjects={subjects} setSubjects={setSubjects}
           cards={cards} setCards={setCards}
-          goStudy={() => setView("study")}
+          goStudy={(nodeId) => { setStudyNodeId(nodeId || "all"); setView("study"); }}
           startReview={(queue) => startSession(queue, "library")}
           googleUser={googleUser}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -458,6 +461,7 @@ export default function FlashcardCatalog() {
       {view === "study" && (
         <StudySetup
           subjects={subjects} cards={cards}
+          initialNodeId={studyNodeId}
           onBack={() => setView("library")}
           onStart={(queue) => startSession(queue, "study")}
         />
@@ -920,6 +924,11 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview,
   // ---------- inside a subject / subcategory ----------
   const currentChildren = currentNode.children || [];
   const nodeCards = cards.filter(c => c.nodeId === currentNode.id);
+  // Everything filed under this folder, including its subcategories — what
+  // Study here covers, as opposed to nodeCards (this folder's own cards).
+  const folderCardIds = collectIds(currentNode);
+  const folderCards = cards.filter(c => folderCardIds.includes(c.nodeId));
+  const folderDue = folderCards.filter(isDue).length;
 
   return (
     <div>
@@ -975,6 +984,21 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview,
           <IconBtn title="Delete this folder" danger onClick={() => deleteNode(currentNode.id)}>
             <Trash2 size={16} color="#D97757" />
           </IconBtn>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13, margin: 0 }}>
+          {folderCards.length} card{folderCards.length !== 1 ? "s" : ""}
+          {folderDue > 0 && ` · ${folderDue} due`}
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <GhostButton onClick={() => setImportOpen({ mode: "paste" })}>
+            <Upload size={16} /> Import
+          </GhostButton>
+          <PrimaryButton onClick={() => goStudy(currentNode.id)} disabled={folderCards.length === 0}>
+            <BookOpen size={16} /> Study
+          </PrimaryButton>
         </div>
       </div>
 
@@ -1834,8 +1858,10 @@ function ApiKeyModal({ onClose, onSaved }) {
 }
 
 // ---------- STUDY SETUP ----------
-function StudySetup({ subjects, cards, onBack, onStart }) {
-  const [nodeId, setNodeId] = useState("all");
+function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
+  const [nodeId, setNodeId] = useState(() =>
+    initialNodeId && flattenTree(subjects).some(f => f.id === initialNodeId) ? initialNodeId : "all"
+  );
   const [scope, setScope] = useState("due"); // due | all
   const flat = flattenTree(subjects);
   const selected = flat.find(f => f.id === nodeId);
