@@ -9,6 +9,7 @@ import { App as CapacitorApp } from "@capacitor/app";
 import * as firebaseSync from "./firebaseSync";
 import * as aiImport from "./aiImport";
 import { extractTextFromFile, fileToBase64, isTextFile } from "./fileImport";
+import * as ocr from "./ocr";
 import * as imageStore from "./imageStore";
 import { pushBackHandler, consumeBack } from "./backHandler";
 
@@ -1417,6 +1418,14 @@ const IMPORT_MODES = [
 // storage) from ever being selectable, rather than failing after upload.
 const SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 const SUPPORTED_IMAGE_ACCEPT = SUPPORTED_IMAGE_TYPES.join(",");
+// On Android the photo is read on-device first, and ML Kit decodes whatever
+// the camera produced — including the HEIC that Anthropic rejects. Only the
+// web build, which has to send the image itself, needs the narrower filter.
+const PHOTO_ACCEPT = ocr.isAvailable() ? "image/*" : SUPPORTED_IMAGE_ACCEPT;
+// Below this, whatever ML Kit returned is a few stray characters off a blurry
+// or handwritten page rather than a readable page — worth spending Claude's
+// vision on the actual image instead.
+const MIN_OCR_CHARS = 40;
 
 function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, initialMode, initialSubjectName, initialCategoryName }) {
   const [importMode, setImportMode] = useState(initialMode || "paste");
@@ -1427,6 +1436,7 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ocrRunning, setOcrRunning] = useState(false);
   const [pendingCards, setPendingCards] = useState(null);
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
@@ -1439,14 +1449,16 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
   // instead of always inventing a new one, and to auto-fill Subject/
   // Subcategory below when the user hasn't already typed (or been given) one.
   const existingSubjects = subjects.map(s => ({ name: s.name, subcategories: (s.children || []).map(c => c.name) }));
-  // Photo mode always needs Claude, so gate it upfront. File mode doesn't —
-  // plain "Front | Back" text files parse for free — so it only finds out it
-  // needs a key if local parsing comes up empty (handled in handleFile below).
-  // Being signed in isn't itself sufficient — it's only a proxy for "might be
-  // the app owner, who gets a free server-side path" — so a signed-in customer
-  // with no key of their own still gets caught by the NO_KEY check inside the
-  // actual request and routed to the same prompt afterward.
-  const needsApiKeyUpfront = importMode === "photo" && !googleUser && !aiImport.hasApiKey();
+  // Photo mode needs Claude only where the device can't read the page itself,
+  // so on Android it's never gated upfront — on-device recognition plus the
+  // local vocabulary-list split gets you cards with no key at all. File mode
+  // isn't gated either: plain "Front | Back" text files parse for free, so it
+  // only finds out it needs a key if local parsing comes up empty (handled in
+  // handleFile below). Being signed in isn't itself sufficient — it's only a
+  // proxy for "might be the app owner, who gets a free server-side path" — so
+  // a signed-in customer with no key of their own still gets caught by the
+  // NO_KEY check inside the actual request and routed to the same prompt.
+  const needsApiKeyUpfront = importMode === "photo" && !ocr.isAvailable() && !googleUser && !aiImport.hasApiKey();
 
   const switchMode = (id) => {
     setImportMode(id);
@@ -1498,18 +1510,74 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
     }
   };
 
+  const applyPending = (pairs, subject, subcategory) => {
+    setPendingCards(pairs);
+    if (!subjectName.trim() && subject) setSubjectName(subject);
+    if (!categoryName.trim() && subcategory) setCategoryName(subcategory);
+  };
+
+  // Last resort once the text is already off the photo: split it into cards
+  // locally if it's a vocabulary list, otherwise hand the text to the paste
+  // box so the reading isn't wasted just because Claude was unreachable.
+  const keepTextLocally = (ocrText, reason) => {
+    const guessed = ocr.guessCardPairs(ocrText);
+    if (guessed.length > 0) {
+      setPendingCards(guessed);
+      setResult(`Read on your device — ${reason} Check these before importing.`);
+    } else {
+      setImportMode("paste");
+      setText(ocrText);
+      setResult(`Read on your device — ${reason} Put each card on its own line as Front | Back, then import.`);
+    }
+  };
+
   const handlePhoto = async (file) => {
     setError(""); setResult(""); setPendingCards(null); setBusy(true);
     try {
+      // Android reads the page itself first. Sending Claude that text instead
+      // of the photo is quicker and cheaper, and means an unsupported image
+      // format never reaches the API at all.
+      let ocrText = "";
+      if (ocr.isAvailable()) {
+        setOcrRunning(true);
+        try {
+          ocrText = await ocr.recognizeText(file);
+        } catch {
+          ocrText = ""; // Scan failed — the photo path below still works.
+        } finally {
+          setOcrRunning(false);
+        }
+      }
+
+      if (ocrText.trim().length >= MIN_OCR_CHARS) {
+        if (googleUser || aiImport.hasApiKey()) {
+          try {
+            const { subject, subcategory, cards: pairs } =
+              await aiImport.extractCardsFromText(ocrText, existingSubjects);
+            if (pairs.length > 0) {
+              applyPending(pairs, subject, subcategory);
+              return;
+            }
+            keepTextLocally(ocrText, "Claude didn't find clear cards in it.");
+          } catch (e) {
+            if (e.message === "NO_KEY") keepTextLocally(ocrText, "no API key set, so nothing was sent.");
+            else keepTextLocally(ocrText, "Claude couldn't be reached.");
+          }
+        } else {
+          keepTextLocally(ocrText, "no API key set, so nothing was sent.");
+        }
+        return;
+      }
+
+      // No on-device reader (web), or it couldn't make out the page — send the
+      // image to Claude, which handles handwriting and diagrams far better.
       if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
         throw new Error("That photo's format isn't supported — please use a JPEG, PNG, GIF, or WEBP image.");
       }
       const base64 = await fileToBase64(file);
       const { subject, subcategory, cards: pairs } = await aiImport.extractCardsFromImage(base64, file.type, existingSubjects);
       if (pairs.length === 0) throw new Error("Claude couldn't find any flashcard-worthy content in that photo.");
-      setPendingCards(pairs);
-      if (!subjectName.trim() && subject) setSubjectName(subject);
-      if (!categoryName.trim() && subcategory) setCategoryName(subcategory);
+      applyPending(pairs, subject, subcategory);
     } catch (e) {
       setError(e.message === "NO_KEY" ? "NEEDS_KEY" : (e.message || "Couldn't analyze that photo."));
     } finally {
@@ -1525,6 +1593,7 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
     setPendingCards(null);
   };
 
+  const photoBusyLabel = ocrRunning ? "Reading photo…" : "Analyzing…";
   const canPasteImport = subjectName.trim() && categoryName.trim() && text.trim();
   const canUpload = subjectName.trim() && categoryName.trim() && !busy;
 
@@ -1615,21 +1684,23 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
         {importMode === "photo" && !pendingCards && (
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
-              <Sparkles size={13} color="#C98A2B" /> Take or choose a photo of a book page or your notes — Claude reads it and builds the cards.
+              <Sparkles size={13} color="#C98A2B" /> {ocr.isAvailable()
+                ? "Take or choose a photo of a book page or your notes. Your phone reads the text itself, then Claude turns it into cards — offline you still get the text, and plain word lists become cards on their own."
+                : "Take or choose a photo of a book page or your notes — Claude reads it and builds the cards."}
             </p>
             {needsApiKeyUpfront ? (
               <ApiKeyPrompt onOpenSettings={onOpenSettings} />
             ) : (
               <div style={{ display: "flex", gap: 8 }}>
-                <input ref={photoInputRef} type="file" accept={SUPPORTED_IMAGE_ACCEPT} capture="environment" style={{ display: "none" }}
+                <input ref={photoInputRef} type="file" accept={PHOTO_ACCEPT} capture="environment" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
                 <GhostButton onClick={() => photoInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
-                  <Camera size={16} /> {busy ? "Analyzing…" : "Take photo"}
+                  <Camera size={16} /> {busy ? photoBusyLabel : "Take photo"}
                 </GhostButton>
-                <input ref={galleryInputRef} type="file" accept={SUPPORTED_IMAGE_ACCEPT} style={{ display: "none" }}
+                <input ref={galleryInputRef} type="file" accept={PHOTO_ACCEPT} style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
                 <GhostButton onClick={() => galleryInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
-                  <ImageIcon size={16} /> {busy ? "Analyzing…" : "From gallery"}
+                  <ImageIcon size={16} /> {busy ? photoBusyLabel : "From gallery"}
                 </GhostButton>
               </div>
             )}
