@@ -10,14 +10,6 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        ndk {
-            // The bundled ML Kit text-recognition model ships a ~10MB native
-            // library per CPU type, which quadrupled the APK. Real Android
-            // phones are all arm64-v8a; the x86 variants exist only for
-            // emulators. Keep 32-bit ARM for older hardware and drop the rest.
-            // Add "x86_64" back here if this ever needs to run in an emulator.
-            abiFilters "arm64-v8a", "armeabi-v7a"
-        }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -25,10 +17,30 @@ android {
         }
     }
     buildTypes {
+        debug {
+            ndk {
+                // Debug builds are the single APK handed out directly from the
+                // GitHub release, so they carry one CPU type's copy of the
+                // ~10MB ML Kit OCR library instead of all four. Release builds
+                // deliberately keep every ABI: Play splits an app bundle per
+                // device, so full coverage there costs users no download size
+                // and keeps x86_64 hardware (Chromebooks, some tablets)
+                // able to install.
+                abiFilters "arm64-v8a", "armeabi-v7a"
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+
+    // Play requires an app bundle for new apps; these splits are what let it
+    // ship each device only the code and resources it actually needs.
+    bundle {
+        abi { enableSplit = true }
+        density { enableSplit = true }
+        language { enableSplit = true }
     }
 }
 
