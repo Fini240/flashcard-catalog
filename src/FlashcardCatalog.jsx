@@ -1449,6 +1449,9 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
   // instead of always inventing a new one, and to auto-fill Subject/
   // Subcategory below when the user hasn't already typed (or been given) one.
   const existingSubjects = subjects.map(s => ({ name: s.name, subcategories: (s.children || []).map(c => c.name) }));
+  // Whichever service the user picked in Settings, so the copy and error
+  // messages here never name the wrong one.
+  const aiLabel = aiImport.getProviderInfo(aiImport.getProvider()).label;
   // Photo mode needs Claude only where the device can't read the page itself,
   // so on Android it's never gated upfront — on-device recognition plus the
   // local vocabulary-list split gets you cards with no key at all. File mode
@@ -1498,7 +1501,7 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
         setError("NEEDS_KEY");
       } else {
         const { subject, subcategory, cards: aiPairs } = await aiImport.extractCardsFromText(raw, existingSubjects);
-        if (aiPairs.length === 0) throw new Error("Claude couldn't find any flashcard-worthy content in this file.");
+        if (aiPairs.length === 0) throw new Error(`${aiLabel} couldn't find any flashcard-worthy content in this file.`);
         setPendingCards(aiPairs);
         if (!subjectName.trim() && subject) setSubjectName(subject);
         if (!categoryName.trim() && subcategory) setCategoryName(subcategory);
@@ -1558,10 +1561,10 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
               applyPending(pairs, subject, subcategory);
               return;
             }
-            keepTextLocally(ocrText, "Claude didn't find clear cards in it.");
+            keepTextLocally(ocrText, `${aiLabel} didn't find clear cards in it.`);
           } catch (e) {
             if (e.message === "NO_KEY") keepTextLocally(ocrText, "no API key set, so nothing was sent.");
-            else keepTextLocally(ocrText, "Claude couldn't be reached.");
+            else keepTextLocally(ocrText, `${aiLabel} couldn't be reached.`);
           }
         } else {
           keepTextLocally(ocrText, "no API key set, so nothing was sent.");
@@ -1576,7 +1579,7 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
       }
       const base64 = await fileToBase64(file);
       const { subject, subcategory, cards: pairs } = await aiImport.extractCardsFromImage(base64, file.type, existingSubjects);
-      if (pairs.length === 0) throw new Error("Claude couldn't find any flashcard-worthy content in that photo.");
+      if (pairs.length === 0) throw new Error(`${aiLabel} couldn't find any flashcard-worthy content in that photo.`);
       applyPending(pairs, subject, subcategory);
     } catch (e) {
       setError(e.message === "NO_KEY" ? "NEEDS_KEY" : (e.message || "Couldn't analyze that photo."));
@@ -1671,7 +1674,7 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
         {importMode === "file" && !pendingCards && (
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
-              <Sparkles size={13} color="#C98A2B" /> .txt/.csv/.md files with "Front | Back" lines import instantly. PDFs, Word docs, and anything else get read by Claude.
+              <Sparkles size={13} color="#C98A2B" /> .txt/.csv/.md files with "Front | Back" lines import instantly. PDFs, Word docs, and anything else get read by {aiLabel}.
             </p>
             <input ref={fileInputRef} type="file" accept=".txt,.csv,.tsv,.md,.pdf,.docx" style={{ display: "none" }}
               onChange={e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ""; }} />
@@ -1685,8 +1688,8 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
               <Sparkles size={13} color="#C98A2B" /> {ocr.isAvailable()
-                ? "Take or choose a photo of a book page or your notes. Your phone reads the text itself, then Claude turns it into cards — offline you still get the text, and plain word lists become cards on their own."
-                : "Take or choose a photo of a book page or your notes — Claude reads it and builds the cards."}
+                ? `Take or choose a photo of a book page or your notes. Your phone reads the text itself, then ${aiLabel} turns it into cards — offline you still get the text, and plain word lists become cards on their own.`
+                : `Take or choose a photo of a book page or your notes — ${aiLabel} reads it and builds the cards.`}
             </p>
             {needsApiKeyUpfront ? (
               <ApiKeyPrompt onOpenSettings={onOpenSettings} />
@@ -1761,10 +1764,13 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
 }
 
 function ApiKeyPrompt({ onOpenSettings }) {
+  const info = aiImport.getProviderInfo(aiImport.getProvider());
   return (
     <div style={{ background: "var(--input-bg)", borderRadius: 10, padding: 16, textAlign: "center" }}>
       <p style={{ fontSize: 12.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", margin: "0 0 10px" }}>
-        This needs an Anthropic API key so Claude can read it.
+        {info.id === "gemini"
+          ? "This needs a Google Gemini API key — they're free and take a minute to set up."
+          : "This needs an Anthropic API key so Claude can read it."}
       </p>
       <GhostButton onClick={onOpenSettings} style={{ color: "#2F6F6D", borderColor: "#2F6F6D", margin: "0 auto" }}>
         <Key size={15} /> Add API key in Settings
@@ -1789,9 +1795,17 @@ function Switch({ checked, onChange }) {
 
 function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
+  const [provider, setProviderState] = useState(aiImport.getProvider());
   const [hasKey, setHasKey] = useState(aiImport.hasApiKey());
+  const info = aiImport.getProviderInfo(provider);
 
   useEffect(() => pushBackHandler(onClose), []);
+
+  const chooseProvider = (id) => {
+    aiImport.setProvider(id);
+    setProviderState(id);
+    setHasKey(aiImport.hasApiKey(id));
+  };
 
   return (
     <div style={{
@@ -1825,18 +1839,42 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
         }}>AI-powered import</p>
-        <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 14px" }}>
-          Pasting your own "Front | Back" text is always free. Reading PDFs, Word docs, and photos with Claude needs your own Anthropic API key.
+        <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px" }}>
+          Pasting your own "Front | Back" text is always free{ocr.isAvailable() ? ", and photos are read on this device without a key" : ""}. Turning PDFs, Word docs, and photos into cards uses the service you pick here.
         </p>
 
-        <Label><Key size={11} style={{ verticalAlign: -1, marginRight: 4 }} />Anthropic API key</Label>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {aiImport.PROVIDERS.map(p => {
+            const active = p.id === provider;
+            return (
+              <button key={p.id} onClick={() => chooseProvider(p.id)} style={{
+                flex: 1, padding: "11px 10px", minHeight: 52, borderRadius: 10, textAlign: "left",
+                border: `1px solid ${active ? "#2F6F6D" : "var(--card-border)"}`,
+                background: active ? "#2F6F6D" : "transparent",
+                color: active ? "#FBF7EC" : "var(--text-secondary)",
+                fontFamily: "Inter, sans-serif", WebkitTapHighlightColor: "transparent", cursor: "pointer",
+              }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{p.label}</span>
+                <span style={{ display: "block", fontSize: 11, opacity: 0.85, marginTop: 2 }}>{p.note}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {provider === aiImport.FREE_TIER_TRAINS_ON_DATA && (
+          <p style={{ fontSize: 11.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 14px", lineHeight: 1.5 }}>
+            Google's free tier costs nothing and needs no credit card, but they may use what you send — the text and photos you import — to improve their models. Switch to Claude if you'd rather pay than share.
+          </p>
+        )}
+
+        <Label><Key size={11} style={{ verticalAlign: -1, marginRight: 4 }} />{info.label} API key</Label>
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
           background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 8,
           padding: "12px 14px", marginBottom: 4,
         }}>
           <span style={{ fontSize: 14, color: hasKey ? "var(--text-strong)" : "var(--text-faint)", fontFamily: "'IBM Plex Mono', monospace" }}>
-            {hasKey ? "sk-ant-••••••••••••" : "Not set"}
+            {hasKey ? "••••••••••••••••" : "Not set"}
           </span>
           <GhostButton onClick={() => setApiKeyEditorOpen(true)} style={{
             color: "var(--text-secondary)", borderColor: "var(--card-border)",
@@ -1850,36 +1888,42 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
-          <GhostButton onClick={() => openExternal("https://console.anthropic.com/settings/keys")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
-            <ExternalLink size={16} /> Get an API key
+          <GhostButton onClick={() => openExternal(info.keyUrl)} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
+            <ExternalLink size={16} /> {provider === "gemini" ? "Get a free Gemini key" : "Get a Claude key"}
           </GhostButton>
-          <GhostButton onClick={() => openExternal("https://console.anthropic.com/settings/billing")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
-            <CreditCard size={16} /> Add credits / billing
-          </GhostButton>
+          {provider === "anthropic" && (
+            <GhostButton onClick={() => openExternal("https://console.anthropic.com/settings/billing")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
+              <CreditCard size={16} /> Add credits / billing
+            </GhostButton>
+          )}
         </div>
         <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "10px 0 0" }}>
-          Both open Anthropic's console in your browser. Sign up, add a card, generate a key, then paste it above — usage is billed by Anthropic directly, a few cents per file or photo.
+          {provider === "gemini"
+            ? `Opens ${info.keyUrlLabel} in your browser. Sign in with Google, tap "Create API key", then paste it above — no card, no charges.`
+            : `Both open the ${info.keyUrlLabel} in your browser. Sign up, add a card, generate a key, then paste it above — usage is billed by Anthropic directly, a few cents per file or photo.`}
         </p>
       </div>
 
       {apiKeyEditorOpen && (
         <ApiKeyModal
+          provider={provider}
           onClose={() => setApiKeyEditorOpen(false)}
-          onSaved={() => setHasKey(aiImport.hasApiKey())}
+          onSaved={() => setHasKey(aiImport.hasApiKey(provider))}
         />
       )}
     </div>
   );
 }
 
-function ApiKeyModal({ onClose, onSaved }) {
-  const [value, setValue] = useState(aiImport.getApiKey());
+function ApiKeyModal({ provider, onClose, onSaved }) {
+  const info = aiImport.getProviderInfo(provider);
+  const [value, setValue] = useState(aiImport.getApiKey(provider));
   const [visible, setVisible] = useState(false);
 
   useEffect(() => pushBackHandler(onClose), []);
 
   const save = () => {
-    aiImport.setApiKey(value);
+    aiImport.setApiKey(provider, value);
     onSaved();
     onClose();
   };
@@ -1895,7 +1939,7 @@ function ApiKeyModal({ onClose, onSaved }) {
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18, color: "var(--text-strong)", margin: 0 }}>
-            Anthropic API key
+            {info.label} API key
           </h3>
           <IconBtn onClick={onClose}><X size={18} color="var(--text-secondary)" /></IconBtn>
         </div>
@@ -1903,7 +1947,7 @@ function ApiKeyModal({ onClose, onSaved }) {
         <Label>Key</Label>
         <div style={{ position: "relative", marginBottom: 4 }}>
           <TextField value={value} onChange={e => setValue(e.target.value)}
-            placeholder="sk-ant-..." type={visible ? "text" : "password"}
+            placeholder={provider === "gemini" ? "AIza..." : "sk-ant-..."} type={visible ? "text" : "password"}
             style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", paddingRight: 44 }} />
           <button onClick={() => setVisible(v => !v)} title={visible ? "Hide" : "Show"} style={{
             position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
