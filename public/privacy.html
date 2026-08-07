@@ -29,7 +29,7 @@
 <body>
 <main>
   <h1>Privacy Policy</h1>
-  <p class="meta">Flashcard Catalog · Last updated 3 August 2026</p>
+  <p class="meta">Flashcard Catalog · Last updated 7 August 2026</p>
 
   <p>
     Flashcard Catalog is a study app for making and reviewing flashcards. This policy
@@ -69,7 +69,21 @@
   </p>
   <ul>
     <li>On Android, photos are read <strong>on your device</strong> first using on-device text recognition. Only the recognised <em>text</em> is sent onward — usually not the photo itself.</li>
-    <li>The text (or, where on-device reading isn't possible, the image) is sent to the AI provider you selected in Settings: <strong>Google Gemini</strong> or <strong>Anthropic Claude</strong>. It is sent directly from your device using your own API key, and is handled under that provider's privacy policy.</li>
+    <li>
+      The text (or, where on-device reading isn't possible, the image) is sent to an AI provider to
+      generate the cards, and is handled under that provider's privacy policy. This happens one of
+      two ways:
+      <ul>
+        <li>If you're signed in, your first few imports each day go through this app's own server,
+          which forwards the content to <strong>Google Gemini</strong> and returns the cards. The
+          server records only your account identifier and a count of how many imports you've made
+          today, so the daily limit can be enforced. <strong>It does not store the content you
+          import.</strong></li>
+        <li>Beyond that daily limit, or if you've added your own API key, the content goes
+          <strong>directly from your device</strong> to the provider you selected in Settings —
+          Google Gemini or Anthropic Claude — using your own key.</li>
+      </ul>
+    </li>
     <li>Typing or pasting your own "Front | Back" cards involves no AI service and sends nothing anywhere.</li>
   </ul>
   <div class="box">

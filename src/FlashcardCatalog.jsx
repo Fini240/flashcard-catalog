@@ -1600,6 +1600,9 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
   };
 
   const photoBusyLabel = ocrRunning ? "Reading photo…" : "Analyzing…";
+  // Only meaningful right after an import that actually went through the
+  // shared allowance — a user on their own key never sees a count.
+  const freeLeft = pendingCards ? aiImport.getQuotaState().remaining : null;
   const canPasteImport = subjectName.trim() && categoryName.trim() && text.trim();
   const canUpload = subjectName.trim() && categoryName.trim() && !busy;
 
@@ -1695,7 +1698,7 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
                 : `Take or choose a photo of a book page or your notes — ${aiLabel} reads it and builds the cards.`}
             </p>
             {needsApiKeyUpfront ? (
-              <ApiKeyPrompt onOpenSettings={onOpenSettings} />
+              <ApiKeyPrompt onOpenSettings={onOpenSettings} googleUser={googleUser} />
             ) : (
               <div style={{ display: "flex", gap: 8 }}>
                 <input ref={photoInputRef} type="file" accept={PHOTO_ACCEPT} capture="environment" style={{ display: "none" }}
@@ -1715,7 +1718,10 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
 
         {pendingCards && (
           <>
-            <Label>Review ({pendingCards.length} card{pendingCards.length !== 1 ? "s" : ""})</Label>
+            <Label>
+              Review ({pendingCards.length} card{pendingCards.length !== 1 ? "s" : ""})
+              {freeLeft != null && ` · ${freeLeft} free import${freeLeft !== 1 ? "s" : ""} left today`}
+            </Label>
             <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 10 }} className="fc-scroll">
               {pendingCards.map((c, i) => (
                 <div key={i} style={{
@@ -1736,7 +1742,7 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
           </>
         )}
 
-        {error === "NEEDS_KEY" && <ApiKeyPrompt onOpenSettings={onOpenSettings} />}
+        {error === "NEEDS_KEY" && <ApiKeyPrompt onOpenSettings={onOpenSettings} googleUser={googleUser} />}
         {error && error !== "NEEDS_KEY" && (
           <p style={{ fontSize: 12.5, color: "#B5533C", fontFamily: "Inter, sans-serif", margin: "8px 0 4px", fontWeight: 600 }}>
             {error}
@@ -1766,14 +1772,24 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
   );
 }
 
-function ApiKeyPrompt({ onOpenSettings }) {
+function ApiKeyPrompt({ onOpenSettings, googleUser }) {
   const info = aiImport.getProviderInfo(aiImport.getProvider());
+  const quota = aiImport.getQuotaState();
+  // Being told to fetch an API key out of nowhere reads like a paywall. If the
+  // reason is a spent daily allowance, say so — it's a very different message.
+  const message = quota.exhausted
+    ? (quota.shared
+        ? "Today's free imports have all been used up across everyone using the app. Add your own free Gemini key to keep going — it's unlimited and takes a minute."
+        : `You've used all ${quota.dailyLimit || 10} of today's free imports. They reset tomorrow, or you can add your own free Gemini key for unlimited use.`)
+    : !googleUser
+      ? "Sign in with Google for free imports every day — or add your own free Gemini key instead."
+      : info.id === "gemini"
+        ? "This needs a Google Gemini API key — they're free and take a minute to set up."
+        : "This needs an Anthropic API key so Claude can read it.";
   return (
     <div style={{ background: "var(--input-bg)", borderRadius: 10, padding: 16, textAlign: "center" }}>
       <p style={{ fontSize: 12.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", margin: "0 0 10px" }}>
-        {info.id === "gemini"
-          ? "This needs a Google Gemini API key — they're free and take a minute to set up."
-          : "This needs an Anthropic API key so Claude can read it."}
+        {message}
       </p>
       <GhostButton onClick={onOpenSettings} style={{ color: "#2F6F6D", borderColor: "#2F6F6D", margin: "0 auto" }}>
         <Key size={15} /> Add API key in Settings
@@ -1843,7 +1859,7 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
         }}>AI-powered import</p>
         <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px" }}>
-          Pasting your own "Front | Back" text is always free{ocr.isAvailable() ? ", and photos are read on this device without a key" : ""}. Turning PDFs, Word docs, and photos into cards uses the service you pick here.
+          Signed in, you get 10 AI imports a day with no key at all. Pasting your own "Front | Back" text is always free{ocr.isAvailable() ? ", and photos are read on this device without a key" : ""}. A key of your own lifts the daily limit — pick which service it's for:
         </p>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>

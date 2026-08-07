@@ -137,11 +137,18 @@ function parseJsonCards(raw) {
   }
 }
 
-// ---------- free server-side path (app owner only) ----------
-// The app owner's own Google account gets flashcard extraction for free
-// through a Cloud Function holding a server-side key. The function rejects
-// every other account with 401/403 — we treat that as "not available" and
-// fall through to the user's own key, not as an error.
+// ---------- free server-side path (any signed-in user) ----------
+// Signed-in users get a daily allowance of imports through a Cloud Function
+// holding a shared key, so nobody needs an API key to get started. Anything
+// that makes that path unavailable — not signed in, allowance spent, function
+// not configured, offline — returns `available: false`, and the caller falls
+// back to the user's own key rather than failing.
+let lastQuotaState = { exhausted: false, remaining: null, dailyLimit: null };
+
+export function getQuotaState() {
+  return lastQuotaState;
+}
+
 async function tryFreeFunction(payload) {
   let token;
   try {
@@ -159,14 +166,26 @@ async function tryFreeFunction(payload) {
       body: JSON.stringify(payload),
     });
   } catch (e) {
-    // Network failure, CORS block, or the function isn't deployed yet —
-    // treat it the same as "not the owner" and let the user's key handle it.
+    // Network failure, CORS block, or the function isn't deployed yet.
     return { available: false };
   }
-  if (res.status === 401 || res.status === 403 || res.status === 404) return { available: false };
+
+  if (res.status === 429) {
+    const data = await res.json().catch(() => ({}));
+    // Remember this so the UI can explain *why* it's asking for a key, rather
+    // than the request appearing to fail for no reason.
+    lastQuotaState = {
+      exhausted: true,
+      remaining: 0,
+      dailyLimit: data.dailyLimit ?? null,
+      shared: data.error === "SHARED_QUOTA_EXCEEDED",
+    };
+    return { available: false };
+  }
+  if (!res.ok) return { available: false };
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "AI import request failed.");
+  lastQuotaState = { exhausted: false, remaining: data.remaining ?? null, dailyLimit: null };
   return { available: true, ...normalizeCards(data) };
 }
 
@@ -230,17 +249,8 @@ async function anthropicExtract(content) {
   return parseJsonCards(block?.text);
 }
 
-// A key the user set up themselves wins over the Cloud Function: that
-// function bills the owner's Anthropic account, so once Gemini's free tier is
-// configured there's no reason to spend money on the very same request. With
-// no key configured the function is still the owner's zero-setup path.
-async function tryFreeFunctionIfUnconfigured(payload) {
-  if (hasApiKey()) return { available: false };
-  return tryFreeFunction(payload);
-}
-
 export async function extractCardsFromImage(base64Data, mediaType, existingSubjects) {
-  const free = await tryFreeFunctionIfUnconfigured({ type: "image", imageBase64: base64Data, mediaType, existingSubjects });
+  const free = await tryFreeFunction({ type: "image", imageBase64: base64Data, mediaType, existingSubjects });
   if (free.available) return normalizeCards(free);
 
   const prompt = `This is a photo of a book page or study material. ${buildInstructions(existingSubjects)}`;
@@ -257,7 +267,7 @@ export async function extractCardsFromImage(base64Data, mediaType, existingSubje
 }
 
 export async function extractCardsFromText(text, existingSubjects) {
-  const free = await tryFreeFunctionIfUnconfigured({ type: "text", text, existingSubjects });
+  const free = await tryFreeFunction({ type: "text", text, existingSubjects });
   if (free.available) return normalizeCards(free);
 
   const prompt = `${buildInstructions(existingSubjects)}\n\n---\n\n${text.slice(0, 50000)}`;

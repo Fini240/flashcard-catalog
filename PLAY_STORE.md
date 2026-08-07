@@ -127,9 +127,9 @@ PDFs, Word documents and pasted text work too, and the app files the new cards
 under the right subject on its own.
 
 YOURS, AND OPTIONAL EVERYTHING
-Works completely offline with no account. Sign in with Google only if you want
-your cards synced between your own devices. AI import is optional and uses a
-free API key you control. No ads, no subscription, no tracking.
+Works completely offline with no account. Sign in with Google to sync cards
+between your own devices and get ten AI imports a day at no cost — no API key,
+no subscription. Bring your own free key if you want more. No ads, no tracking.
 ```
 
 **Assets to upload:**
@@ -164,9 +164,10 @@ Notes for the remaining questions:
 - **Can users request data deletion?** → Yes. Deletion is by email request; the
   privacy policy states this and gives the address.
 - **Why "shared" for flashcard content:** when the user chooses to import a
-  photo, PDF or text, that content is sent to their selected AI provider
-  (Google Gemini or Anthropic) to generate the cards. That counts as sharing
-  with a third party even though it happens on the user's own API key.
+  photo, PDF or text, that content is sent to an AI provider (Google Gemini, or
+  Anthropic if they've selected it) to generate the cards — either through this
+  app's server or directly with the user's own key. Either way it counts as
+  sharing with a third party. Nothing is sent unless the user starts an import.
 - **Do not** declare location, contacts, financial info, photos/videos, or
   device identifiers — the app collects none of them. Card pictures never leave
   the device.
@@ -208,32 +209,64 @@ Government apps → No; Financial features → None; Health → None.
 
 ---
 
-## 8. Known issue to decide on before launch — **PRODUCT DECISION**
+## 8. Turn on the free AI allowance — **YOU (one command)**
 
-The free server-side AI path is locked to a single Google account
-(`ALLOWED_EMAIL` in `functions/index.js`) so that strangers can't run up your
-Anthropic bill. That's correct for cost, but it means **every Play user who
-taps Import → Photo or PDF is told to go and fetch their own API key.**
+Every signed-in user gets **10 AI imports a day** with no API key at all, served
+by the Cloud Function. That's already built and deployed — it just needs a real
+Gemini key, because one can only be created from your own Google account.
 
-Most people won't. That's a realistic source of one-star reviews.
+Until you do this, the function reports itself as unconfigured and every client
+quietly falls back to "add your own key", exactly as the app behaved before.
+Nothing is broken in the meantime.
 
-What already works with no key at all, on any device:
+1. Create a free key at <https://aistudio.google.com/apikey> (no card needed).
+2. Store it as the function's secret and redeploy:
+
+```bash
+printf 'YOUR_GEMINI_KEY' | npx firebase functions:secrets:set GEMINI_API_KEY --data-file - --project centering-timer-502020-h0
+```
+
+```bash
+npx firebase deploy --only functions --project centering-timer-502020-h0
+```
+
+The redeploy is required — functions pick up a new secret version only on
+deploy. To confirm it worked, the endpoint should stop returning
+`{"error":"NOT_CONFIGURED"}`:
+
+```bash
+curl -s -X POST https://us-central1-centering-timer-502020-h0.cloudfunctions.net/generateFlashcards -H "Content-Type: application/json" -d '{"type":"text","text":"hi"}'
+```
+
+Expect `{"error":"Missing ID token"}` once configured — that means it got past
+the key check and is asking for a signed-in user, which is correct.
+
+**Watch your usage** at <https://aistudio.google.com/rate-limit> for the first
+few weeks. The daily allowance is shared across all users, so the per-user cap
+is what protects you. To change it, edit `DAILY_LIMIT` in `functions/index.js`
+and redeploy. If the shared pool runs dry, users are told so and offered their
+own key — the app never simply fails.
+
+---
+
+## 9. Older note — resolved by section 8
+
+**This is now solved** — kept here only to record the reasoning.
+
+The free path used to be locked to a single Google account, which meant every
+Play user was told to fetch their own API key before photo or PDF import
+worked. Most people won't, and that's a realistic source of one-star reviews.
+
+It's been replaced by the hybrid in section 8: 10 free imports a day per
+signed-in user on the shared key, then an offer to add their own free key for
+unlimited use. Your exposure is bounded by the per-user cap.
+
+What works with no key at all, on any device, even signed out:
 - Creating and editing cards by hand
 - Pasting `Front | Back` text
 - The entire study and spaced-repetition system
 - On Android, reading a photo on-device — and vocabulary lists become cards
   automatically with no key and no internet
 
-Options, roughly in order of effort:
-
-1. **Reframe the listing and onboarding** so manual + on-device import are the
-   headline, and AI import is clearly a power-user extra. Cheapest, honest, no
-   backend work.
-2. **Ship a server-side Gemini key with per-user quotas** (e.g. 20 imports per
-   account per day) in the existing Cloud Function. Gemini's free tier could
-   absorb a modest user base at no cost, but you'd need to watch it and it
-   becomes your bill if the app takes off.
-3. **Leave as-is** and accept that AI import is a bring-your-own-key feature.
-
-This one needs your call, not mine — it's a decision about what you're willing
-to pay for.
+Option 2 of the three originally considered — a server-side key with per-user
+quotas — is what shipped. See section 8 for the one command that activates it.
