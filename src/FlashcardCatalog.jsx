@@ -593,7 +593,10 @@ function SyncControl({ googleUser, syncState, onSignIn, onSignOut }) {
 function IndexCardTab({ color, label }) {
   return (
     <div style={{
-      position: "absolute", top: -10, left: 18,
+      // The tab hangs 10px above the card but its box overlaps the card's top
+      // edge. Both are positioned, so without this the card — which comes
+      // later in the DOM — paints over the tab and clips the label in half.
+      position: "absolute", top: -10, left: 18, zIndex: 1,
       background: color, color: "#FBF7EC",
       fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, fontWeight: 600,
       padding: "3px 10px", borderRadius: "3px 3px 0 0",

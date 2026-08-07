@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// Play signing credentials live in an untracked keystore.properties beside
+// this file (see PLAY_STORE.md). Absent — on a fresh clone, or for anyone
+// who only builds debug — the release build simply stays unsigned instead of
+// failing, so nothing here depends on secrets being present.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasKeystore = keystorePropertiesFile.exists()
+if (hasKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.flashcardcatalog.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,11 @@ android {
         applicationId "com.flashcardcatalog.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        // Play rejects an upload whose versionCode it has already seen, so
+        // this must be incremented for every single upload, even a re-upload
+        // of the same version after a rejection.
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,6 +30,17 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasKeystore) {
+            release {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         debug {
             ndk {
@@ -30,6 +55,12 @@ android {
             }
         }
         release {
+            if (hasKeystore) {
+                signingConfig signingConfigs.release
+            }
+            // R8 is left off deliberately: Capacitor bridges JavaScript to
+            // native plugins by reflection, so shrinking risks stripping
+            // classes that are only ever referenced by name at runtime.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Policy — Flashcard Catalog</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; padding: 32px 20px 64px;
+    background: #16233F; color: #EDE6D3;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 28px; color: #F2C572; margin: 0 0 6px; }
+  h2 { font-size: 19px; color: #F2C572; margin: 34px 0 8px; }
+  .meta { color: #8CA0C2; font-size: 14px; margin: 0 0 28px; }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 8px; }
+  a { color: #F2C572; }
+  strong { color: #FBF7EC; }
+  .box {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; padding: 16px 18px; margin: 18px 0;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Flashcard Catalog · Last updated 3 August 2026</p>
+
+  <p>
+    Flashcard Catalog is a study app for making and reviewing flashcards. This policy
+    explains what the app stores, what it sends elsewhere, and what control you have
+    over it. The short version: your flashcards stay on your device unless you choose
+    to sign in, and nothing is sent to an AI service unless you choose to import
+    something with it.
+  </p>
+
+  <h2>What stays on your device</h2>
+  <ul>
+    <li><strong>Your flashcards and folders</strong> — always saved on the device first, and usable with no account at all.</li>
+    <li><strong>Pictures you attach to cards</strong> — stored only on the device that added them. They are never uploaded, not even when cloud sync is on.</li>
+    <li><strong>Your AI provider API key</strong>, if you add one — kept in local storage on that device only. It is never uploaded to us, never synced to your account, and never shared.</li>
+    <li><strong>Your appearance and provider settings.</strong></li>
+  </ul>
+
+  <h2>If you sign in with Google</h2>
+  <p>
+    Signing in is optional and exists only to sync your cards between your own devices.
+    If you do sign in:
+  </p>
+  <ul>
+    <li>Google provides the app with your <strong>email address, name, and an account identifier</strong>, handled through Firebase Authentication.</li>
+    <li>Your <strong>subjects, folders, card text, and review progress</strong> are stored in Google Cloud Firestore under your account identifier, so your other devices can read them.</li>
+    <li>Only you can read that data. It is not sold, shared, or used for advertising, and there is no analytics or tracking in the app.</li>
+  </ul>
+  <p>
+    You can sign out at any time, which stops syncing. To have the stored copy deleted,
+    email the address at the bottom of this page and it will be removed.
+  </p>
+
+  <h2>AI-powered import</h2>
+  <p>
+    The app can turn a photo, PDF, Word document, or pasted text into flashcards. This
+    only happens when you actively choose to import something.
+  </p>
+  <ul>
+    <li>On Android, photos are read <strong>on your device</strong> first using on-device text recognition. Only the recognised <em>text</em> is sent onward — usually not the photo itself.</li>
+    <li>The text (or, where on-device reading isn't possible, the image) is sent to the AI provider you selected in Settings: <strong>Google Gemini</strong> or <strong>Anthropic Claude</strong>. It is sent directly from your device using your own API key, and is handled under that provider's privacy policy.</li>
+    <li>Typing or pasting your own "Front | Back" cards involves no AI service and sends nothing anywhere.</li>
+  </ul>
+  <div class="box">
+    <strong>Worth knowing:</strong> Google's free Gemini tier may use what you send —
+    including imported text and photos — to improve their models. Anthropic's paid API
+    does not train on your content. You choose the provider in Settings, and the app
+    states this there as well. Don't import material you consider confidential under the
+    free tier.
+  </div>
+
+  <h2>Children</h2>
+  <p>
+    The app is a general-audience study tool and is not directed at children under 13.
+    It contains no advertising and does not knowingly collect personal information from
+    children.
+  </p>
+
+  <h2>Deleting your data</h2>
+  <ul>
+    <li><strong>On the device:</strong> deleting a subject or card removes it, and uninstalling the app removes everything stored locally, including any saved API key.</li>
+    <li><strong>In the cloud:</strong> email the address below from the Google account you signed in with, and the synced copy will be deleted.</li>
+  </ul>
+
+  <h2>Changes</h2>
+  <p>
+    If this policy changes, the date at the top of this page will change with it.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions or deletion requests: <a href="mailto:der.finn.r@gmail.com">der.finn.r@gmail.com</a>
+  </p>
+</main>
+</body>
+</html>
