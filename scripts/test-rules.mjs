@@ -112,6 +112,12 @@ const res = await fetch(`https://firebaserules.googleapis.com/v1/projects/${PROJ
     },
   }),
 });
+if (res.status === 401) {
+  // The cached firebase-tools token expires; without this hint an expired
+  // credential reads exactly like a rules regression.
+  console.error("Auth expired, not a rules failure. Refresh it with:\n  firebase projects:list\nthen run this again.");
+  process.exit(1);
+}
 if (!res.ok) { console.error("API error", res.status, await res.text()); process.exit(1); }
 const { testResults = [] } = await res.json();
 

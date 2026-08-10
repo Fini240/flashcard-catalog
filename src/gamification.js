@@ -89,7 +89,7 @@ export function emptyGame() {
     friends: [], // uids the user follows
     username: null, // self-chosen, and the only name ever published
     listed: true, // appear on the global board (opt-out lives in Settings)
-    reminder: { enabled: false, hour: 18, minute: 0 }, // daily study nudge
+    reminder: { enabled: false }, // escalating daily nudges — see reminders.js
   };
 }
 
@@ -113,18 +113,13 @@ export function normalizeGame(raw) {
   };
 }
 
-// A half-written reminder (hand-edited save, older build, partial sync) must
-// never schedule a notification at 25:73 — clamp rather than trust.
+// The reminder times are a fixed ladder in reminders.js rather than a stored
+// setting, so all that survives here is whether the user wants them at all.
+// Saves written by the earlier build carry an `hour`/`minute` pair; dropping
+// them is deliberate, and an on/off flag is the one thing worth keeping.
 function normalizeReminder(raw) {
-  const base = { enabled: false, hour: 18, minute: 0 };
-  if (!raw || typeof raw !== "object") return base;
-  const hour = Number(raw.hour);
-  const minute = Number(raw.minute);
-  return {
-    enabled: !!raw.enabled,
-    hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : base.hour,
-    minute: Number.isInteger(minute) && minute >= 0 && minute <= 59 ? minute : base.minute,
-  };
+  if (!raw || typeof raw !== "object") return { enabled: false };
+  return { enabled: !!raw.enabled };
 }
 
 export function todayStats(game, today = dayKey()) {

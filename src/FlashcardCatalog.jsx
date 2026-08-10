@@ -2150,27 +2150,15 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminde
               />
             </div>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
-              {reminderNote || "A nudge at your chosen time — skipped automatically on days you've already studied."}
+              {reminderNote || "Starts gently at midday and gets more insistent as the evening closes in — and stops for the day the moment you hit your goal."}
             </p>
             {game.reminder.enabled && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-                <span style={{ fontSize: 13.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif" }}>Remind me at</span>
-                <input
-                  type="time"
-                  value={reminders.formatTime(game.reminder.hour, game.reminder.minute)}
-                  disabled={reminderBusy}
-                  onChange={async (e) => {
-                    const [h, m] = e.target.value.split(":").map(Number);
-                    if (!Number.isInteger(h) || !Number.isInteger(m)) return;
-                    setReminderNote(await onSetReminder({ ...game.reminder, hour: h, minute: m }) || "");
-                  }}
-                  style={{
-                    background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 8,
-                    color: "var(--text-strong)", padding: "10px 12px", minHeight: 44,
-                    fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, outline: "none",
-                  }}
-                />
-              </div>
+              <p style={{
+                fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--text-faint)",
+                margin: "0 0 18px", letterSpacing: 0.5,
+              }}>
+                {reminders.ladderSummary()}
+              </p>
             )}
           </>
         ) : (

@@ -17,50 +17,82 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import { Capacitor } from "@capacitor/core";
 import * as G from "./gamification";
 
-// How far ahead to fill the queue. The app only has to be opened once a
-// fortnight to stay ahead of it, and a short horizon keeps a stale schedule
-// (goal changed, reminders switched off elsewhere) from lingering for months.
-const HORIZON_DAYS = 14;
+// How far ahead to fill the queue. Shorter than a single daily reminder needed,
+// because each day now costs several entries — a week is plenty of runway and
+// keeps a stale schedule from lingering.
+const HORIZON_DAYS = 7;
 const CHANNEL_ID = "study-reminders";
 
-export const DEFAULT_REMINDER = { enabled: false, hour: 18, minute: 0 };
+export const DEFAULT_REMINDER = { enabled: false };
+
+// The day's ladder. One easy-to-ignore nudge around lunch, then progressively
+// more direct as the day runs out — the last one lands while there is still
+// time to actually do something about it, not at 23:55 when the answer is
+// "too late". Every rung is cancelled the moment the daily goal is met, so a
+// user who studies in the morning hears nothing at all.
+export const LADDER = [
+  { hour: 12, minute: 30, tone: "gentle" },
+  { hour: 16, minute: 0, tone: "nudge" },
+  { hour: 19, minute: 0, tone: "push" },
+  { hour: 21, minute: 0, tone: "last" },
+];
 
 export function isSupported() {
   return Capacitor.isNativePlatform();
 }
 
-// Notification ids must be 32-bit ints and stable per day, so a rebuild
-// replaces the previous day's entry instead of stacking a duplicate.
-function idForDay(key) {
-  return Number(key.replace(/-/g, "")) % 2147483647;
+// Notification ids must be 32-bit ints and unique per slot, so a rebuild
+// replaces the previous entry instead of stacking a duplicate. Day number
+// dominates; the rung index is folded into the low digits.
+function idForSlot(key, rung) {
+  return (Number(key.replace(/-/g, "")) * 10 + rung) % 2147483647;
 }
 
 export function formatTime(hour, minute) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-// What the notification actually says. A streak that is about to break is the
-// only genuinely urgent case, so it gets its own wording; everything else
-// rotates so the same sentence doesn't arrive fourteen days running.
-const LINES = [
-  { title: "Time to study", body: "A few cards now keeps the deck from piling up." },
-  { title: "Your cards are waiting", body: "Ten minutes is enough to stay on track." },
-  { title: "Keep it going", body: "A short session today beats a long one on Sunday." },
-  { title: "Quick review?", body: "The cards you're about to forget are due." },
-];
+// Human-readable summary of the ladder, for the settings screen.
+export function ladderSummary() {
+  return LADDER.map(r => formatTime(r.hour, r.minute)).join(" · ");
+}
 
-function messageFor(game, dayIndex, dueCount, streak) {
-  if (streak > 0 && dayIndex === 0) {
-    return {
-      title: `Your ${streak}-day streak is at risk`,
-      body: "Finish today's goal to keep it alive.",
-    };
+// Generic copy for days we know nothing about yet — future days can't have a
+// progress number attached, because the progress hasn't happened.
+const GENERIC = {
+  gentle: { title: "Time to study", body: "A few cards now keeps the deck from piling up." },
+  nudge: { title: "Your cards are waiting", body: "Ten minutes is enough to stay on track." },
+  push: { title: "Still time today", body: "A short session now beats a long one on Sunday." },
+  last: { title: "Last call for today", body: "One quick round and the day counts." },
+};
+
+// What a given rung actually says. Today's rungs know exactly how far along the
+// user is, which is the difference between a notification that feels aimed at
+// you and one that feels like a mailing list.
+function messageFor({ tone, dayIndex, done, goal, streak, dueCount }) {
+  if (dayIndex > 0) return GENERIC[tone];
+  const left = Math.max(0, goal - done);
+  const cards = (n) => `${n} card${n === 1 ? "" : "s"}`;
+
+  if (tone === "gentle") {
+    if (done > 0) return { title: "Good start", body: `${cards(done)} down, ${left} to go today.` };
+    if (dueCount > 0) return { title: "Time to study", body: `${cards(dueCount)} are due right now.` };
+    return GENERIC.gentle;
   }
-  const line = LINES[dayIndex % LINES.length];
-  if (dueCount > 0 && dayIndex === 0) {
-    return { title: line.title, body: `${dueCount} card${dueCount === 1 ? "" : "s"} due right now.` };
+  if (tone === "nudge") {
+    if (done > 0) return { title: `${cards(left)} to go`, body: "Finish the goal while the day's still yours." };
+    return { title: "Your goal is still open", body: `${cards(goal)} today — that's about ten minutes.` };
   }
-  return line;
+  if (tone === "push") {
+    if (streak > 0) return { title: `Keep your ${streak}-day streak`, body: `${cards(left)} left to hit today's goal.` };
+    return { title: "Evening review?", body: `${cards(left)} left to hit today's goal.` };
+  }
+  // The last rung is the only one allowed to sound urgent, and only when
+  // something is genuinely about to be lost.
+  if (streak > 0) {
+    return { title: `Your ${streak}-day streak ends tonight`, body: `${cards(left)} to keep it alive.` };
+  }
+  return { title: "Last call for today", body: `${cards(left)} and the day counts.` };
 }
 
 async function ensureChannel() {
@@ -115,23 +147,33 @@ async function cancelAll() {
   }
 }
 
-// Which of the next HORIZON_DAYS days deserve a reminder, as concrete fire
-// times. Pure so it can be tested without a device.
+// Every rung of every day in the horizon that still deserves a notification,
+// as concrete fire times. Pure so it can be tested without a device.
+//
+// The rule that matters: reminders exist to get the daily goal met, so they all
+// stop for a day the moment it is met — not merely when a card has been
+// answered. A user who does half the goal at lunch should still hear about the
+// other half in the evening.
 export function plan(game, reminder, now = new Date()) {
   if (!reminder || !reminder.enabled) return [];
   const today = G.dayKey(now.getTime());
-  const studiedToday = G.todayStats(game, today).goalMet || G.todayStats(game, today).cards > 0;
+  const stats = G.todayStats(game, today);
+  const goal = game.goalCards || G.DEFAULT_GOAL_CARDS;
+  const goalMetToday = stats.goalMet || stats.cards >= goal;
   const out = [];
 
   for (let i = 0; i < HORIZON_DAYS; i++) {
+    // Today is already accounted for — no reason to interrupt anyone again.
+    if (i === 0 && goalMetToday) continue;
     const key = G.addDays(today, i);
-    // The day is already done — no reason to interrupt anyone.
-    if (i === 0 && studiedToday) continue;
-    const at = G.dayKeyToDate(key);
-    at.setHours(reminder.hour, reminder.minute, 0, 0);
-    // Today's slot may already have passed; the queue starts tomorrow then.
-    if (at.getTime() <= now.getTime()) continue;
-    out.push({ key, at, dayIndex: i });
+    LADDER.forEach((rung, rungIndex) => {
+      const at = G.dayKeyToDate(key);
+      at.setHours(rung.hour, rung.minute, 0, 0);
+      // A rung whose time has passed is simply skipped; someone enabling
+      // reminders at 20:00 gets tonight's last call and nothing retroactive.
+      if (at.getTime() <= now.getTime()) return;
+      out.push({ key, at, dayIndex: i, rungIndex, tone: rung.tone });
+    });
   }
   return out;
 }
@@ -150,10 +192,12 @@ export async function sync(game, reminder, cards = []) {
   const slots = plan(game, reminder);
   if (!slots.length) return { scheduled: 0, reason: "nothing-to-schedule" };
 
-  const notifications = slots.map(({ key, at, dayIndex }) => {
-    const msg = messageFor(game, dayIndex, dueCount, game.streak || 0);
+  const goal = game.goalCards || G.DEFAULT_GOAL_CARDS;
+  const done = G.todayStats(game).cards;
+  const notifications = slots.map(({ key, at, dayIndex, rungIndex, tone }) => {
+    const msg = messageFor({ tone, dayIndex, done, goal, streak: game.streak || 0, dueCount });
     return {
-      id: idForDay(key),
+      id: idForSlot(key, rungIndex),
       title: msg.title,
       body: msg.body,
       channelId: CHANNEL_ID,

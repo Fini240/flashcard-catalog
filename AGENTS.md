@@ -109,8 +109,13 @@ Play Store compatibility problem).
   non-existent doc is what makes them unique without a transaction.
 - **Reminders are local, not push.** No FCM, no server, no cost, works offline.
   The schedule is rebuilt from scratch on app open, after every session and on
-  any settings change, which is what lets a day already studied be skipped
-  without a background job.
+  any settings change, which is what lets a finished day be skipped without a
+  background job.
+- **Reminders escalate through the day rather than firing once.** A fixed
+  ladder (12:30 · 16:00 · 19:00 · 21:00, `LADDER` in `reminders.js`) with copy
+  that gets more direct at each rung, all of it cancelled the moment the daily
+  *goal* is met — not merely when one card has been answered. There is no
+  user-facing time picker; the times are deliberately not a setting.
 
 ## Known hazards
 
