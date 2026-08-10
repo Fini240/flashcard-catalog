@@ -40,6 +40,10 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/fileImport.js` | PDF / .docx / text extraction |
 | `src/firebaseSync.js` | Auth + Firestore sync (contains the Firebase client config) |
 | `src/imageStore.js` | Local storage of card images (never uploaded) |
+| `src/gamification.js` | XP, levels, weekly ranks, streaks, quests, achievements, heatmap |
+| `src/gameUI.jsx` | The gamification surface: status bar, today card, quests, streak/goal/friends sheets |
+| `src/social.js` | Friend codes, public `profiles/` docs, nudges, weekly leaderboard |
+| `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore:rules` |
 | `src/backHandler.js` | Android hardware/gesture back button → in-app navigation |
 | `functions/index.js` | Cloud Function `generateFlashcards`; `DAILY_LIMIT` lives here |
 | `scripts/screenshots.mjs` | Regenerates Play Store screenshots via puppeteer-core |
@@ -120,8 +124,13 @@ Play Store compatibility problem).
       Play Developer account ($25 + identity verification), and a personal
       account needs a **12-tester / 14-day closed test** before production.
       Full checklist in `PLAY_STORE.md`.
-- [ ] The GitHub `latest` APK asset was last uploaded 2026-08-07 — re-verify it
-      matches `main` before pointing anyone at the download link.
+- [x] The GitHub `latest` APK asset matches `main` as of 2026-08-10 (the
+      gamification release, `d571924`).
+- [ ] **The friends/leaderboard feature has never run against two real
+      accounts.** Rules and leaderboard maths are covered by tests, but adding
+      a friend by code, nudging, and seeing a friend's weekly XP have only been
+      exercised against stubs. Verify with a second Google account before
+      treating it as done.
 
 ## Working with this user
 
