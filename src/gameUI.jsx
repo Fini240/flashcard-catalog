@@ -428,20 +428,152 @@ export function GoalModal({ game, onClose, onPick }) {
 
 // ---------- friends & the weekly board ----------
 
-export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveFriend, nudges, onClearNudges }) {
+// One row of either board. Extracted once the global board arrived so the two
+// can never drift apart visually.
+function BoardRow({ row, onRemove }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10, padding: "10px 10px",
+      borderRadius: 8, marginBottom: 4,
+      background: row.isMe ? "rgba(242,197,114,0.12)" : "transparent",
+      border: `1px solid ${row.isMe ? "rgba(242,197,114,0.3)" : "transparent"}`,
+    }}>
+      <span style={{
+        fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, fontWeight: 700,
+        color: row.position === 1 ? "#F2C572" : "var(--text-faint)", minWidth: 20,
+      }}>{row.position}</span>
+      <span style={{ fontSize: 18 }}>{row.emoji}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{
+          display: "block", fontFamily: "Inter, sans-serif", fontSize: 14,
+          fontWeight: row.isMe ? 700 : 500, color: "var(--text-strong)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{row.isMe ? "You" : row.username}</span>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)" }}>
+          🔥 {row.streak} · lvl {row.level}
+        </span>
+      </div>
+      <span style={{ fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 700, color: "var(--text-strong)" }}>
+        {row.weekXp}
+      </span>
+      {onRemove && !row.isMe && (
+        <button onClick={() => onRemove(row.uid)} title="Remove friend" style={{
+          background: "none", border: "none", padding: 8, minWidth: 36, minHeight: 36,
+          display: "flex", alignItems: "center", cursor: "pointer",
+        }}><X size={14} color="var(--text-faint)" /></button>
+      )}
+    </div>
+  );
+}
+
+// The username is the only name anyone else ever sees, so this sits at the top
+// of the sheet rather than buried in Settings — someone who dislikes what
+// they're called should not have to hunt for the fix.
+function UsernameRow({ username, editing, onEdit, onCancel, onSave, suggestion }) {
+  const [value, setValue] = useState(username || suggestion || "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const local = social.validateUsername(value);
+    if (local) { setError(local); return; }
+    setSaving(true); setError("");
+    const res = await onSave(value.trim());
+    setSaving(false);
+    if (!res.ok) setError(res.error || "Couldn't save that name.");
+  };
+
+  if (!editing) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10, background: "var(--input-bg)",
+        border: "1px solid var(--card-border)", borderRadius: 10,
+        padding: "12px 14px", marginBottom: 12,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{
+            fontFamily: "Inter, sans-serif", fontSize: 10.5, letterSpacing: 1.2,
+            textTransform: "uppercase", color: "var(--text-faint)", margin: 0,
+          }}>Your username</p>
+          <p style={{
+            fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 600,
+            color: username ? "var(--text-strong)" : "var(--text-faint)", margin: "2px 0 0",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>{username || "Not set — tap Choose"}</p>
+        </div>
+        <button onClick={onEdit} style={{
+          background: username ? "transparent" : "#F2C572",
+          color: username ? "var(--text-secondary)" : "#16233F",
+          border: username ? "1px solid var(--card-border)" : "none",
+          borderRadius: 8, padding: "0 14px", minHeight: 40, flexShrink: 0,
+          fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 600, cursor: "pointer",
+        }}>{username ? "Change" : "Choose"}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      background: "var(--input-bg)", border: "1px solid var(--card-border)",
+      borderRadius: 10, padding: "12px 14px", marginBottom: 12,
+    }}>
+      <p style={{
+        fontFamily: "Inter, sans-serif", fontSize: 10.5, letterSpacing: 1.2,
+        textTransform: "uppercase", color: "var(--text-faint)", margin: "0 0 8px",
+      }}>Your username</p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={value}
+          onChange={e => { setValue(e.target.value); setError(""); }}
+          placeholder="e.g. finn"
+          maxLength={social.USERNAME_MAX}
+          autoCapitalize="none"
+          autoCorrect="off"
+          style={{
+            flex: 1, minWidth: 0, background: "var(--card-bg)", border: "1px solid var(--card-border)",
+            borderRadius: 8, color: "var(--text-strong)", padding: "12px 12px", minHeight: 46,
+            fontFamily: "Inter, sans-serif", fontSize: 15, outline: "none",
+          }}
+        />
+        <button onClick={save} disabled={saving} style={{
+          background: "#F2C572", color: "#16233F", border: "none", borderRadius: 8,
+          padding: "0 16px", minHeight: 46, flexShrink: 0, whiteSpace: "nowrap",
+          fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
+          cursor: "pointer", opacity: saving ? 0.6 : 1,
+        }}>{saving ? "…" : "Save"}</button>
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 8 }}>
+        <button onClick={onCancel} style={{
+          background: "none", border: "none", padding: "2px 0", cursor: "pointer", flexShrink: 0,
+          fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)",
+        }}>Cancel</button>
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: error ? "#B4553F" : "var(--text-faint)", margin: 0, lineHeight: 1.4 }}>
+          {error || `${social.USERNAME_MIN}–${social.USERNAME_MAX} characters. This replaces your real name everywhere.`}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveFriend, nudges, onClearNudges, onSetUsername }) {
+  const [tab, setTab] = useState("friends");
   const [board, setBoard] = useState(null);
+  const [global, setGlobal] = useState(null);
+  const [globalError, setGlobalError] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingName, setEditingName] = useState(false);
   const myCode = googleUser ? social.codeForUid(googleUser.uid) : null;
   const wk = G.weekXp(game);
   const rank = G.rankForWeekXp(wk);
   const next = G.nextRank(wk);
+  const username = game.username || null;
 
   const me = {
     uid: googleUser ? googleUser.uid : "me",
-    name: googleUser ? (googleUser.name || "You") : "You",
+    username: username || "You",
     emoji: game.profileEmoji || "🦉",
     weekXp: wk,
     streak: game.streak,
@@ -465,6 +597,23 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
     return () => { cancelled = true; };
   }, [googleUser, (game.friends || []).join(","), wk]);
 
+  // The global board is fetched lazily: it costs a query against every listed
+  // player, and most opens of this sheet are about friends.
+  useEffect(() => {
+    if (tab !== "global" || !googleUser) return;
+    let cancelled = false;
+    setGlobalError(false);
+    (async () => {
+      try {
+        const rows = await social.globalBoard(G.weekStartKey());
+        if (!cancelled) setGlobal(social.buildGlobalBoard(rows, googleUser.uid, username ? me : null));
+      } catch (e) {
+        if (!cancelled) { setGlobal([]); setGlobalError(true); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tab, googleUser, wk, username]);
+
   const add = async () => {
     const clean = social.normalizeCode(codeInput);
     if (clean.length !== 6) { setStatus("A friend code is 6 characters."); return; }
@@ -472,9 +621,10 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
     setBusy(true); setStatus("");
     try {
       const found = await social.findByCode(clean);
+      const who = found && (found.username || "That player");
       if (!found) setStatus("No one found with that code. Codes are case-insensitive.");
-      else if ((game.friends || []).includes(found.uid)) setStatus(`${found.name} is already on your board.`);
-      else { onAddFriend(found.uid); setCodeInput(""); setStatus(`Added ${found.name}.`); }
+      else if ((game.friends || []).includes(found.uid)) setStatus(`${who} is already on your board.`);
+      else { onAddFriend(found.uid); setCodeInput(""); setStatus(`Added ${who}.`); }
     } catch (e) {
       setStatus("Couldn't reach the leaderboard. Check your connection.");
     }
@@ -544,49 +694,70 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
         </div>
       </div>
 
-      <SectionLabel>Leaderboard</SectionLabel>
-      {board === null ? (
-        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-faint)" }}>Loading…</p>
+      <UsernameRow
+        username={username}
+        editing={editingName}
+        onEdit={() => setEditingName(true)}
+        onCancel={() => setEditingName(false)}
+        onSave={async (name) => {
+          const res = await onSetUsername(name);
+          if (res.ok) setEditingName(false);
+          return res;
+        }}
+        suggestion={googleUser ? social.suggestUsername(googleUser.uid) : ""}
+      />
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[["friends", "Friends"], ["global", "Everyone"]].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            flex: 1, minHeight: 40, borderRadius: 8, cursor: "pointer",
+            fontFamily: "Inter, sans-serif", fontSize: 13.5, fontWeight: 600,
+            background: tab === id ? "rgba(242,197,114,0.16)" : "transparent",
+            border: `1px solid ${tab === id ? "rgba(242,197,114,0.45)" : "var(--card-border)"}`,
+            color: tab === id ? "var(--text-strong)" : "var(--text-secondary)",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {tab === "friends" ? (
+        board === null ? (
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-faint)" }}>Loading…</p>
+        ) : (
+          <div style={{ marginBottom: 16 }}>
+            {board.map(row => <BoardRow key={row.uid} row={row} onRemove={onRemoveFriend} />)}
+            {board.length === 1 && (
+              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "6px 0 0", lineHeight: 1.45 }}>
+                It's quiet in here. Send someone your code and the board comes alive —
+                people who study with a friend show up far more often than people who don't.
+              </p>
+            )}
+          </div>
+        )
       ) : (
         <div style={{ marginBottom: 16 }}>
-          {board.map(row => (
-            <div key={row.uid} style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "10px 10px",
-              borderRadius: 8, marginBottom: 4,
-              background: row.isMe ? "rgba(242,197,114,0.12)" : "transparent",
-              border: `1px solid ${row.isMe ? "rgba(242,197,114,0.3)" : "transparent"}`,
-            }}>
-              <span style={{
-                fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, fontWeight: 700,
-                color: row.position === 1 ? "#F2C572" : "var(--text-faint)", minWidth: 20,
-              }}>{row.position}</span>
-              <span style={{ fontSize: 18 }}>{row.emoji}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <span style={{
-                  display: "block", fontFamily: "Inter, sans-serif", fontSize: 14,
-                  fontWeight: row.isMe ? 700 : 500, color: "var(--text-strong)",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>{row.isMe ? "You" : row.name}</span>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)" }}>
-                  🔥 {row.streak} · lvl {row.level}
-                </span>
-              </div>
-              <span style={{ fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 700, color: "var(--text-strong)" }}>
-                {row.weekXp}
-              </span>
-              {!row.isMe && (
-                <button onClick={() => onRemoveFriend(row.uid)} title="Remove friend" style={{
-                  background: "none", border: "none", padding: 8, minWidth: 36, minHeight: 36,
-                  display: "flex", alignItems: "center", cursor: "pointer",
-                }}><X size={14} color="var(--text-faint)" /></button>
-              )}
-            </div>
-          ))}
-          {board.length === 1 && (
-            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "6px 0 0", lineHeight: 1.45 }}>
-              It's quiet in here. Send someone your code and the board comes alive —
-              people who study with a friend show up far more often than people who don't.
+          {global === null ? (
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-faint)" }}>Loading…</p>
+          ) : globalError ? (
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>
+              Couldn't load the global board. Check your connection and try again.
             </p>
+          ) : !username ? (
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>
+              Pick a username above to join the global board. Until then you can look,
+              but nobody can see you.
+            </p>
+          ) : global.length === 0 ? (
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>
+              Nobody has scored yet this week. Do a session and you're top of the board.
+            </p>
+          ) : (
+            <>
+              {global.map(row => <BoardRow key={row.uid} row={row} />)}
+              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "8px 0 0", lineHeight: 1.45 }}>
+                Top {global.length} this week, resets Monday. You can hide yourself in
+                Settings — your friends board keeps working either way.
+              </p>
+            </>
           )}
         </div>
       )}

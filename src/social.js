@@ -3,11 +3,19 @@
 //
 // The rule we hold to: nothing a user studies ever leaves their private
 // `users/{uid}` document. The public `profiles/{uid}` document carries only a
-// display name, an avatar emoji, a friend code and four scoreboard numbers.
-// A friend can see that you did 240 XP this week; they can never see a card.
+// self-chosen username, an avatar emoji, a friend code and four scoreboard
+// numbers. A friend can see that you did 240 XP this week; they can never see
+// a card.
 //
-// Friending works by short code rather than by email or username search, so
-// nobody can be found — or spammed — without being handed the code first.
+// The username is deliberately NOT the Google display name. Every signed-in
+// user can read every profile, and the global board puts those profiles in
+// front of strangers rather than just friends — so publishing `user.displayName`
+// would be publishing people's real names. The rules reject a `name` key
+// outright, which makes that mistake impossible to make again by accident
+// rather than merely unlikely.
+//
+// Friending still works by short code, so a specific person can be added
+// without being searchable by name.
 // ---------------------------------------------------------------------------
 import { FirebaseFirestore } from "@capacitor-firebase/firestore";
 
@@ -45,14 +53,87 @@ export function normalizeCode(input) {
 
 const profileRef = (uid) => `profiles/${uid}`;
 
+// ---------- usernames ----------
+// 3–16 characters, letters/digits/_/- only. Kept deliberately narrow: it has
+// to survive being rendered in a leaderboard row on a 320px phone, and a tight
+// character set keeps homoglyph impersonation ("Fïnn") off the table.
+export const USERNAME_MIN = 3;
+export const USERNAME_MAX = 16;
+const USERNAME_RE = /^[A-Za-z0-9_-]{3,16}$/;
+
+export function validateUsername(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return "Pick a username.";
+  if (trimmed.length < USERNAME_MIN) return `At least ${USERNAME_MIN} characters.`;
+  if (trimmed.length > USERNAME_MAX) return `At most ${USERNAME_MAX} characters.`;
+  if (!USERNAME_RE.test(trimmed)) return "Letters, numbers, - and _ only.";
+  return null;
+}
+
+// Reservations are keyed by the lowercased name so "Finn" and "finn" can't
+// both be taken — case is preserved for display only.
+export const usernameKey = (name) => (name || "").trim().toLowerCase();
+
+// A suggestion that is already unique-ish, so the first-run dialog is one tap
+// for anyone who doesn't care what they're called.
+export function suggestUsername(uid) {
+  return `learner-${codeForUid(uid).slice(0, 4).toLowerCase()}`;
+}
+
+// Claiming is a create, never a set: Firestore only applies `create` when the
+// document does not exist, so two people racing for the same name resolve to
+// one winner without a transaction. The old reservation is released after the
+// new one is safely held — losing a name you already had would be worse than
+// briefly holding two.
+export async function claimUsername(uid, name, previous) {
+  const err = validateUsername(name);
+  if (err) return { ok: false, error: err };
+  const key = usernameKey(name);
+  if (previous && usernameKey(previous) === key) return { ok: false, error: "That's already your username." };
+
+  try {
+    await FirebaseFirestore.setDocument({
+      reference: `usernames/${key}`,
+      data: { uid },
+      merge: false,
+    });
+  } catch {
+    return { ok: false, error: "That username is taken." };
+  }
+
+  if (previous && usernameKey(previous) !== key) {
+    try {
+      await FirebaseFirestore.deleteDocument({ reference: `usernames/${usernameKey(previous)}` });
+    } catch {
+      // A stale reservation only costs one unused name; never fail the claim.
+    }
+  }
+  return { ok: true, username: name.trim() };
+}
+
+export async function isUsernameFree(name) {
+  const key = usernameKey(name);
+  if (!key) return false;
+  try {
+    const { snapshot } = await FirebaseFirestore.getDocument({ reference: `usernames/${key}` });
+    return !(snapshot && snapshot.data);
+  } catch {
+    return false;
+  }
+}
+
 // Push the user's scoreboard numbers. Called after every session and on sign
 // in — cheap (one small document write) and it keeps friends' boards live.
+//
+// `listed` drives the global board. A user without a username is never listed:
+// there is nothing safe to show for them yet.
 export async function publishProfile(uid, profile) {
+  const username = (profile.username || "").trim();
   await FirebaseFirestore.setDocument({
     reference: profileRef(uid),
     data: {
       uid,
-      name: profile.name || "Anonymous",
+      username: username || "",
       emoji: profile.emoji || "🦉",
       code: codeForUid(uid),
       xp: profile.xp || 0,
@@ -62,6 +143,7 @@ export async function publishProfile(uid, profile) {
       level: profile.level || 1,
       rank: profile.rank || "bronze",
       cardsTotal: profile.cardsTotal || 0,
+      listed: !!username && profile.listed !== false,
       updatedAt: Date.now(),
     },
     merge: true,
@@ -131,6 +213,65 @@ export async function clearNudges(uid, ids) {
   }
 }
 
+// ---------- global board ----------
+// Everyone who has picked a username and hasn't opted out, ranked by XP earned
+// this week. Filtering on `weekKey` server-side is what keeps last week's
+// leaders from sitting on top of Monday's empty board — the alternative,
+// fetching and filtering client-side, would drop live players off the end of
+// the limit. Needs the composite index in firestore.indexes.json.
+export async function globalBoard(weekKey, max = 50) {
+  const { snapshots } = await FirebaseFirestore.getCollection({
+    reference: "profiles",
+    compositeFilter: {
+      type: "and",
+      queryConstraints: [
+        { type: "where", fieldPath: "listed", opStr: "==", value: true },
+        { type: "where", fieldPath: "weekKey", opStr: "==", value: weekKey },
+      ],
+    },
+    queryConstraints: [
+      { type: "orderBy", fieldPath: "weekXp", directionStr: "desc" },
+      { type: "limit", limit: max },
+    ],
+  });
+  return (snapshots || []).map(s => s.data).filter(Boolean);
+}
+
+// Ranks the global rows and marks the caller's own. Kept separate from the
+// fetch so it can be tested without Firestore, and so the caller's row can be
+// merged in from local state — a player whose last publish failed should still
+// see themselves on their own board.
+export function buildGlobalBoard(rows, myUid, me) {
+  const seen = new Set();
+  const clean = [];
+  for (const r of rows || []) {
+    if (!r || !r.username || seen.has(r.uid)) continue;
+    seen.add(r.uid);
+    clean.push({
+      uid: r.uid,
+      username: r.username,
+      emoji: r.emoji || "🦉",
+      weekXp: r.weekXp || 0,
+      streak: r.streak || 0,
+      level: r.level || 1,
+      isMe: r.uid === myUid,
+    });
+  }
+  if (me && me.username && !seen.has(myUid)) {
+    clean.push({
+      uid: myUid,
+      username: me.username,
+      emoji: me.emoji || "🦉",
+      weekXp: me.weekXp || 0,
+      streak: me.streak || 0,
+      level: me.level || 1,
+      isMe: true,
+    });
+  }
+  clean.sort((a, b) => (b.weekXp - a.weekXp) || (b.streak - a.streak) || a.username.localeCompare(b.username));
+  return clean.map((r, i) => ({ ...r, position: i + 1 }));
+}
+
 // Builds the weekly board: the user plus everyone they've added, sorted by XP
 // earned this week. The user's own row is always present even offline, so the
 // board never looks broken when a friend fetch fails.
@@ -139,7 +280,8 @@ export function buildBoard(me, friendProfiles, weekKey) {
     { ...me, isMe: true },
     ...friendProfiles.map(p => ({
       uid: p.uid,
-      name: p.name,
+      // A friend who hasn't picked a username yet still belongs on the board.
+      username: p.username || "Anonymous",
       emoji: p.emoji,
       // A stale week's XP would otherwise sit at the top of the new week's
       // board until that friend next opens the app.
@@ -149,6 +291,6 @@ export function buildBoard(me, friendProfiles, weekKey) {
       isMe: false,
     })),
   ];
-  rows.sort((a, b) => (b.weekXp - a.weekXp) || (b.streak - a.streak) || a.name.localeCompare(b.name));
+  rows.sort((a, b) => (b.weekXp - a.weekXp) || (b.streak - a.streak) || (a.username || "").localeCompare(b.username || ""));
   return rows.map((r, i) => ({ ...r, position: i + 1 }));
 }

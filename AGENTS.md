@@ -42,8 +42,10 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/imageStore.js` | Local storage of card images (never uploaded) |
 | `src/gamification.js` | XP, levels, weekly ranks, streaks, quests, achievements, heatmap |
 | `src/gameUI.jsx` | The gamification surface: status bar, today card, quests, streak/goal/friends sheets |
-| `src/social.js` | Friend codes, public `profiles/` docs, nudges, weekly leaderboard |
-| `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore:rules` |
+| `src/social.js` | Friend codes, usernames, public `profiles/` docs, nudges, friends + global leaderboards |
+| `src/reminders.js` | Daily study reminder — local notifications, scheduled on-device |
+| `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore` |
+| `firestore.indexes.json` | Composite index behind the global board. Deployed by the same command. |
 | `src/backHandler.js` | Android hardware/gesture back button → in-app navigation |
 | `functions/index.js` | Cloud Function `generateFlashcards`; `DAILY_LIMIT` lives here |
 | `scripts/screenshots.mjs` | Regenerates Play Store screenshots via puppeteer-core |
@@ -100,6 +102,15 @@ Play Store compatibility problem).
 - **Firebase client config in `src/firebaseSync.js` and `google-services.json`
   are committed on purpose** — Firebase client keys are not secrets; access is
   governed by Firestore security rules.
+- **The Google display name is never published.** Public identity is a
+  self-chosen username and nothing else. `profiles/` has no `name` field and
+  the rules reject any write containing one, so this can't regress by accident.
+  Usernames are reserved in `usernames/{lowercased}`, where `create` on a
+  non-existent doc is what makes them unique without a transaction.
+- **Reminders are local, not push.** No FCM, no server, no cost, works offline.
+  The schedule is rebuilt from scratch on app open, after every session and on
+  any settings change, which is what lets a day already studied be skipped
+  without a background job.
 
 ## Known hazards
 
@@ -131,6 +142,14 @@ Play Store compatibility problem).
       a friend by code, nudging, and seeing a friend's weekly XP have only been
       exercised against stubs. Verify with a second Google account before
       treating it as done.
+- [ ] **Reminders have not been seen firing on a physical device.** The
+      scheduling decision is tested (`scripts/test-reminders.mjs`) and
+      `POST_NOTIFICATIONS` is confirmed present in the built APK, but no one has
+      watched a notification actually arrive. Check on a real phone, including
+      after a reboot.
+- [ ] **Existing accounts have no username**, so they publish `username: ""`
+      and are not on the global board until they pick one. That's intended, but
+      it means the board looks empty until people open the Friends sheet once.
 
 ## Working with this user
 

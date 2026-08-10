@@ -7,17 +7,44 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Public competition profile. Deliberately tiny: a display name, an
-    // avatar emoji, a friend code and the scoreboard numbers. No card content
-    // and no email ever lands here, so making it readable to signed-in users
-    // exposes nothing the user didn't opt into by adding a friend.
+    // Username reservations. The document id is the lowercased name, so
+    // uniqueness is the database's job rather than the client's.
+    //
+    // `create` only ever fires on a document that does not exist, which makes
+    // this the whole concurrency story: two clients racing for the same name
+    // produce one winner and one PERMISSION_DENIED, with no transaction.
+    // Rewriting a reservation you already hold is allowed so re-claiming your
+    // own name isn't reported as "taken"; taking one someone else holds is not.
+    match /usernames/{name} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.keys().hasOnly(['uid'])
+                    && request.resource.data.uid == request.auth.uid
+                    && name.size() >= 3 && name.size() <= 16
+                    && name.matches('^[a-z0-9_-]+$');
+      allow update: if request.auth != null
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
+    // Public competition profile. Deliberately tiny: a self-chosen username, an
+    // avatar emoji, a friend code and the scoreboard numbers.
+    //
+    // There is no `name` key in this list, and that is the point. Every signed
+    // in user can read every profile and the global board shows them to
+    // strangers, so publishing the Google display name would be publishing
+    // people's real names. Pinning the key set means the client cannot send
+    // one even by mistake — the write is rejected rather than merged.
     match /profiles/{userId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == userId
                    && request.resource.data.keys().hasOnly([
-                        'uid', 'name', 'emoji', 'code', 'xp', 'weekXp', 'weekKey',
-                        'streak', 'level', 'rank', 'cardsTotal', 'updatedAt'
-                      ]);
+                        'uid', 'username', 'emoji', 'code', 'xp', 'weekXp', 'weekKey',
+                        'streak', 'level', 'rank', 'cardsTotal', 'listed', 'updatedAt'
+                      ])
+                   && request.resource.data.username is string
+                   && request.resource.data.username.size() <= 16;
 
       // Nudges are the one thing a friend may write into your space: a tap
       // that says "your streak is at risk". Create-only, and only for

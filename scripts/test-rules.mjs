@@ -24,10 +24,12 @@ try {
 
 const ME = "userAAA", FRIEND = "userBBB";
 const PROFILE = {
-  uid: ME, name: "Finn", emoji: "O", code: "AB3D9F", xp: 100, weekXp: 40,
-  weekKey: "2026-08-10", streak: 3, level: 2, rank: "bronze", cardsTotal: 50, updatedAt: 1,
+  uid: ME, username: "finn", emoji: "O", code: "AB3D9F", xp: 100, weekXp: 40,
+  weekKey: "2026-08-10", streak: 3, level: 2, rank: "bronze", cardsTotal: 50,
+  listed: true, updatedAt: 1,
 };
-const NUDGE = { from: ME, name: "Finn", emoji: "O", at: 1 };
+const NUDGE = { from: ME, name: "finn", emoji: "O", at: 1 };
+const RESERVATION = { uid: ME };
 
 const tc = (name, path, method, uid, data, expect) => {
   const request = { path: `/databases/(default)/documents${path}`, method };
@@ -35,6 +37,16 @@ const tc = (name, path, method, uid, data, expect) => {
   if (data !== null && data !== undefined) request.resource = { data };
   return { name, expect, request };
 };
+
+// Rules that branch on `resource.data` (the document as it already exists) need
+// that state supplied via the test case's own `resource`, or the expression
+// evaluates against nothing. Taking a username someone else holds is exactly
+// such a rule, and it decides whether identities can be stolen — so it gets
+// tested properly rather than by reading the rule and nodding.
+const tcExisting = (name, path, method, uid, data, existing, expect) => ({
+  ...tc(name, path, method, uid, data, expect),
+  resource: { data: existing },
+});
 
 const cases = [
   tc("own catalog read", "/users/userAAA", "get", ME, null, "ALLOW"),
@@ -52,6 +64,29 @@ const cases = [
   tc("profile leaking email blocked", "/profiles/userAAA", "create", ME, { ...PROFILE, email: "a@b.c" }, "DENY"),
   tc("anon profile write blocked", "/profiles/userAAA", "create", null, PROFILE, "DENY"),
 
+  // The whole point of dropping `name`: the Google display name must not have
+  // a field to travel in, even if a future client tries to send one.
+  tc("profile carrying real name blocked", "/profiles/userAAA", "create", ME, { ...PROFILE, name: "Finn Lütke" }, "DENY"),
+  tc("profile with oversized username blocked", "/profiles/userAAA", "create", ME, { ...PROFILE, username: "x".repeat(17) }, "DENY"),
+  tc("profile with non-string username blocked", "/profiles/userAAA", "create", ME, { ...PROFILE, username: 42 }, "DENY"),
+
+  tc("claim a free username", "/usernames/finn", "create", ME, RESERVATION, "ALLOW"),
+  tc("claim for someone else blocked", "/usernames/finn", "create", ME, { uid: FRIEND }, "DENY"),
+  tc("claim with extra payload blocked", "/usernames/finn", "create", ME, { uid: ME, note: "x" }, "DENY"),
+  tc("anon claim blocked", "/usernames/finn", "create", null, RESERVATION, "DENY"),
+  tc("too-short username blocked", "/usernames/ab", "create", ME, RESERVATION, "DENY"),
+  tc("too-long username blocked", "/usernames/" + "x".repeat(17), "create", ME, RESERVATION, "DENY"),
+  tc("uppercase reservation blocked", "/usernames/Finn", "create", ME, RESERVATION, "DENY"),
+  tc("username with spaces blocked", "/usernames/fi nn", "create", ME, RESERVATION, "DENY"),
+  tc("read reservations", "/usernames/finn", "get", ME, null, "ALLOW"),
+  tc("anon reservation read blocked", "/usernames/finn", "get", null, null, "DENY"),
+
+  // The identity-theft cases: the reservation already exists and belongs to ME.
+  tcExisting("stealing a held username blocked", "/usernames/finn", "update", FRIEND, { uid: FRIEND }, RESERVATION, "DENY"),
+  tcExisting("deleting someone else's reservation blocked", "/usernames/finn", "delete", FRIEND, null, RESERVATION, "DENY"),
+  tcExisting("re-claiming your own username", "/usernames/finn", "update", ME, RESERVATION, RESERVATION, "ALLOW"),
+  tcExisting("releasing your own reservation", "/usernames/finn", "delete", ME, null, RESERVATION, "ALLOW"),
+
   tc("nudge a friend", "/profiles/userBBB/nudges/n1", "create", ME, NUDGE, "ALLOW"),
   tc("forged nudge sender blocked", "/profiles/userBBB/nudges/n1", "create", ME, { ...NUDGE, from: FRIEND }, "DENY"),
   tc("nudge with payload blocked", "/profiles/userBBB/nudges/n1", "create", ME, { ...NUDGE, blob: "x".repeat(50) }, "DENY"),
@@ -68,7 +103,13 @@ const res = await fetch(`https://firebaserules.googleapis.com/v1/projects/${PROJ
   headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   body: JSON.stringify({
     source: { files: [{ name: "firestore.rules", content: rules }] },
-    testSuite: { testCases: cases.map(c => ({ expectation: c.expect, request: c.request })) },
+    testSuite: {
+      testCases: cases.map(c => ({
+        expectation: c.expect,
+        request: c.request,
+        ...(c.resource ? { resource: c.resource } : {}),
+      })),
+    },
   }),
 });
 if (!res.ok) { console.error("API error", res.status, await res.text()); process.exit(1); }

@@ -12,9 +12,9 @@ const ok = (n, c, x) => { if (c) console.log("  ✓", n); else { failures++; con
 const eq = (n, a, b) => ok(n, JSON.stringify(a) === JSON.stringify(b), { got: a, want: b });
 
 const WK = "2026-08-10";
-const me = { uid: "me", name: "You", emoji: "🦉", weekXp: 100, streak: 5, level: 3 };
-const p = (uid, name, weekXp, streak = 0, weekKey = WK, level = 1) =>
-  ({ uid, name, emoji: "🐱", weekXp, streak, weekKey, level });
+const me = { uid: "me", username: "You", emoji: "🦉", weekXp: 100, streak: 5, level: 3 };
+const p = (uid, username, weekXp, streak = 0, weekKey = WK, level = 1) =>
+  ({ uid, username, emoji: "🐱", weekXp, streak, weekKey, level });
 
 console.log("leaderboard");
 {
@@ -24,7 +24,7 @@ console.log("leaderboard");
 }
 {
   const b = buildBoard(me, [p("a", "Anna", 250), p("b", "Ben", 40)], WK);
-  eq("sorted by weekly XP", b.map(r => r.name), ["Anna", "You", "Ben"]);
+  eq("sorted by weekly XP", b.map(r => r.username), ["Anna", "You", "Ben"]);
   eq("positions are 1..n", b.map(r => r.position), [1, 2, 3]);
   eq("exactly one isMe", b.filter(r => r.isMe).length, 1);
 }
@@ -32,24 +32,24 @@ console.log("leaderboard");
   // The bug this guards: a friend who hasn't opened the app since last week
   // still has last week's weekXp on their profile document.
   const b = buildBoard(me, [p("a", "StaleAnna", 9999, 3, "2026-08-03")], WK);
-  eq("stale week XP is zeroed", b.find(r => r.name === "StaleAnna").weekXp, 0);
-  eq("so I lead the board", b[0].name, "You");
+  eq("stale week XP is zeroed", b.find(r => r.username === "StaleAnna").weekXp, 0);
+  eq("so I lead the board", b[0].username, "You");
 }
 {
   const b = buildBoard(me, [p("a", "Anna", 100, 9), p("b", "Ben", 100, 1)], WK);
-  eq("XP ties broken by streak", b.map(r => r.name), ["Anna", "You", "Ben"]);
+  eq("XP ties broken by streak", b.map(r => r.username), ["Anna", "You", "Ben"]);
 }
 {
   const tie = { ...me, weekXp: 50, streak: 2 };
   const b = buildBoard(tie, [p("a", "Anna", 50, 2), p("b", "Bob", 50, 2)], WK);
-  eq("full ties fall back to name order", b.map(r => r.name), ["Anna", "Bob", "You"]);
+  eq("full ties fall back to name order", b.map(r => r.username), ["Anna", "Bob", "You"]);
   ok("still stable on re-run", JSON.stringify(b) === JSON.stringify(buildBoard(tie, [p("a", "Anna", 50, 2), p("b", "Bob", 50, 2)], WK)));
 }
 {
-  const b = buildBoard(me, [{ uid: "x", name: "Broken", emoji: "🐱", weekKey: WK }], WK);
-  eq("missing weekXp treated as 0", b.find(r => r.name === "Broken").weekXp, 0);
-  eq("missing streak treated as 0", b.find(r => r.name === "Broken").streak, 0);
-  eq("missing level defaults to 1", b.find(r => r.name === "Broken").level, 1);
+  const b = buildBoard(me, [{ uid: "x", username: "Broken", emoji: "🐱", weekKey: WK }], WK);
+  eq("missing weekXp treated as 0", b.find(r => r.username === "Broken").weekXp, 0);
+  eq("missing streak treated as 0", b.find(r => r.username === "Broken").streak, 0);
+  eq("missing level defaults to 1", b.find(r => r.username === "Broken").level, 1);
 }
 {
   const many = Array.from({ length: 30 }, (_, i) => p(`u${i}`, `User${String(i).padStart(2, "0")}`, i * 10, i));

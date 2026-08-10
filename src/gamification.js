@@ -87,6 +87,9 @@ export function emptyGame() {
     perfectSessions: 0,
     profileEmoji: "🦉",
     friends: [], // uids the user follows
+    username: null, // self-chosen, and the only name ever published
+    listed: true, // appear on the global board (opt-out lives in Settings)
+    reminder: { enabled: false, hour: 18, minute: 0 }, // daily study nudge
   };
 }
 
@@ -102,6 +105,25 @@ export function normalizeGame(raw) {
     friends: Array.isArray(raw.friends) ? raw.friends : [],
     quests: Array.isArray(raw.quests) ? raw.quests : [],
     goalCards: Number(raw.goalCards) > 0 ? Number(raw.goalCards) : DEFAULT_GOAL_CARDS,
+    username: typeof raw.username === "string" && raw.username ? raw.username : null,
+    // Absent means "not opted out" — save files written before the global
+    // board existed must not read as a silent opt-out.
+    listed: raw.listed !== false,
+    reminder: normalizeReminder(raw.reminder),
+  };
+}
+
+// A half-written reminder (hand-edited save, older build, partial sync) must
+// never schedule a notification at 25:73 — clamp rather than trust.
+function normalizeReminder(raw) {
+  const base = { enabled: false, hour: 18, minute: 0 };
+  if (!raw || typeof raw !== "object") return base;
+  const hour = Number(raw.hour);
+  const minute = Number(raw.minute);
+  return {
+    enabled: !!raw.enabled,
+    hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : base.hour,
+    minute: Number.isInteger(minute) && minute >= 0 && minute <= 59 ? minute : base.minute,
   };
 }
 

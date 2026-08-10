@@ -14,6 +14,7 @@ import * as imageStore from "./imageStore";
 import { pushBackHandler, consumeBack } from "./backHandler";
 import * as G from "./gamification";
 import * as social from "./social";
+import * as reminders from "./reminders";
 import {
   StatusBar, TodayCard, QuestList, StreakModal, GoalModal, FriendsModal,
   SessionReward, RiskBanner, MasteryPips, MasteryBar, Ring,
@@ -473,15 +474,21 @@ export default function FlashcardCatalog() {
     const { game: nextGame, award } = G.recordSession(currentDataRef.current.game, currentDataRef.current.cards, result);
     setGame(nextGame);
     publishProfile(nextGame);
+    // Today is done, so today's reminder should stop being pending.
+    reminders.sync(nextGame, nextGame.reminder, currentDataRef.current.cards).catch(() => {});
     return award;
   };
 
   // The public scoreboard document. Best-effort: a failed write just means a
   // friend sees a slightly stale number, never a broken app.
+  //
+  // Note what is *not* sent: the Google display name. The published identity is
+  // the self-chosen username and nothing else — see the header of social.js.
   const publishProfile = (g) => {
     if (!googleUser) return;
     social.publishProfile(googleUser.uid, {
-      name: googleUser.name || (googleUser.email || "").split("@")[0] || "Anonymous",
+      username: g.username || "",
+      listed: g.listed !== false,
       emoji: g.profileEmoji || "🦉",
       xp: g.xp,
       weekXp: G.weekXp(g),
@@ -526,6 +533,55 @@ export default function FlashcardCatalog() {
   const removeFriend = (uid) => {
     setGame(g => ({ ...g, friends: (g.friends || []).filter(f => f !== uid) }));
   };
+
+  // Claiming has to win in Firestore before it lands in local state — a name
+  // stored locally that someone else owns would show a leaderboard row that
+  // doesn't match what anyone else sees.
+  const setUsername = async (name) => {
+    if (!googleUser) return { ok: false, error: "Sign in first." };
+    const current = currentDataRef.current.game;
+    const res = await social.claimUsername(googleUser.uid, name, current.username);
+    if (!res.ok) return res;
+    const next = { ...current, username: res.username };
+    setGame(next);
+    publishProfile(next);
+    return { ok: true };
+  };
+
+  const setListed = (listed) => {
+    setGame(g => {
+      const next = { ...g, listed };
+      publishProfile(next);
+      return next;
+    });
+  };
+
+  // Returns a short note for the settings sheet when something needs saying —
+  // a denied permission is the one case the user has to act on themselves.
+  const setReminder = async (reminder) => {
+    const current = currentDataRef.current.game;
+    const next = { ...current, reminder };
+    setGame(next);
+    if (!reminder.enabled) {
+      await reminders.disable();
+      return "";
+    }
+    const res = await reminders.enable(next, reminder, currentDataRef.current.cards);
+    if (!res.ok && res.reason === "denied") {
+      setGame({ ...next, reminder: { ...reminder, enabled: false } });
+      return "Notifications are blocked for this app. Turn them on in Android settings, then try again.";
+    }
+    return "";
+  };
+
+  // Keep the pending queue honest across app launches: the horizon rolls
+  // forward, and a day studied on another device shouldn't still be pending.
+  useEffect(() => {
+    if (!loaded) return;
+    const g = currentDataRef.current.game;
+    if (!g.reminder || !g.reminder.enabled) return;
+    reminders.sync(g, g.reminder, currentDataRef.current.cards).catch(() => {});
+  }, [loaded]);
   const setGoal = (cardsPerDay) => {
     setGame(g => ({ ...g, goalCards: cardsPerDay }));
     setSheet("streak");
@@ -603,6 +659,7 @@ export default function FlashcardCatalog() {
           game={game} googleUser={googleUser}
           nudges={nudges} onClearNudges={clearNudges}
           onAddFriend={addFriend} onRemoveFriend={removeFriend}
+          onSetUsername={setUsername}
           onClose={() => setSheet(null)}
         />
       )}
@@ -611,6 +668,9 @@ export default function FlashcardCatalog() {
           onClose={() => setSettingsOpen(false)}
           darkMode={darkMode}
           onToggleDarkMode={toggleDarkMode}
+          game={game}
+          onSetReminder={setReminder}
+          onSetListed={setListed}
         />
       )}
       {view === "study" && (
@@ -2025,8 +2085,10 @@ function Switch({ checked, onChange }) {
   );
 }
 
-function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
+function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminder, onSetListed }) {
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
+  const [reminderBusy, setReminderBusy] = useState(false);
+  const [reminderNote, setReminderNote] = useState("");
   const [provider, setProviderState] = useState(aiImport.getProvider());
   const [hasKey, setHasKey] = useState(aiImport.hasApiKey());
   const info = aiImport.getProviderInfo(provider);
@@ -2065,6 +2127,69 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode }) {
           </span>
           <Switch checked={darkMode} onChange={onToggleDarkMode} />
         </div>
+        <div style={{ height: 1, background: "var(--card-border)", margin: "0 0 18px" }} />
+
+        <p style={{
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
+          textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
+        }}>Studying</p>
+        {reminders.isSupported() ? (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
+                Daily reminder
+              </span>
+              <Switch
+                checked={!!game.reminder.enabled}
+                onChange={async () => {
+                  setReminderBusy(true);
+                  const note = await onSetReminder({ ...game.reminder, enabled: !game.reminder.enabled });
+                  setReminderNote(note || "");
+                  setReminderBusy(false);
+                }}
+              />
+            </div>
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
+              {reminderNote || "A nudge at your chosen time — skipped automatically on days you've already studied."}
+            </p>
+            {game.reminder.enabled && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+                <span style={{ fontSize: 13.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif" }}>Remind me at</span>
+                <input
+                  type="time"
+                  value={reminders.formatTime(game.reminder.hour, game.reminder.minute)}
+                  disabled={reminderBusy}
+                  onChange={async (e) => {
+                    const [h, m] = e.target.value.split(":").map(Number);
+                    if (!Number.isInteger(h) || !Number.isInteger(m)) return;
+                    setReminderNote(await onSetReminder({ ...game.reminder, hour: h, minute: m }) || "");
+                  }}
+                  style={{
+                    background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 8,
+                    color: "var(--text-strong)", padding: "10px 12px", minHeight: 44,
+                    fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, outline: "none",
+                  }}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 14px", lineHeight: 1.45 }}>
+            Daily reminders need the installed Android app — the web version can't
+            schedule notifications.
+          </p>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
+            Show me on the global board
+          </span>
+          <Switch checked={game.listed !== false} onChange={() => onSetListed(game.listed === false)} />
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 20px", lineHeight: 1.45 }}>
+          Off hides you from everyone except the friends you've added. Either way
+          people only ever see your username, streak, level and weekly XP.
+        </p>
         <div style={{ height: 1, background: "var(--card-border)", margin: "0 0 18px" }} />
 
         <p style={{
