@@ -12,6 +12,12 @@ import { extractTextFromFile, fileToBase64, isTextFile } from "./fileImport";
 import * as ocr from "./ocr";
 import * as imageStore from "./imageStore";
 import { pushBackHandler, consumeBack } from "./backHandler";
+import * as G from "./gamification";
+import * as social from "./social";
+import {
+  StatusBar, TodayCard, QuestList, StreakModal, GoalModal, FriendsModal,
+  SessionReward, RiskBanner, MasteryPips, MasteryBar, Ring,
+} from "./gameUI";
 
 function openExternal(url) {
   Browser.open({ url }).catch(() => window.open(url, "_blank"));
@@ -86,11 +92,19 @@ const SRS_INTERVAL_DAYS = [0, 1, 3, 7, 14, 30];
 const DAY_MS = 24 * 60 * 60 * 1000;
 function applyGrade(card, correct) {
   const box = correct ? Math.min((card.srsBox || 0) + 1, SRS_INTERVAL_DAYS.length - 1) : 0;
-  return { ...card, srsBox: box, srsDue: Date.now() + SRS_INTERVAL_DAYS[box] * DAY_MS };
+  // srsPeak is the highest box this card has ever reached. It's what makes a
+  // "card strengthened" reward honest: re-climbing a box you already had
+  // doesn't pay again, so there's no XP in deliberately failing a strong card.
+  const peak = Math.max(card.srsPeak || 0, box);
+  return { ...card, srsBox: box, srsPeak: peak, srsDue: Date.now() + SRS_INTERVAL_DAYS[box] * DAY_MS };
+}
+// Did this answer push the card past its personal best?
+function isLevelUp(card, correct) {
+  if (!correct) return false;
+  const box = Math.min((card.srsBox || 0) + 1, SRS_INTERVAL_DAYS.length - 1);
+  return box > (card.srsPeak || card.srsBox || 0);
 }
 const isDue = (card) => card.srsDue == null || card.srsDue <= Date.now();
-const srsStage = (card) =>
-  card.srsBox == null ? "new" : card.srsBox >= 4 ? "mastered" : "learning";
 
 // ---------- tree helpers (subjects/subcategories nest to any depth) ----------
 function collectIds(node) {
@@ -182,6 +196,7 @@ const storage = {
 export default function FlashcardCatalog() {
   const [subjects, setSubjects] = useState([]);
   const [cards, setCards] = useState([]);
+  const [game, setGame] = useState(G.emptyGame);
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState("library"); // library | study | session
   const [error, setError] = useState("");
@@ -189,6 +204,9 @@ export default function FlashcardCatalog() {
   const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | error
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(getStoredDarkMode);
+  // Which gamification sheet is open, if any: streak | goal | friends
+  const [sheet, setSheet] = useState(null);
+  const [nudges, setNudges] = useState([]);
   // Which folder the study screen should open on — set when Study is tapped
   // from inside a folder, so you land on that deck instead of "All subjects".
   const [studyNodeId, setStudyNodeId] = useState("all");
@@ -196,13 +214,13 @@ export default function FlashcardCatalog() {
   const sessionOriginRef = useRef("study"); // where Exit/back leads from a session
   const updatedAtRef = useRef(0);
   const skipNextPush = useRef(false);
-  const currentDataRef = useRef({ subjects: [], cards: [] });
+  const currentDataRef = useRef({ subjects: [], cards: [], game: G.emptyGame() });
   // Which Google account the data currently in `subjects`/`cards` belongs to.
   // null means it has never been synced to any account yet.
   const ownerUidRef = useRef(null);
   useEffect(() => {
-    currentDataRef.current = { subjects, cards };
-  }, [subjects, cards]);
+    currentDataRef.current = { subjects, cards, game };
+  }, [subjects, cards, game]);
 
   // ---------- hardware/gesture back button (Android) ----------
   // Whatever's on top of the backHandler stack (a modal, a drilled-down
@@ -224,6 +242,14 @@ export default function FlashcardCatalog() {
     if (view === "session") return pushBackHandler(() => setView(sessionOriginRef.current));
   }, [view]);
 
+  // A bottom sheet is the topmost thing on screen, so back closes it first.
+  // The goal sheet is opened from the streak sheet, so back steps back to it
+  // rather than dumping the user all the way out to the library.
+  useEffect(() => {
+    if (sheet === "goal") return pushBackHandler(() => setSheet("streak"));
+    if (sheet) return pushBackHandler(() => setSheet(null));
+  }, [sheet]);
+
   // ---------- load ----------
   useEffect(() => {
     (async () => {
@@ -233,6 +259,9 @@ export default function FlashcardCatalog() {
           const parsed = JSON.parse(res.value);
           setSubjects(migrateSubjects(parsed.subjects || []));
           setCards(migrateCards(parsed.cards || []));
+          // rollOver settles any missed days (spending freezes) the moment the
+          // app opens, so the streak number on screen is never stale.
+          setGame(G.rollOver(G.normalizeGame(parsed.game)));
           updatedAtRef.current = parsed.updatedAt || 0;
           ownerUidRef.current = parsed.ownerUid || null;
         }
@@ -242,6 +271,22 @@ export default function FlashcardCatalog() {
       setLoaded(true);
     })();
   }, []);
+
+  // An app left open across midnight would otherwise keep showing yesterday's
+  // goal ring and yesterday's quests. Checked once a minute — cheap, and it
+  // also catches a phone whose clock jumped after a timezone change.
+  useEffect(() => {
+    if (!loaded) return;
+    const tick = () => {
+      setGame(g => {
+        const rolled = G.ensureQuests(G.rollOver(g));
+        return rolled === g ? g : rolled;
+      });
+    };
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, [loaded]);
 
   // ---------- restore Firebase session ----------
   useEffect(() => {
@@ -267,7 +312,7 @@ export default function FlashcardCatalog() {
     // it already set updatedAtRef to the remote's own timestamp, which is
     // more accurate than "now" for judging future incoming snapshots.
     if (shouldPush) updatedAtRef.current = Date.now();
-    const payload = { subjects, cards, updatedAt: updatedAtRef.current, ownerUid: ownerUidRef.current };
+    const payload = { subjects, cards, game, updatedAt: updatedAtRef.current, ownerUid: ownerUidRef.current };
     saveTimer.current = setTimeout(async () => {
       try {
         const result = await storage.set(STORAGE_KEY, JSON.stringify(payload));
@@ -290,12 +335,16 @@ export default function FlashcardCatalog() {
       }
     }, 400);
     return () => clearTimeout(saveTimer.current);
-  }, [subjects, cards, loaded, googleUser]);
+  }, [subjects, cards, game, loaded, googleUser]);
 
   const applyRemote = (remote) => {
     skipNextPush.current = true;
     setSubjects(migrateSubjects(remote.subjects || []));
     setCards(migrateCards(remote.cards || []));
+    // A payload written by an older version of the app has no `game` at all.
+    // Adopting it verbatim would silently reset a streak the user built here,
+    // so in that case we keep whatever this device already has.
+    if (remote.game) setGame(G.rollOver(G.normalizeGame(remote.game)));
     updatedAtRef.current = remote.updatedAt || Date.now();
   };
 
@@ -369,10 +418,12 @@ export default function FlashcardCatalog() {
         ownerUidRef.current = user.uid;
         if (remote) {
           applyRemote(remote);
+          if (!remote.game) setGame(G.emptyGame());
         } else {
           skipNextPush.current = true;
           setSubjects([]);
           setCards([]);
+          setGame(G.emptyGame());
           updatedAtRef.current = 0;
         }
       } else {
@@ -380,7 +431,7 @@ export default function FlashcardCatalog() {
         if (remote && (remote.updatedAt || 0) > updatedAtRef.current && !(isEmptyPayload(remote) && (subjects.length > 0 || cards.length > 0))) {
           applyRemote(remote);
         } else {
-          await safePush(user.uid, { subjects, cards, updatedAt: updatedAtRef.current || Date.now(), ownerUid: user.uid });
+          await safePush(user.uid, { subjects, cards, game, updatedAt: updatedAtRef.current || Date.now(), ownerUid: user.uid });
         }
       }
       setSyncState("synced");
@@ -412,6 +463,87 @@ export default function FlashcardCatalog() {
   // the updated cards flow through the normal debounced save + cloud sync.
   const gradeCard = (cardId, correct) => {
     setCards(cs => cs.map(c => (c.id === cardId ? applyGrade(c, correct) : c)));
+  };
+
+  // ---------- gamification ----------
+  // Everything a finished session is worth is computed in one place, from the
+  // answer log the Session screen hands back. The award object it returns is
+  // what the reward screen renders — no second source of truth.
+  const finishSession = (result) => {
+    const { game: nextGame, award } = G.recordSession(currentDataRef.current.game, currentDataRef.current.cards, result);
+    setGame(nextGame);
+    publishProfile(nextGame);
+    return award;
+  };
+
+  // The public scoreboard document. Best-effort: a failed write just means a
+  // friend sees a slightly stale number, never a broken app.
+  const publishProfile = (g) => {
+    if (!googleUser) return;
+    social.publishProfile(googleUser.uid, {
+      name: googleUser.name || (googleUser.email || "").split("@")[0] || "Anonymous",
+      emoji: g.profileEmoji || "🦉",
+      xp: g.xp,
+      weekXp: G.weekXp(g),
+      weekKey: G.weekStartKey(),
+      streak: g.streak,
+      level: G.levelForXp(g.xp),
+      rank: G.rankForWeekXp(G.weekXp(g)).id,
+      cardsTotal: G.lifetimeTotals(g).cards,
+    }).catch(() => {});
+  };
+
+  // Publish once on sign-in too, so a friend who adds your code sees a real
+  // row rather than an empty one until your next session.
+  useEffect(() => {
+    if (googleUser && loaded) publishProfile(currentDataRef.current.game);
+  }, [googleUser, loaded]);
+
+  // Pull any nudges friends left. Polled on open rather than with a live
+  // listener — a nudge is not worth an always-on socket.
+  useEffect(() => {
+    if (!googleUser) { setNudges([]); return; }
+    let cancelled = false;
+    social.fetchNudges(googleUser.uid)
+      .then(n => { if (!cancelled) setNudges(n); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [googleUser]);
+
+  const clearNudges = () => {
+    if (googleUser) social.clearNudges(googleUser.uid, nudges.map(n => n.id)).catch(() => {});
+    setNudges([]);
+  };
+
+  const addFriend = (uid) => {
+    setGame(g => {
+      const friends = [...new Set([...(g.friends || []), uid])];
+      const next = { ...g, friends };
+      next.achievements = G.evaluateAchievements(next, currentDataRef.current.cards);
+      return next;
+    });
+  };
+  const removeFriend = (uid) => {
+    setGame(g => ({ ...g, friends: (g.friends || []).filter(f => f !== uid) }));
+  };
+  const setGoal = (cardsPerDay) => {
+    setGame(g => ({ ...g, goalCards: cardsPerDay }));
+    setSheet("streak");
+  };
+
+  // "Study now" — the one-tap path. Builds the best queue it can without
+  // asking the user a single question: due cards first, weakest cards next,
+  // capped at the daily goal so a session always feels finishable.
+  const quickStudy = () => {
+    const due = shuffle(cards.filter(isDue));
+    let queue = due;
+    if (queue.length === 0) {
+      // Nothing due: practise the shakiest cards instead of a random grab bag.
+      queue = [...cards].sort((a, b) => (a.srsBox || 0) - (b.srsBox || 0)).slice(0, 30);
+      queue = shuffle(queue);
+    }
+    const remaining = Math.max(5, game.goalCards - G.todayStats(game).cards);
+    startSession(queue.slice(0, Math.max(remaining, 10)), "library");
   };
 
   const toggleDarkMode = () => {
@@ -446,10 +578,32 @@ export default function FlashcardCatalog() {
         <Library
           subjects={subjects} setSubjects={setSubjects}
           cards={cards} setCards={setCards}
+          game={game}
+          nudgeCount={nudges.length}
+          onOpenSheet={setSheet}
+          onQuickStudy={quickStudy}
           goStudy={(nodeId) => { setStudyNodeId(nodeId || "all"); setView("study"); }}
           startReview={(queue) => startSession(queue, "library")}
           googleUser={googleUser}
           onOpenSettings={() => setSettingsOpen(true)}
+        />
+      )}
+      {sheet === "streak" && (
+        <StreakModal
+          game={game} cards={cards}
+          onClose={() => setSheet(null)}
+          onOpenGoal={() => setSheet("goal")}
+        />
+      )}
+      {sheet === "goal" && (
+        <GoalModal game={game} onClose={() => setSheet(null)} onPick={setGoal} />
+      )}
+      {sheet === "friends" && (
+        <FriendsModal
+          game={game} googleUser={googleUser}
+          nudges={nudges} onClearNudges={clearNudges}
+          onAddFriend={addFriend} onRemoveFriend={removeFriend}
+          onClose={() => setSheet(null)}
         />
       )}
       {settingsOpen && (
@@ -471,7 +625,9 @@ export default function FlashcardCatalog() {
         <Session
           initialQueue={sessionQueueRef.current}
           allCards={cards}
+          game={game}
           onGrade={gradeCard}
+          onFinish={finishSession}
           onExit={() => setView(sessionOriginRef.current)}
         />
       )}
@@ -519,6 +675,10 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
         .fc-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
         @keyframes flipIn { from { transform: rotateY(90deg); opacity: 0.3; } to { transform: rotateY(0deg); opacity: 1; } }
         @keyframes popIn { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        @keyframes sheetUp { from { transform: translateY(24px); opacity: 0.4; } to { transform: translateY(0); opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) {
+          * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
         @media (max-width: 480px) {
           .fc-subtitle { display: none; }
           .fc-signin-label { display: none; }
@@ -664,7 +824,7 @@ function TextField({ value, onChange, placeholder, area, style, ...rest }) {
 }
 
 // ---------- LIBRARY ----------
-function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview, googleUser, onOpenSettings }) {
+function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onOpenSheet, onQuickStudy, goStudy, startReview, googleUser, onOpenSettings }) {
   const [path, setPath] = useState([]); // node ids from root subject down
   const [searchQuery, setSearchQuery] = useState("");
   const [addingSubject, setAddingSubject] = useState(false);
@@ -790,19 +950,25 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview,
 
     return (
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13, margin: 0 }}>
-            {subjects.length} subject{subjects.length !== 1 ? "s" : ""} · {totalCards} card{totalCards !== 1 ? "s" : ""}
-          </p>
-          <div style={{ display: "flex", gap: 8 }}>
-            <GhostButton onClick={() => setImportOpen({ mode: "paste" })}>
-              <Upload size={16} /> Import
-            </GhostButton>
-            <PrimaryButton onClick={goStudy} disabled={totalCards === 0}>
-              <BookOpen size={16} /> Study
-            </PrimaryButton>
-          </div>
-        </div>
+        <StatusBar
+          game={game}
+          nudgeCount={nudgeCount}
+          onOpenStreak={() => onOpenSheet("streak")}
+          onOpenFriends={() => onOpenSheet("friends")}
+        />
+        <RiskBanner game={game} onStudyNow={onQuickStudy} />
+
+        {totalCards > 0 && (
+          <TodayCard
+            game={game}
+            dueCount={dueCards.length}
+            totalCards={totalCards}
+            onStudyNow={onQuickStudy}
+            onOpenGoal={() => onOpenSheet("goal")}
+          />
+        )}
+
+        {totalCards > 0 && <QuestList game={game} />}
 
         {totalCards > 0 && (
           <div style={{ position: "relative", marginBottom: 14 }}>
@@ -844,11 +1010,14 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview,
                     <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
                       {c.back || "(picture)"}
                     </span>
-                    {folderNames && (
-                      <span style={{ display: "block", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8CA0C2", marginTop: 4 }}>
-                        {folderNames}
-                      </span>
-                    )}
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
+                      <MasteryPips card={c} showLabel />
+                      {folderNames && (
+                        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8CA0C2" }}>
+                          {folderNames}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 );
               })}
@@ -856,56 +1025,45 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview,
           )
         ) : (
         <>
-        {totalCards > 0 && dueCards.length > 0 && (
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-            background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 10,
-            padding: "14px 16px", marginBottom: 18, boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
-          }}>
-            <div>
-              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, color: "var(--text-strong)", margin: 0 }}>
-                {dueCards.length} card{dueCards.length !== 1 ? "s" : ""} ready to review
-              </p>
-              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "3px 0 0" }}>
-                Reviewing on time is what makes cards stick.
-              </p>
-            </div>
-            <PrimaryButton onClick={() => startReview(shuffle(dueCards))}>
-              <RotateCcw size={15} /> Review
-            </PrimaryButton>
-          </div>
-        )}
-        {totalCards > 0 && dueCards.length === 0 && (
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "#8CA0C2", margin: "0 0 16px" }}>
-            All caught up — nothing due for review right now. 🎉
-          </p>
+        {subjects.length === 0 && !addingSubject && (
+          <EmptyState onAdd={() => setAddingSubject(true)} onImport={() => setImportOpen({ mode: "paste" })} />
         )}
 
-        {subjects.length === 0 && !addingSubject && (
-          <EmptyState onAdd={() => setAddingSubject(true)} />
+        {subjects.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" }}>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8CA0C2", letterSpacing: 0.8, textTransform: "uppercase" }}>
+              Your subjects
+            </span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <SmallButton onClick={() => setImportOpen({ mode: "paste" })}><Upload size={14} /> Import</SmallButton>
+              <SmallButton onClick={() => setAddingSubject(true)}><Plus size={14} /> New</SmallButton>
+            </div>
+          </div>
         )}
 
         {subjects.map((s, i) => {
           const color = SUBJECT_COLORS[i % SUBJECT_COLORS.length];
-          const count = cards.filter(c => collectIds(s).includes(c.nodeId)).length;
+          const ids = collectIds(s);
+          const subjectCards = cards.filter(c => ids.includes(c.nodeId));
           return (
-            <NodeRow key={s.id} name={s.name} count={count} color={color.bg} tabColor={color.tab}
+            <NodeRow key={s.id} name={s.name} cards={subjectCards} color={color.bg} tabColor={color.tab}
               onOpen={() => setPath([s.id])}
               onDelete={() => deleteNode(s.id)}
               deleteTitle="Delete subject"
+              onStudy={subjectCards.length ? () => goStudy(s.id) : null}
             />
           );
         })}
 
-        <div style={{ marginTop: 24 }}>
-          {addingSubject ? (
+        <div style={{ marginTop: 20 }}>
+          {addingSubject && (
             <div style={{ display: "flex", gap: 8 }}>
-              <TextField value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)} placeholder="Subject name (e.g. Biology)" />
+              <TextField value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)}
+                placeholder="Subject name (e.g. Biology)" autoFocus
+                onKeyDown={e => { if (e.key === "Enter") addSubject(); if (e.key === "Escape") setAddingSubject(false); }} />
               <IconBtn title="Save" onClick={addSubject}><Check size={18} color="#5C7A44" /></IconBtn>
               <IconBtn title="Cancel" onClick={() => setAddingSubject(false)}><X size={18} color="#B5533C" /></IconBtn>
             </div>
-          ) : subjects.length > 0 && (
-            <GhostButton onClick={() => setAddingSubject(true)}><Plus size={16} /> New subject</GhostButton>
           )}
         </div>
         </>
@@ -1009,12 +1167,14 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview,
       {currentChildren.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           {currentChildren.map(child => {
-            const count = cards.filter(c => collectIds(child).includes(c.nodeId)).length;
+            const childIds = collectIds(child);
+            const childCards = cards.filter(c => childIds.includes(c.nodeId));
             return (
-              <NodeRow key={child.id} name={child.name} count={count} color={rootColor.bg} tabColor={rootColor.tab}
+              <NodeRow key={child.id} name={child.name} cards={childCards} color={rootColor.bg} tabColor={rootColor.tab}
                 onOpen={() => setPath([...path, child.id])}
                 onDelete={() => deleteNode(child.id)}
                 deleteTitle="Delete subcategory"
+                onStudy={childCards.length ? () => goStudy(child.id) : null}
                 compact
               />
             );
@@ -1084,39 +1244,82 @@ function Library({ subjects, setSubjects, cards, setCards, goStudy, startReview,
   );
 }
 
-function NodeRow({ name, count, color, tabColor, onOpen, onDelete, deleteTitle, compact }) {
+// A folder row now carries its own strength ring and a mastery bar, so the
+// library reads as "how solid is this deck" instead of just "how many cards".
+// The Study button sits on the row itself — one tap from the list into a
+// session, rather than opening the folder and hunting for a button.
+function NodeRow({ name, cards, color, tabColor, onOpen, onDelete, deleteTitle, compact, onStudy }) {
+  const list = cards || [];
+  const count = list.length;
+  const strength = G.deckStrength(list);
+  const due = list.filter(isDue).length;
   return (
     <div style={{ position: "relative", marginTop: compact ? 10 : 26 }}>
       <div
         onClick={onOpen}
         style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
           background: "var(--card-bg)", borderRadius: compact ? 8 : "2px 10px 10px 10px",
           boxShadow: compact ? "0 2px 8px rgba(0,0,0,0.18)" : "0 4px 14px rgba(0,0,0,0.25)",
-          padding: compact ? "13px 14px" : "16px 16px 14px 18px",
+          padding: compact ? "12px 14px" : "16px 16px 14px 18px",
           cursor: "pointer", borderLeft: compact ? `3px solid ${color}` : "none",
         }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <span style={{
-            fontFamily: compact ? "'IBM Plex Mono', monospace" : "Fraunces, serif",
-            fontWeight: 600,
-            fontSize: compact ? 13.5 : 19,
-            color: compact ? "var(--text-strong)" : "var(--text-strong)",
-            letterSpacing: compact ? 0.3 : 0,
-            textTransform: compact ? "uppercase" : "none",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>{name}</span>
-          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", flexShrink: 0 }}>
-            {count} card{count !== 1 ? "s" : ""}
-          </span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, flex: 1 }}>
+            {count > 0 && (
+              <Ring value={strength} size={compact ? 30 : 38} stroke={compact ? 3.5 : 4} color={color} track="var(--card-border)">
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: compact ? 9 : 10.5, fontWeight: 600, color: "var(--text-secondary)" }}>
+                  {Math.round(strength * 100)}
+                </span>
+              </Ring>
+            )}
+            <div style={{ minWidth: 0 }}>
+              <span style={{
+                display: "block",
+                fontFamily: compact ? "'IBM Plex Mono', monospace" : "Fraunces, serif",
+                fontWeight: 600,
+                fontSize: compact ? 13.5 : 19,
+                color: "var(--text-strong)",
+                letterSpacing: compact ? 0.3 : 0,
+                textTransform: compact ? "uppercase" : "none",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>{name}</span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>
+                {count} card{count !== 1 ? "s" : ""}{due > 0 ? ` · ${due} due` : ""}
+              </span>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            {onStudy && (
+              <button onClick={onStudy} title={`Study ${name}`} style={{
+                background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 8,
+                padding: "8px 12px", minHeight: 40, display: "flex", alignItems: "center", gap: 5,
+                fontFamily: "Inter, sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--text-strong)",
+                cursor: "pointer", WebkitTapHighlightColor: "transparent",
+              }}><BookOpen size={13} /> Study</button>
+            )}
+            <IconBtn title={deleteTitle} danger onClick={onDelete}><Trash2 size={14} color="#B5533C" /></IconBtn>
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          <IconBtn title={deleteTitle} danger onClick={onDelete}><Trash2 size={14} color="#B5533C" /></IconBtn>
-          <ChevronRight size={16} color="var(--text-faint)" />
-        </div>
+        {count > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <MasteryBar cards={list} height={compact ? 5 : 6} />
+          </div>
+        )}
       </div>
       {!compact && <IndexCardTab color={tabColor} label="Tap to open" />}
     </div>
+  );
+}
+
+function SmallButton({ onClick, children }) {
+  return (
+    <button onClick={onClick} style={{
+      background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.16)",
+      borderRadius: 8, padding: "8px 12px", minHeight: 40, color: "#EDE6D3",
+      fontFamily: "Inter, sans-serif", fontSize: 12.5, fontWeight: 600,
+      display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
+      WebkitTapHighlightColor: "transparent",
+    }}>{children}</button>
   );
 }
 
@@ -1145,23 +1348,30 @@ const crumbStyle = {
   WebkitTapHighlightColor: "transparent",
 };
 
-function EmptyState({ onAdd }) {
+function EmptyState({ onAdd, onImport }) {
   return (
     <div style={{
-      border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 12, padding: "36px 20px",
-      textAlign: "center", marginTop: 20,
+      border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 12, padding: "32px 20px",
+      textAlign: "center", marginTop: 12,
     }}>
-      <p style={{ color: "#EDE6D3", fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 18, margin: "0 0 6px" }}>
-        The drawer is empty.
+      <p style={{ color: "#EDE6D3", fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 19, margin: "0 0 6px" }}>
+        Let's get your first cards in.
       </p>
-      <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13, margin: "0 0 16px" }}>
-        Add your first subject to start building decks.
+      <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>
+        Snap a photo of a vocabulary list, drop in a PDF, or type a few by hand.
+        Your streak starts the day you answer your first card.
       </p>
-      <PrimaryButton onClick={onAdd} style={{ margin: "0 auto" }}><Plus size={16} /> New subject</PrimaryButton>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 260, margin: "0 auto" }}>
+        <PrimaryButton onClick={onImport}><Sparkles size={16} /> Import cards</PrimaryButton>
+        <GhostButton onClick={onAdd}><Plus size={16} /> Start a subject by hand</GhostButton>
+      </div>
     </div>
   );
 }
 
+// A card row now leads with its strength: pips, the state word, and when it's
+// coming back. That's the information that tells a student what to do next —
+// the answer mode never did.
 function CardRow({ card, onEdit, onDelete }) {
   const frontThumb = card.frontImageId ? imageStore.getImage(card.frontImageId) : null;
   return (
@@ -1181,8 +1391,11 @@ function CardRow({ card, onEdit, onDelete }) {
           <div style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--text-strong)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {card.frontImageId ? (frontThumb ? "Picture card" : "Picture (not on this device)") : card.front}
           </div>
-          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
-            {MODES.find(m => m.id === card.mode)?.label}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+            <MasteryPips card={card} showLabel />
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)" }}>
+              {G.describeDue(card)}
+            </span>
           </div>
         </div>
       </div>
@@ -2003,8 +2216,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
   const duePool = pool.filter(isDue);
   const useDue = scope === "due" && duePool.length > 0;
   const startPool = useDue ? duePool : pool;
-  const stageCount = { new: 0, learning: 0, mastered: 0 };
-  pool.forEach(c => { stageCount[srsStage(c)]++; });
+  const strength = G.deckStrength(pool);
 
   return (
     <div>
@@ -2050,12 +2262,22 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
         marginTop: 14, padding: 16, borderRadius: 10, background: "rgba(255,255,255,0.04)",
         border: "1px solid rgba(255,255,255,0.08)", fontFamily: "Inter, sans-serif",
       }}>
-        <p style={{ color: "#EDE6D3", fontSize: 14, margin: 0 }}>
-          {stageCount.new} new · {stageCount.learning} learning · {stageCount.mastered} mastered
-        </p>
-        <p style={{ color: "#8CA0C2", fontSize: 12.5, margin: "6px 0 0" }}>
-          Cards you get right come back after longer and longer breaks — missed cards stay due.
-        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <Ring value={strength} size={44} stroke={5} color="#F2C572" track="rgba(255,255,255,0.14)">
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, fontWeight: 600, color: "#EDE6D3" }}>
+              {Math.round(strength * 100)}
+            </span>
+          </Ring>
+          <div>
+            <p style={{ color: "#EDE6D3", fontSize: 14, fontWeight: 600, margin: 0 }}>
+              {Math.round(strength * 100)}% deck strength
+            </p>
+            <p style={{ color: "#8CA0C2", fontSize: 12.5, margin: "2px 0 0" }}>
+              {duePool.length} due now · {pool.length} card{pool.length !== 1 ? "s" : ""} total
+            </p>
+          </div>
+        </div>
+        <MasteryBar cards={pool} height={8} showLegend />
       </div>
 
       <PrimaryButton onClick={() => onStart(shuffle(startPool))} disabled={startPool.length === 0} style={{ marginTop: 18, width: "100%" }}>
@@ -2070,27 +2292,44 @@ const selectStyle = {
 };
 
 // ---------- SESSION ----------
-function Session({ initialQueue, allCards, onGrade, onExit }) {
+function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
   const [queue, setQueue] = useState(initialQueue);
   const [index, setIndex] = useState(0);
   const [missed, setMissed] = useState([]);
   const [correctCount, setCorrectCount] = useState(0);
   const [round, setRound] = useState(1);
+  // The reward screen needs one award object computed exactly once, when the
+  // round ends. Recomputing it on every render would hand out XP repeatedly.
+  const [award, setAward] = useState(null);
   // Only a card's FIRST answer this session moves it through the review
   // schedule — retry rounds are practice, not proof it'll stick tomorrow.
   const gradedIds = useRef(new Set());
+  // Every answer of the round, in order, for the XP calculation.
+  const answerLog = useRef([]);
   const current = queue[index];
 
   const handleResult = (wasCorrect) => {
-    if (onGrade && !gradedIds.current.has(current.id)) {
+    const firstTime = !gradedIds.current.has(current.id);
+    if (onGrade && firstTime) {
       gradedIds.current.add(current.id);
       onGrade(current.id, wasCorrect);
     }
+    answerLog.current.push({
+      correct: wasCorrect,
+      // A card climbing past its personal-best box is the only thing that
+      // pays the "strengthened" bonus.
+      levelUp: firstTime && isLevelUp(current, wasCorrect),
+      repeat: !firstTime,
+    });
     if (wasCorrect) setCorrectCount(n => n + 1);
     else setMissed(m => [...m, current]);
     if (index + 1 < queue.length) {
       setIndex(index + 1);
     } else {
+      // Round over: bank the XP once, then show what it was worth.
+      const perfect = missed.length === 0 && wasCorrect;
+      setAward(onFinish ? onFinish({ answers: answerLog.current, perfect }) : null);
+      answerLog.current = [];
       setIndex(queue.length); // triggers summary
     }
   };
@@ -2100,6 +2339,8 @@ function Session({ initialQueue, allCards, onGrade, onExit }) {
     setMissed([]);
     setIndex(0);
     setCorrectCount(0);
+    setAward(null);
+    answerLog.current = [];
     setRound(r => r + 1);
   };
 
@@ -2108,6 +2349,8 @@ function Session({ initialQueue, allCards, onGrade, onExit }) {
     setMissed([]);
     setIndex(0);
     setCorrectCount(0);
+    setAward(null);
+    answerLog.current = [];
     setRound(1);
   };
 
@@ -2119,41 +2362,42 @@ function Session({ initialQueue, allCards, onGrade, onExit }) {
           background: "none", border: "none", color: "#8CA0C2", display: "flex", alignItems: "center",
           gap: 6, fontFamily: "Inter, sans-serif", fontSize: 14, padding: "10px 4px", minHeight: 44, marginBottom: 14, WebkitTapHighlightColor: "transparent",
         }}><ArrowLeft size={15} /> Change deck</button>
-        <div style={{
-          background: "var(--card-bg)", borderRadius: 12, padding: 28, textAlign: "center",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.25)", animation: "popIn 0.2s ease-out",
-        }}>
-          <p style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 22, color: "var(--text-strong)", margin: "0 0 6px" }}>
-            Round {round} complete
-          </p>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15, color: "var(--text-secondary)", margin: "0 0 8px" }}>
-            {correctCount} of {queue.length} correct
-          </p>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "0 0 20px" }}>
-            Cards you got right will come back for review later — missed ones stay due.
-          </p>
-          {perfect && (
-            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "#5C7A44", fontWeight: 600, margin: "0 0 16px" }}>
-              Perfect round! 🎉
+
+        {award ? (
+          <SessionReward
+            award={award} game={game}
+            onDone={onExit}
+            onExtra={perfect ? studyAgain : retryMissed}
+          />
+        ) : (
+          <div style={{
+            background: "var(--card-bg)", borderRadius: 12, padding: 28, textAlign: "center",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.25)", animation: "popIn 0.2s ease-out",
+          }}>
+            <p style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 22, color: "var(--text-strong)", margin: "0 0 6px" }}>
+              Round {round} complete
             </p>
-          )}
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-            {!perfect && (
-              <PrimaryButton onClick={retryMissed}>
-                <RotateCcw size={16} /> Retry {missed.length} missed card{missed.length !== 1 ? "s" : ""}
-              </PrimaryButton>
-            )}
-            {perfect ? (
-              <PrimaryButton onClick={studyAgain}>
-                <Shuffle size={16} /> Study again
-              </PrimaryButton>
-            ) : (
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15, color: "var(--text-secondary)", margin: "0 0 20px" }}>
+              {correctCount} of {queue.length} correct
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              {!perfect && (
+                <PrimaryButton onClick={retryMissed}>
+                  <RotateCcw size={16} /> Retry {missed.length} missed
+                </PrimaryButton>
+              )}
               <GhostButton onClick={studyAgain} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
                 <Shuffle size={16} /> Study again
               </GhostButton>
-            )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {award && !perfect && (
+          <p style={{ textAlign: "center", fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "#8CA0C2", margin: "14px 0 0" }}>
+            "Keep going" replays the {missed.length} card{missed.length !== 1 ? "s" : ""} you missed.
+          </p>
+        )}
       </div>
     );
   }
