@@ -88,6 +88,7 @@ export function emptyGame() {
     profileEmoji: "🦉",
     friends: [], // uids the user follows
     username: null, // self-chosen, and the only name ever published
+    usernamePrompted: false, // has the "you're on the board as …" note been shown
     listed: true, // appear on the global board (opt-out lives in Settings)
     reminder: { enabled: false }, // escalating daily nudges — see reminders.js
   };
@@ -106,6 +107,7 @@ export function normalizeGame(raw) {
     quests: Array.isArray(raw.quests) ? raw.quests : [],
     goalCards: Number(raw.goalCards) > 0 ? Number(raw.goalCards) : DEFAULT_GOAL_CARDS,
     username: typeof raw.username === "string" && raw.username ? raw.username : null,
+    usernamePrompted: !!raw.usernamePrompted,
     // Absent means "not opted out" — save files written before the global
     // board existed must not read as a silent opt-out.
     listed: raw.listed !== false,

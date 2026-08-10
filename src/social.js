@@ -111,6 +111,31 @@ export async function claimUsername(uid, name, previous) {
   return { ok: true, username: name.trim() };
 }
 
+// Signing in must never leave someone nameless. Without this, a fresh account
+// publishes an empty username, which means no global board row and the word
+// "Anonymous" on every friend's board — invisible, with nothing on screen
+// explaining why. So a name is claimed automatically and the user is told they
+// can change it, rather than being silently left out.
+//
+// The suggestion is derived from the uid and so is stable, but two accounts can
+// still collide; a few numbered variants are tried before giving up, and the
+// last resort is random rather than another guaranteed collision.
+export function usernameCandidates(uid, rand = Math.random) {
+  const stem = suggestUsername(uid);
+  const out = [stem];
+  for (let i = 2; i <= 5; i++) out.push(`${stem}${i}`.slice(0, USERNAME_MAX));
+  out.push(`${stem.slice(0, 10)}${Math.floor(rand() * 9000 + 1000)}`.slice(0, USERNAME_MAX));
+  return out.filter(c => !validateUsername(c));
+}
+
+export async function claimSuggestedUsername(uid, previous) {
+  for (const candidate of usernameCandidates(uid)) {
+    const res = await claimUsername(uid, candidate, previous);
+    if (res.ok) return res;
+  }
+  return { ok: false, error: "Couldn't reserve a username." };
+}
+
 export async function isUsernameFree(name) {
   const key = usernameKey(name);
   if (!key) return false;

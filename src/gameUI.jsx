@@ -815,6 +815,44 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
 
 // ---------- the reward screen after a session ----------
 
+// Shown once, right after a name has been claimed on the user's behalf. The
+// point is that nobody discovers weeks later that they've been sitting on the
+// leaderboard under a generated name — or, worse, that they were invisible and
+// never knew.
+export function UsernameNotice({ username, onChange, onKeep }) {
+  return (
+    <ModalShell title="You're on the board" onClose={onKeep}>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--text-secondary)", margin: "0 0 12px", lineHeight: 1.5 }}>
+        Other players see you as
+      </p>
+      <div style={{
+        background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 10,
+        padding: "14px 16px", marginBottom: 14,
+      }}>
+        <span style={{
+          fontFamily: "Inter, sans-serif", fontSize: 18, fontWeight: 700, color: "var(--text-strong)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
+        }}>{username}</span>
+      </div>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "0 0 16px", lineHeight: 1.5 }}>
+        Your real name is never shown — this is the only name anyone sees. Change
+        it whenever you like.
+      </p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={onChange} style={{
+          flex: 1, background: "#F2C572", color: "#16233F", border: "none", borderRadius: 8,
+          minHeight: 48, fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
+        }}>Pick my own</button>
+        <button onClick={onKeep} style={{
+          flex: 1, background: "transparent", color: "var(--text-secondary)",
+          border: "1px solid var(--card-border)", borderRadius: 8, minHeight: 48,
+          fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
+        }}>Keep this</button>
+      </div>
+    </ModalShell>
+  );
+}
+
 export function SessionReward({ award, game, onDone, onExtra }) {
   const lvl = G.levelBounds(game.xp);
   const rows = [

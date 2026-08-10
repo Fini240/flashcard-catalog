@@ -161,9 +161,11 @@ Play Store compatibility problem).
       `POST_NOTIFICATIONS` is confirmed present in the built APK, but no one has
       watched a notification actually arrive. Check on a real phone, including
       after a reboot.
-- [ ] **Existing accounts have no username**, so they publish `username: ""`
-      and are not on the global board until they pick one. That's intended, but
-      it means the board looks empty until people open the Friends sheet once.
+- [x] Accounts without a username used to publish `username: ""`, which meant
+      no global board row and "Anonymous" on friends' boards — signed in but
+      invisible, with nothing on screen explaining it. Fixed: a name is claimed
+      automatically on sign-in and shown once in `UsernameNotice`. Existing
+      nameless accounts repair themselves on next launch.
 
 ## Working with this user
 

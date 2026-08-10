@@ -17,7 +17,7 @@ import * as social from "./social";
 import * as reminders from "./reminders";
 import {
   StatusBar, TodayCard, QuestList, StreakModal, GoalModal, FriendsModal,
-  SessionReward, RiskBanner, MasteryPips, MasteryBar, Ring,
+  SessionReward, RiskBanner, MasteryPips, MasteryBar, Ring, UsernameNotice,
 } from "./gameUI";
 
 function openExternal(url) {
@@ -208,6 +208,8 @@ export default function FlashcardCatalog() {
   // Which gamification sheet is open, if any: streak | goal | friends
   const [sheet, setSheet] = useState(null);
   const [nudges, setNudges] = useState([]);
+  // The auto-assigned username, shown once so it isn't a surprise.
+  const [usernameNotice, setUsernameNotice] = useState(null);
   // Which folder the study screen should open on — set when Study is tapped
   // from inside a folder, so you land on that deck instead of "All subjects".
   const [studyNodeId, setStudyNodeId] = useState("all");
@@ -502,8 +504,33 @@ export default function FlashcardCatalog() {
 
   // Publish once on sign-in too, so a friend who adds your code sees a real
   // row rather than an empty one until your next session.
+  //
+  // Anyone without a username gets one first. Publishing an empty username
+  // means `listed: false` and the word "Anonymous" on a friend's board — an
+  // account that is signed in but invisible, with nothing on screen saying why.
+  // Claiming a name up front makes the working state the default; the note that
+  // follows tells the user what they're called and that they can change it.
   useEffect(() => {
-    if (googleUser && loaded) publishProfile(currentDataRef.current.game);
+    if (!googleUser || !loaded) return;
+    let cancelled = false;
+    (async () => {
+      const current = currentDataRef.current.game;
+      if (current.username) { publishProfile(current); return; }
+
+      const res = await social.claimSuggestedUsername(googleUser.uid, null);
+      if (cancelled) return;
+      if (!res.ok) {
+        // Offline, or every candidate taken. Publish what we have so the rest
+        // of the profile is fresh, and try again on the next launch.
+        publishProfile(currentDataRef.current.game);
+        return;
+      }
+      const next = { ...currentDataRef.current.game, username: res.username };
+      setGame(next);
+      publishProfile(next);
+      if (!next.usernamePrompted) setUsernameNotice(res.username);
+    })();
+    return () => { cancelled = true; };
   }, [googleUser, loaded]);
 
   // Pull any nudges friends left. Polled on open rather than with a live
@@ -574,6 +601,13 @@ export default function FlashcardCatalog() {
     setGame(next);
     publishProfile(next);
     return { ok: true };
+  };
+
+  // Marking it shown is what keeps this a one-time note rather than a greeting
+  // on every launch.
+  const dismissUsernameNotice = () => {
+    setUsernameNotice(null);
+    setGame(g => (g.usernamePrompted ? g : { ...g, usernamePrompted: true }));
   };
 
   const setListed = (listed) => {
@@ -689,6 +723,13 @@ export default function FlashcardCatalog() {
           onAddFriend={addFriend} onRemoveFriend={removeFriend}
           onSetUsername={setUsername}
           onClose={() => setSheet(null)}
+        />
+      )}
+      {usernameNotice && (
+        <UsernameNotice
+          username={usernameNotice}
+          onChange={() => { dismissUsernameNotice(); setSheet("friends"); }}
+          onKeep={dismissUsernameNotice}
         />
       )}
       {settingsOpen && (

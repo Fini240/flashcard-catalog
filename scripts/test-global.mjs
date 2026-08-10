@@ -18,11 +18,12 @@ function slice(from, to) {
 const pure = [
   slice("const CODE_ALPHABET", "const profileRef"),
   slice("export const USERNAME_MIN", "// Claiming is a create"),
+  slice("export function usernameCandidates", "export async function claimSuggestedUsername"),
   slice("export function mergeFriendAdds", "// A nudge is a single tap"),
   slice("export function buildGlobalBoard", "// Builds the weekly board"),
 ].join("\n");
-const M = new Function(`${pure}; return { validateUsername, usernameKey, suggestUsername, buildGlobalBoard, mergeFriendAdds, codeForUid };`)();
-const { validateUsername, usernameKey, suggestUsername, buildGlobalBoard, mergeFriendAdds } = M;
+const M = new Function(`${pure}; return { validateUsername, usernameKey, suggestUsername, usernameCandidates, buildGlobalBoard, mergeFriendAdds, codeForUid };`)();
+const { validateUsername, usernameKey, suggestUsername, usernameCandidates, buildGlobalBoard, mergeFriendAdds } = M;
 
 let failures = 0;
 const ok = (n, c, x) => { if (c) console.log("  ✓", n); else { failures++; console.log("  ✗", n, x === undefined ? "" : JSON.stringify(x)); } };
@@ -101,6 +102,27 @@ ok("full ties fall back to name order", tied.map(r => r.username).join(",") === 
 ok("empty input gives an empty board", buildGlobalBoard([], "me", null).length === 0);
 ok("null input doesn't crash", buildGlobalBoard(null, "me", null).length === 0);
 ok("junk rows are skipped", buildGlobalBoard([null, undefined, { uid: "x" }], "me", null).length === 0);
+
+console.log("nobody is left nameless");
+// Signing in used to publish an empty username, which meant no board row and
+// "Anonymous" to friends. A name is now claimed automatically, so every
+// candidate it might land on has to be a legal one.
+const cands = usernameCandidates("someUid000000000000000000", () => 0.5);
+ok("offers several fallbacks", cands.length >= 5, cands.length);
+ok("every candidate is valid", cands.every(c => validateUsername(c) === null), cands.filter(c => validateUsername(c)));
+ok("all are within the length limit", cands.every(c => c.length <= 16), cands.filter(c => c.length > 16));
+ok("all are distinct", new Set(cands).size === cands.length, cands);
+ok("the first is the plain suggestion", cands[0] === suggestUsername("someUid000000000000000000"));
+ok("candidates are stable for a uid", usernameCandidates("abc", () => 0.5).join() === usernameCandidates("abc", () => 0.5).join());
+ok("different uids get different stems", usernameCandidates("abc", () => 0.5)[0] !== usernameCandidates("xyz", () => 0.5)[0]);
+// A random last resort must stay legal at both ends of its range.
+for (const r of [0, 0.999999]) {
+  const c = usernameCandidates("someUid000000000000000000", () => r);
+  ok(`random fallback at ${r} is valid`, validateUsername(c[c.length - 1]) === null, c[c.length - 1]);
+}
+// The 16-char ceiling is the thing most likely to break a generated name.
+const longStem = usernameCandidates("z".repeat(40), () => 0.5);
+ok("a long uid still yields legal names", longStem.every(c => validateUsername(c) === null), longStem);
 
 console.log("mutual friending");
 const add = (uid) => ({ id: uid, from: uid, at: 1 });
