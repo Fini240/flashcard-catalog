@@ -522,6 +522,11 @@ export default function FlashcardCatalog() {
     setNudges([]);
   };
 
+  // Adding is mutual, but it can't be mutual *instantly*: the other person's
+  // friend list is in their private document, which nobody else may write. So
+  // we add locally and leave a marker in their public space; their app folds it
+  // in on next launch. Until then the board is one-sided, which is the honest
+  // state of things rather than a bug.
   const addFriend = (uid) => {
     setGame(g => {
       const friends = [...new Set([...(g.friends || []), uid])];
@@ -529,7 +534,30 @@ export default function FlashcardCatalog() {
       next.achievements = G.evaluateAchievements(next, currentDataRef.current.cards);
       return next;
     });
+    if (googleUser) social.announceFriend(uid, googleUser.uid).catch(() => {});
   };
+
+  // The receiving half: anyone who added us since we last looked joins our own
+  // list. Merging is a union, so a marker that fails to clear costs nothing but
+  // a repeated no-op next launch.
+  useEffect(() => {
+    if (!googleUser || !loaded) return;
+    let cancelled = false;
+    social.fetchFriendAdds(googleUser.uid)
+      .then(adds => {
+        if (cancelled || !adds.length) return;
+        setGame(g => {
+          const friends = social.mergeFriendAdds(g.friends, adds, googleUser.uid);
+          if (friends.length === (g.friends || []).length) return g;
+          const next = { ...g, friends };
+          next.achievements = G.evaluateAchievements(next, currentDataRef.current.cards);
+          return next;
+        });
+        social.clearFriendAdds(googleUser.uid, adds.map(a => a.id)).catch(() => {});
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [googleUser, loaded]);
   const removeFriend = (uid) => {
     setGame(g => ({ ...g, friends: (g.friends || []).filter(f => f !== uid) }));
   };

@@ -30,6 +30,7 @@ const PROFILE = {
 };
 const NUDGE = { from: ME, name: "finn", emoji: "O", at: 1 };
 const RESERVATION = { uid: ME };
+const ADD = { from: ME, at: 1 };
 
 const tc = (name, path, method, uid, data, expect) => {
   const request = { path: `/databases/(default)/documents${path}`, method };
@@ -86,6 +87,19 @@ const cases = [
   tcExisting("deleting someone else's reservation blocked", "/usernames/finn", "delete", FRIEND, null, RESERVATION, "DENY"),
   tcExisting("re-claiming your own username", "/usernames/finn", "update", ME, RESERVATION, RESERVATION, "ALLOW"),
   tcExisting("releasing your own reservation", "/usernames/finn", "delete", ME, null, RESERVATION, "ALLOW"),
+
+  // Mutual friending: the marker's document id must be the sender's own uid,
+  // which is what stops one person filling someone's inbox with many docs.
+  tc("announce yourself to a friend", "/profiles/userBBB/friendAdds/userAAA", "create", ME, ADD, "ALLOW"),
+  tc("re-announcing is allowed", "/profiles/userBBB/friendAdds/userAAA", "update", ME, ADD, "ALLOW"),
+  tc("announcing under someone else's id blocked", "/profiles/userBBB/friendAdds/userCCC", "create", ME, { from: "userCCC", at: 1 }, "DENY"),
+  tc("forged sender blocked", "/profiles/userBBB/friendAdds/userAAA", "create", ME, { from: FRIEND, at: 1 }, "DENY"),
+  tc("marker with payload blocked", "/profiles/userBBB/friendAdds/userAAA", "create", ME, { ...ADD, blob: "x".repeat(50) }, "DENY"),
+  tc("anon announce blocked", "/profiles/userBBB/friendAdds/userAAA", "create", null, ADD, "DENY"),
+  tc("read my own markers", "/profiles/userAAA/friendAdds/userBBB", "get", ME, null, "ALLOW"),
+  tc("reading someone else's markers blocked", "/profiles/userBBB/friendAdds/userAAA", "get", ME, null, "DENY"),
+  tc("clear my own marker", "/profiles/userAAA/friendAdds/userBBB", "delete", ME, null, "ALLOW"),
+  tc("deleting someone else's marker blocked", "/profiles/userBBB/friendAdds/userAAA", "delete", ME, null, "DENY"),
 
   tc("nudge a friend", "/profiles/userBBB/nudges/n1", "create", ME, NUDGE, "ALLOW"),
   tc("forged nudge sender blocked", "/profiles/userBBB/nudges/n1", "create", ME, { ...NUDGE, from: FRIEND }, "DENY"),

@@ -46,6 +46,21 @@ service cloud.firestore {
                    && request.resource.data.username is string
                    && request.resource.data.username.size() <= 16;
 
+      // "I added you" markers, which is how a friendship becomes mutual: a
+      // friend list lives in a private document nobody else can write, so the
+      // adder leaves this instead and the owner folds it into their own list.
+      //
+      // The document id must be the sender's own uid. That makes it idempotent
+      // and caps the damage: one person can leave exactly one marker, so this
+      // can't be used to flood someone's inbox or as free storage.
+      match /friendAdds/{friendId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create, update: if request.auth != null
+                              && friendId == request.auth.uid
+                              && request.resource.data.keys().hasOnly(['from', 'at'])
+                              && request.resource.data.from == request.auth.uid;
+      }
+
       // Nudges are the one thing a friend may write into your space: a tap
       // that says "your streak is at risk". Create-only, and only for
       // yourself as the sender, so it can't be forged or used as storage.

@@ -18,10 +18,11 @@ function slice(from, to) {
 const pure = [
   slice("const CODE_ALPHABET", "const profileRef"),
   slice("export const USERNAME_MIN", "// Claiming is a create"),
+  slice("export function mergeFriendAdds", "// A nudge is a single tap"),
   slice("export function buildGlobalBoard", "// Builds the weekly board"),
 ].join("\n");
-const M = new Function(`${pure}; return { validateUsername, usernameKey, suggestUsername, buildGlobalBoard, codeForUid };`)();
-const { validateUsername, usernameKey, suggestUsername, buildGlobalBoard } = M;
+const M = new Function(`${pure}; return { validateUsername, usernameKey, suggestUsername, buildGlobalBoard, mergeFriendAdds, codeForUid };`)();
+const { validateUsername, usernameKey, suggestUsername, buildGlobalBoard, mergeFriendAdds } = M;
 
 let failures = 0;
 const ok = (n, c, x) => { if (c) console.log("  ✓", n); else { failures++; console.log("  ✗", n, x === undefined ? "" : JSON.stringify(x)); } };
@@ -100,6 +101,21 @@ ok("full ties fall back to name order", tied.map(r => r.username).join(",") === 
 ok("empty input gives an empty board", buildGlobalBoard([], "me", null).length === 0);
 ok("null input doesn't crash", buildGlobalBoard(null, "me", null).length === 0);
 ok("junk rows are skipped", buildGlobalBoard([null, undefined, { uid: "x" }], "me", null).length === 0);
+
+console.log("mutual friending");
+const add = (uid) => ({ id: uid, from: uid, at: 1 });
+ok("an incoming add joins the list", mergeFriendAdds(["a"], [add("b")], "me").sort().join(",") === "a,b");
+ok("merging is a union, not an append", mergeFriendAdds(["a", "b"], [add("b")], "me").length === 2);
+ok("re-merging the same marker is a no-op", mergeFriendAdds(mergeFriendAdds([], [add("b")], "me"), [add("b")], "me").length === 1);
+ok("several adds at once", mergeFriendAdds([], [add("a"), add("b"), add("c")], "me").length === 3);
+ok("my own uid is never added", !mergeFriendAdds([], [add("me")], "me").includes("me"));
+ok("existing friends are kept", mergeFriendAdds(["x", "y"], [], "me").sort().join(",") === "x,y");
+ok("no adds leaves the list alone", mergeFriendAdds(["x"], [], "me").length === 1);
+ok("null friends list survives", mergeFriendAdds(null, [add("b")], "me").join(",") === "b");
+ok("null adds survive", mergeFriendAdds(["a"], null, "me").join(",") === "a");
+ok("junk markers are skipped", mergeFriendAdds(["a"], [null, {}, add("b")], "me").sort().join(",") === "a,b");
+// The doc id is the sender's uid, so a marker missing its `from` still works.
+ok("falls back to the document id", mergeFriendAdds([], [{ id: "b", at: 1 }], "me").join(",") === "b");
 
 console.log("");
 if (failures) { console.log(`${failures} FAILURE(S)`); process.exit(1); }

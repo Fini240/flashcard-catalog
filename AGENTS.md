@@ -102,6 +102,13 @@ Play Store compatibility problem).
 - **Firebase client config in `src/firebaseSync.js` and `google-services.json`
   are committed on purpose** — Firebase client keys are not secrets; access is
   governed by Firestore security rules.
+- **Friending is mutual, but not instant.** A friend list lives in the private
+  `users/{uid}` document, so the adder cannot write to the other person's list.
+  Instead they leave a marker at `profiles/{them}/friendAdds/{me}` — document id
+  is the sender's uid, which makes it idempotent and caps one sender to one
+  marker — and the receiving app folds it in on next launch, then deletes it.
+  Removing a friend is deliberately one-sided: you drop them from your board,
+  they keep you on theirs.
 - **The Google display name is never published.** Public identity is a
   self-chosen username and nothing else. `profiles/` has no `name` field and
   the rules reject any write containing one, so this can't regress by accident.
@@ -146,7 +153,9 @@ Play Store compatibility problem).
       accounts.** Rules and leaderboard maths are covered by tests, but adding
       a friend by code, nudging, and seeing a friend's weekly XP have only been
       exercised against stubs. Verify with a second Google account before
-      treating it as done.
+      treating it as done. **The mutual-friending round trip especially** —
+      49 rules assertions cover who may write a marker, but nobody has watched
+      a marker actually make the return journey into the other person's list.
 - [ ] **Reminders have not been seen firing on a physical device.** The
       scheduling decision is tested (`scripts/test-reminders.mjs`) and
       `POST_NOTIFICATIONS` is confirmed present in the built APK, but no one has

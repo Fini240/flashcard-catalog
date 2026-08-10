@@ -624,7 +624,7 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
       const who = found && (found.username || "That player");
       if (!found) setStatus("No one found with that code. Codes are case-insensitive.");
       else if ((game.friends || []).includes(found.uid)) setStatus(`${who} is already on your board.`);
-      else { onAddFriend(found.uid); setCodeInput(""); setStatus(`Added ${who}.`); }
+      else { onAddFriend(found.uid); setCodeInput(""); setStatus(`Added ${who} — you're on each other's board.`); }
     } catch (e) {
       setStatus("Couldn't reach the leaderboard. Check your connection.");
     }
@@ -804,8 +804,10 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
         </p>
       )}
       <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "12px 0 0", lineHeight: 1.5 }}>
-        Friends see your name, streak, level and weekly XP — never your cards, your
-        subjects or your email. Remove someone any time and they drop off your board.
+        Adding someone puts you on each other's board — they'll see you once they
+        next open the app. Friends see your username, streak, level and weekly XP,
+        never your cards, your subjects or your email. Removing someone takes them
+        off your board only.
       </p>
     </ModalShell>
   );

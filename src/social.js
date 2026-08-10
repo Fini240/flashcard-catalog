@@ -185,6 +185,55 @@ export async function findByCode(code) {
   return snapshots[0].data;
 }
 
+// ---------- making a friendship mutual ----------
+// A friend list lives in the user's own private `users/{uid}` document, which
+// nobody else can write to — so adding someone can only ever be one-sided at
+// the moment it happens. This is the other half: the adder drops a marker in
+// the target's public space, and the target folds it into their own list the
+// next time they open the app.
+//
+// The document id is the sender's uid, which makes the whole thing idempotent —
+// adding the same person twice leaves one marker, not a growing pile — and
+// means the rules can check the sender by looking at the path.
+export async function announceFriend(toUid, fromUid) {
+  await FirebaseFirestore.setDocument({
+    reference: `profiles/${toUid}/friendAdds/${fromUid}`,
+    data: { from: fromUid, at: Date.now() },
+    merge: true,
+  });
+}
+
+export async function fetchFriendAdds(uid) {
+  const { snapshots } = await FirebaseFirestore.getCollection({
+    reference: `profiles/${uid}/friendAdds`,
+    queryConstraints: [{ type: "limit", limit: 50 }],
+  });
+  return (snapshots || []).map(s => ({ id: s.id, ...s.data }));
+}
+
+export async function clearFriendAdds(uid, ids) {
+  for (const id of ids) {
+    try {
+      await FirebaseFirestore.deleteDocument({ reference: `profiles/${uid}/friendAdds/${id}` });
+    } catch {
+      // A marker that fails to clear is merged again next launch — harmless,
+      // because merging is a set union rather than an append.
+    }
+  }
+}
+
+// Folds incoming markers into an existing friend list. A union, so re-merging
+// the same marker is a no-op, and self-references (which shouldn't happen, but
+// would be ugly if they did) are dropped.
+export function mergeFriendAdds(friends, adds, myUid) {
+  const out = new Set(friends || []);
+  for (const a of adds || []) {
+    const uid = a && (a.from || a.id);
+    if (uid && uid !== myUid) out.add(uid);
+  }
+  return [...out];
+}
+
 // A nudge is a single tap that lands in the friend's app as "Anna poked you —
 // your streak is at risk". Duolingo's own numbers say a shared commitment is
 // the strongest social lever there is; this is the cheapest version of it.
