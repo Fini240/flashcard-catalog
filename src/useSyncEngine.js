@@ -217,9 +217,12 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       for (const id of swept) delete next[id];
       pushedRef.current = next;
     }
-    await firebaseSync.pushData(uid, {
+    // NOTE: `cards` is deliberately absent, and this is a merging write. The
+    // parent document's pre-migration cards array must survive untouched —
+    // clients on older builds still read their catalog from it, and handing
+    // them an empty array wipes those devices. See pushParentData.
+    await firebaseSync.pushParentData(uid, {
       subjects: subjectsPayload,
-      cards: [], // cards live in the subcollection now; array kept as the empty rollback marker
       game: gamePayload,
       updatedAt: updatedAtRef.current,
       ownerUid: uid,
@@ -406,13 +409,24 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
         await enterPerCardMode(user.uid, remote);
       } else {
         ownerUidRef.current = user.uid;
+        // What the parent-doc push at the end of this branch must carry.
+        // Deliberately NOT read from currentDataRef at push time: that ref is
+        // refreshed by an effect, so between applyRemote below and the push it
+        // can still hold this device's pre-sign-in state. On a browser that had
+        // never synced, that state is empty — and pushing it would overwrite
+        // the account's real subject tree with nothing.
+        let subjectsToPush = currentDataRef.current.subjects;
+        let gameToPush = currentDataRef.current.game;
         if (!perCardModeRef.current && remote && (remote.updatedAt || 0) > updatedAtRef.current && !(isEmptyPayload(remote) && (subjects.length > 0 || cards.length > 0))) {
           applyRemote(remote);
+          // Mirror exactly what applyRemote just put into state.
+          subjectsToPush = migrate.migrateSubjects(remote.subjects || []);
+          if (remote.game) gameToPush = G.rollOver(G.normalizeGame(remote.game));
         }
         await enterPerCardMode(user.uid, remote);
         // Parent doc (subjects/game) still goes through the timestamp-guarded
         // push; cards now flow through the dirty-set push inside pushPerCard.
-        await pushPerCard(user.uid, currentDataRef.current.subjects, currentDataRef.current.game);
+        await pushPerCard(user.uid, subjectsToPush, gameToPush);
       }
       setSyncState("synced");
     } catch (e) {

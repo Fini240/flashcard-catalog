@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  mergeCardMaps, diffDirty, liveCards, toCardMap, sweepTombstones, TOMBSTONE_MAX_AGE_MS,
+  mergeCardMaps, diffDirty, liveCards, toCardMap, sweepTombstones, cardsNeedingWrite, TOMBSTONE_MAX_AGE_MS,
 } from "./cardSync";
 
 const card = (id, updatedAt, extra = {}) => ({ id, front: `f${id}`, back: `b${id}`, updatedAt, ...extra });
@@ -112,5 +112,46 @@ describe("sweepTombstones", () => {
     const { map: kept, swept } = sweepTombstones(map, now);
     expect(swept).toEqual(["old"]);
     expect(Object.keys(kept).sort()).toEqual(["fresh", "live"]);
+  });
+});
+
+describe("cardsNeedingWrite — the repeat-migration regression tests", () => {
+  it("a re-run over an already-migrated subcollection writes nothing", () => {
+    // A client on an old build overwrites the parent doc and drops
+    // cardsMigratedAt, so the next new client migrates again. The parent's
+    // cards array is a pre-migration snapshot; writing it back must not
+    // happen when the subcollection already holds the same cards.
+    const parentSnapshot = toCardMap([card("a", 100), card("b", 100)]);
+    const subcollection = toCardMap([card("a", 100), card("b", 100)]);
+    const merged = mergeCardMaps(parentSnapshot, subcollection);
+    expect(cardsNeedingWrite(merged, subcollection)).toEqual([]);
+  });
+
+  it("a re-run never rolls a card back to its pre-migration state", () => {
+    // The card was studied after the migration, so the subcollection copy is
+    // newer than the stale copy still sitting in the parent doc's array.
+    const parentSnapshot = toCardMap([card("x", 100, { srsBox: 0 })]);
+    const subcollection = toCardMap([card("x", 500, { srsBox: 4 })]);
+    const merged = mergeCardMaps(parentSnapshot, subcollection);
+    expect(merged.x.srsBox).toBe(4);
+    expect(cardsNeedingWrite(merged, subcollection)).toEqual([]);
+  });
+
+  it("a re-run does not resurrect a card deleted after the migration", () => {
+    const parentSnapshot = toCardMap([card("gone", 100)]);
+    const subcollection = toCardMap([{ id: "gone", updatedAt: 100, deletedAt: 400 }]);
+    const merged = mergeCardMaps(parentSnapshot, subcollection);
+    expect(merged.gone.deletedAt).toBe(400);
+    expect(liveCards(merged)).toEqual([]);
+    expect(cardsNeedingWrite(merged, subcollection)).toEqual([]);
+  });
+
+  it("still writes cards the subcollection is genuinely missing", () => {
+    // The offline-created card that only exists in the parent snapshot has to
+    // reach the subcollection, or migrating would lose it.
+    const parentSnapshot = toCardMap([card("known", 100), card("onlyInParent", 100)]);
+    const subcollection = toCardMap([card("known", 100)]);
+    const merged = mergeCardMaps(parentSnapshot, subcollection);
+    expect(cardsNeedingWrite(merged, subcollection).map(c => c.id)).toEqual(["onlyInParent"]);
   });
 });

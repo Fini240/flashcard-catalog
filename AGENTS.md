@@ -163,12 +163,34 @@ Play Store compatibility problem).
 
 ## Known hazards
 
-- **Cross-device sync has bitten this app twice.** Local data once overwrote a
-  freshly signed-in account's cards, and cards vanished from a logged-in
-  account (~90 lost). Both are fixed (`3d65e77`), but *any* change touching
+- **Cross-device sync has bitten this app three times.** Local data once
+  overwrote a freshly signed-in account's cards; cards vanished from a
+  logged-in account (~90 lost); and on 2026-08-11 a phone was wiped by the
+  per-card migration (below). All three are fixed, but *any* change touching
   `firebaseSync.js`, `useSyncEngine.js` or `cardSync.js`, or the
   sign-in/sign-out path, needs deliberate testing with two accounts and two
   devices before shipping.
+- **Old clients keep reading the parent doc's `cards` array — never empty it.**
+  This is the 2026-08-11 wipe. The migration ran in a browser, moved 5,766
+  cards into the subcollection, then pushed the parent document back with
+  `cards: []`. The user's phone was on a pre-per-card build, read that array as
+  the truth, and cleared itself. Nothing was lost server-side — the
+  subcollection had everything — but the device looked empty.
+  The rule that follows: **the parent-doc write in per-card mode merges and
+  omits `cards`** (`pushParentData`), so the pre-migration array survives and
+  an old client sees a stale-but-intact catalog rather than an empty one.
+  `pushData` still overwrites without merging and is correct for the legacy
+  whole-doc path — don't unify them.
+  More generally: **the web app updates itself on every deploy, the APK only
+  when the user installs it.** Assume a live account is being read by a client
+  weeks behind, and never let a schema change hand that client a valid-looking
+  empty state.
+- **The migration can run more than once.** A legacy client's whole-doc write
+  drops `cardsMigratedAt`, so the next new client migrates again. That's why
+  `migrateCardsToSubcollection` merges against the existing subcollection and
+  writes only what's missing or newer (`cardsNeedingWrite`) — a blind re-run
+  would roll every card back to its pre-migration state and resurrect
+  deletions. Covered by tests in `src/cardSync.test.js`.
 - **Per-card sync has two deployment prerequisites.** Cards live in
   `users/{uid}/cards/{cardId}`, and Firestore rules **do not cascade into
   subcollections** — the grant is the recursive `match /users/{userId}/{document=**}`.

@@ -82,6 +82,17 @@ export function diffDirty(localMap, pushedMap) {
   return dirty;
 }
 
+// Which of `merged` the subcollection doesn't already hold in at least this
+// state. On a repeat migration this is usually empty — that's the point: a
+// re-run must be a no-op, not a rewrite that rolls newer cards backwards.
+export function cardsNeedingWrite(merged, existing) {
+  return Object.values(merged).filter((c) => {
+    const e = existing[c.id];
+    if (!e) return true;
+    return (c.deletedAt || c.updatedAt || 0) > (e.deletedAt || e.updatedAt || 0);
+  });
+}
+
 // Live cards only, as the array the rest of the app expects.
 export function liveCards(cardMap) {
   return Object.values(cardMap).filter(c => !c.deletedAt);
@@ -159,14 +170,26 @@ export function listenToCards(uid, callback) {
 // then a marker on the parent. Safe to re-run after a crash: writes are
 // sets with the card id as the document id, so a second run just overwrites
 // what the first wrote.
+// Re-running this is not hypothetical. A client on a pre-per-card build still
+// writes the whole parent document without merging, which silently drops
+// `cardsMigratedAt` — and the next new client to sign in then sees an
+// unmigrated account and starts over. So the migration must never assume the
+// subcollection is empty: it merges against what is already there and writes
+// only the cards that are genuinely missing or older, or a second run would
+// roll every card back to its pre-migration state and resurrect deletions.
 export async function migrateCardsToSubcollection(uid, parentData, now = Date.now()) {
   const cards = (parentData && parentData.cards) || [];
   const stamped = cards.map(c => ({ ...c, updatedAt: c.updatedAt || now }));
-  if (stamped.length) await pushCards(uid, stamped);
+
+  const existing = await fetchCardMap(uid);
+  const merged = mergeCardMaps(toCardMap(stamped), existing);
+  const toWrite = cardsNeedingWrite(merged, existing);
+  if (toWrite.length) await pushCards(uid, toWrite);
+
   await FirebaseFirestore.setDocument({
     reference: userRef(uid),
     data: { cardsMigratedAt: now },
     merge: true,
   });
-  return toCardMap(stamped);
+  return merged;
 }

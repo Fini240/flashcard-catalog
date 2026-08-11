@@ -47,6 +47,24 @@ export async function pushData(uid, payload) {
   await FirebaseFirestore.setDocument({ reference: docRef(uid), data: payload });
 }
 
+// Per-card mode's parent-doc write. Unlike pushData this MERGES, and the
+// caller deliberately omits `cards` — so the pre-migration cards array on the
+// parent document is left exactly where it is.
+//
+// This is not tidiness. A client running a build from before per-card sync
+// reads its cards from that array, and a full overwrite that sets it to []
+// tells such a client its catalog is empty — which it then adopts, wiping the
+// device. That is precisely how a phone lost its cards on 2026-08-11 the
+// moment a newer browser session signed into the same account. Merging leaves
+// old clients on a stale-but-intact snapshot instead of an empty one, which is
+// a degraded reading experience rather than data loss.
+//
+// It also keeps `cardsMigratedAt` from being dropped by a write that doesn't
+// mention it. See the migration notes at the top of cardSync.js.
+export async function pushParentData(uid, payload) {
+  await FirebaseFirestore.setDocument({ reference: docRef(uid), data: payload, merge: true });
+}
+
 export async function listenToData(uid, callback) {
   return FirebaseFirestore.addDocumentSnapshotListener(
     { reference: docRef(uid) },
