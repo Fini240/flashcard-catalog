@@ -10,6 +10,7 @@ import * as firebaseSync from "./firebaseSync";
 import * as aiImport from "./aiImport";
 import { extractTextFromFile, fileToBase64, isTextFile } from "./fileImport";
 import * as ocr from "./ocr";
+import * as ankiImport from "./ankiImport";
 import * as imageStore from "./imageStore";
 import { pushBackHandler, consumeBack } from "./backHandler";
 import * as G from "./gamification";
@@ -1057,6 +1058,51 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
     return newCards.length;
   };
 
+  // An Anki export carries its own deck tree, so it can't go through
+  // importCards — that handles exactly one subject, and calling it in a loop
+  // would read a stale `subjects` from the closure on every pass after the
+  // first. Everything is therefore built up locally and committed once.
+  const importAnkiDecks = (decks, mode) => {
+    let nextSubjects = subjects;
+    const newCards = [];
+
+    const findOrAdd = (name, category) => {
+      const wanted = name.trim();
+      let subject = nextSubjects.find(s => s.name.toLowerCase() === wanted.toLowerCase());
+      if (!subject) {
+        subject = { id: uid(), name: wanted, children: [] };
+        nextSubjects = [...nextSubjects, subject];
+      }
+      // The app's model always puts cards in a subcategory; a flat Anki deck
+      // has none, so its provenance becomes the name.
+      const catName = (category || "Imported").trim();
+      let node = subject.children.find(c => c.name.toLowerCase() === catName.toLowerCase());
+      if (!node) {
+        node = { id: uid(), name: catName, children: [] };
+        const updated = { ...subject, children: [...subject.children, node] };
+        nextSubjects = nextSubjects.map(s => (s.id === subject.id ? updated : s));
+        subject = updated;
+      }
+      return { subjectId: subject.id, nodeId: node.id };
+    };
+
+    for (const deck of decks) {
+      if (!deck.cards || !deck.cards.length) continue;
+      const { subjectId, nodeId } = findOrAdd(deck.subject, deck.category);
+      for (const c of deck.cards) {
+        newCards.push({
+          id: uid(), subjectId, nodeId,
+          front: c.front, back: c.back, mode, manualOptions: [],
+        });
+      }
+    }
+
+    if (!newCards.length) return 0;
+    setSubjects(nextSubjects);
+    setCards([...cards, ...newCards]);
+    return newCards.length;
+  };
+
   const totalCards = cards.length;
 
   // ---------- top level: list of subjects ----------
@@ -1203,7 +1249,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
             subjects={subjects}
             initialMode={importOpen.mode}
             onClose={() => setImportOpen(null)}
-            onImport={importCards}
+            onImport={importCards} onImportAnki={importAnkiDecks}
             googleUser={googleUser}
             onOpenSettings={onOpenSettings}
           />
@@ -1364,7 +1410,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
           initialSubjectName={trail[0].name}
           initialCategoryName={currentNode.id !== trail[0].id ? currentNode.name : ""}
           onClose={() => setImportOpen(null)}
-          onImport={importCards}
+          onImport={importCards} onImportAnki={importAnkiDecks}
           googleUser={googleUser}
           onOpenSettings={onOpenSettings}
         />
@@ -1772,7 +1818,7 @@ const PHOTO_ACCEPT = ocr.isAvailable() ? "image/*" : SUPPORTED_IMAGE_ACCEPT;
 // vision on the actual image instead.
 const MIN_OCR_CHARS = 40;
 
-function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, initialMode, initialSubjectName, initialCategoryName }) {
+function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, onOpenSettings, initialMode, initialSubjectName, initialCategoryName }) {
   const [importMode, setImportMode] = useState(initialMode || "paste");
   const [subjectName, setSubjectName] = useState(initialSubjectName || "");
   const [categoryName, setCategoryName] = useState(initialCategoryName || "");
@@ -1783,6 +1829,9 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
   const [busy, setBusy] = useState(false);
   const [ocrRunning, setOcrRunning] = useState(false);
   const [pendingCards, setPendingCards] = useState(null);
+  // A parsed Anki package, and which of its decks the user wants.
+  const [anki, setAnki] = useState(null);
+  const [ankiChosen, setAnkiChosen] = useState(new Set());
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const galleryInputRef = useRef(null);
@@ -1836,8 +1885,19 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
     .filter(Boolean);
 
   const handleFile = async (file) => {
-    setError(""); setResult(""); setPendingCards(null); setBusy(true);
+    setError(""); setResult(""); setPendingCards(null); setAnki(null); setBusy(true);
     try {
+      // An Anki package is a database, not text — it has its own deck tree and
+      // its own review step, so it never touches the text/AI path below.
+      if (ankiImport.isAnkiFile(file.name)) {
+        const parsed = await ankiImport.parseApkg(file);
+        if (!parsed.totals.cards) {
+          throw new Error("No importable cards in that deck. Cards that are only images or audio can't come along.");
+        }
+        setAnki(parsed);
+        setAnkiChosen(new Set(parsed.decks.map(d => d.name)));
+        return;
+      }
       const raw = await extractTextFromFile(file);
       const localPairs = isTextFile(file.name) ? parseDelimitedPairs(raw) : [];
       if (localPairs.length > 0) {
@@ -1941,6 +2001,23 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
     setPendingCards(null);
   };
 
+  const toggleDeck = (name) => setAnkiChosen(prev => {
+    const next = new Set(prev);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
+
+  const ankiSelection = anki ? anki.decks.filter(d => ankiChosen.has(d.name)) : [];
+  const ankiSelectedCards = ankiSelection.reduce((n, d) => n + d.cards.length, 0);
+
+  const confirmAnkiImport = () => {
+    const count = onImportAnki(ankiSelection, mode);
+    const subjects = new Set(ankiSelection.map(d => d.subject)).size;
+    setResult(`Imported ${count} card${count !== 1 ? "s" : ""} into ${subjects} subject${subjects !== 1 ? "s" : ""}.`);
+    setAnki(null);
+    setAnkiChosen(new Set());
+  };
+
   const photoBusyLabel = ocrRunning ? "Reading photo…" : "Analyzing…";
   // Only meaningful right after an import that actually went through the
   // shared allowance — a user on their own key never sees a count.
@@ -1978,21 +2055,27 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
           ))}
         </div>
 
-        <Label>Subject</Label>
-        <TextField value={subjectName} onChange={e => setSubjectName(e.target.value)}
-          placeholder="e.g. Biology (existing or new)" list="import-subjects"
-          style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
-        <datalist id="import-subjects">
-          {subjects.map(s => <option key={s.id} value={s.name} />)}
-        </datalist>
+        {/* An Anki package names its own subjects and subcategories, so asking
+            for one here would be asking the user to overrule their own decks. */}
+        {!anki && (
+          <>
+            <Label>Subject</Label>
+            <TextField value={subjectName} onChange={e => setSubjectName(e.target.value)}
+              placeholder="e.g. Biology (existing or new)" list="import-subjects"
+              style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
+            <datalist id="import-subjects">
+              {subjects.map(s => <option key={s.id} value={s.name} />)}
+            </datalist>
 
-        <Label>Subcategory</Label>
-        <TextField value={categoryName} onChange={e => setCategoryName(e.target.value)}
-          placeholder="e.g. Cell structure (existing or new)" list="import-categories"
-          style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
-        <datalist id="import-categories">
-          {(matchedSubject?.children || []).map(c => <option key={c.id} value={c.name} />)}
-        </datalist>
+            <Label>Subcategory</Label>
+            <TextField value={categoryName} onChange={e => setCategoryName(e.target.value)}
+              placeholder="e.g. Cell structure (existing or new)" list="import-categories"
+              style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
+            <datalist id="import-categories">
+              {(matchedSubject?.children || []).map(c => <option key={c.id} value={c.name} />)}
+            </datalist>
+          </>
+        )}
 
         <Label>How should you answer these cards?</Label>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
@@ -2019,16 +2102,63 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
           </>
         )}
 
-        {importMode === "file" && !pendingCards && (
+        {importMode === "file" && !pendingCards && !anki && (
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
-              <Sparkles size={13} color="#C98A2B" /> .txt/.csv/.md files with "Front | Back" lines import instantly. PDFs, Word docs, and anything else get read by {aiLabel}.
+              <Sparkles size={13} color="#C98A2B" /> AnkiDroid decks (.apkg) and .txt/.csv/.md files with "Front | Back" lines import instantly, no key needed. PDFs, Word docs, and anything else get read by {aiLabel}.
             </p>
-            <input ref={fileInputRef} type="file" accept=".txt,.csv,.tsv,.md,.pdf,.docx" style={{ display: "none" }}
+            <input ref={fileInputRef} type="file" accept=".apkg,.colpkg,.txt,.csv,.tsv,.md,.pdf,.docx" style={{ display: "none" }}
               onChange={e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ""; }} />
             <GhostButton onClick={() => fileInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }} >
               <FileUp size={16} /> {busy ? "Reading file…" : "Choose file"}
             </GhostButton>
+          </>
+        )}
+
+        {anki && (
+          <>
+            <p style={{
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
+              textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 8px",
+            }}>Decks found</p>
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px", lineHeight: 1.45 }}>
+              Each deck becomes a subject, and a nested deck becomes a subcategory
+              inside it. Untick anything you don't want.
+            </p>
+            <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }} className="fc-scroll">
+              {anki.decks.map(deck => {
+                const on = ankiChosen.has(deck.name);
+                return (
+                  <button key={deck.name} onClick={() => toggleDeck(deck.name)} style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+                    background: on ? "rgba(242,197,114,0.12)" : "transparent",
+                    border: `1px solid ${on ? "rgba(242,197,114,0.4)" : "var(--card-border)"}`,
+                    borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer", minHeight: 52,
+                  }}>
+                    <span style={{
+                      width: 20, height: 20, flexShrink: 0, borderRadius: 5,
+                      border: `1.5px solid ${on ? "#C98A2B" : "var(--card-border)"}`,
+                      background: on ? "#F2C572" : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>{on && <Check size={13} color="#16233F" />}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{
+                        display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
+                        color: "var(--text-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>{deck.subject}</span>
+                      <span style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)" }}>
+                        {deck.category ? `${deck.category} · ` : ""}{deck.cards.length} card{deck.cards.length !== 1 ? "s" : ""}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {anki.warnings.map((w, i) => (
+              <p key={i} style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 6px", lineHeight: 1.45 }}>
+                {w}
+              </p>
+            ))}
           </>
         )}
 
@@ -2105,6 +2235,11 @@ function ImportModal({ subjects, onClose, onImport, googleUser, onOpenSettings, 
           {(importMode === "file" || importMode === "photo") && pendingCards && (
             <PrimaryButton onClick={confirmPendingImport} style={{ flex: 1 }} disabled={!canUpload || pendingCards.length === 0}>
               <Check size={16} /> Import {pendingCards.length} card{pendingCards.length !== 1 ? "s" : ""}
+            </PrimaryButton>
+          )}
+          {anki && (
+            <PrimaryButton onClick={confirmAnkiImport} style={{ flex: 1 }} disabled={ankiSelectedCards === 0}>
+              <Check size={16} /> Import {ankiSelectedCards} card{ankiSelectedCards !== 1 ? "s" : ""}
             </PrimaryButton>
           )}
           <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>Done</GhostButton>

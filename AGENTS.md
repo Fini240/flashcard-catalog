@@ -38,6 +38,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/aiImport.js` | AI card generation; owner-free-tier vs BYOK routing |
 | `src/ocr.js` | On-device ML Kit text recognition + fallback decision |
 | `src/fileImport.js` | PDF / .docx / text extraction |
+| `src/ankiImport.js` | AnkiDroid `.apkg` / `.colpkg` import — unzip, zstd, SQLite, HTML and cloze cleanup |
 | `src/firebaseSync.js` | Auth + Firestore sync (contains the Firebase client config) |
 | `src/imageStore.js` | Local storage of card images (never uploaded) |
 | `src/gamification.js` | XP, levels, weekly ranks, streaks, quests, achievements, heatmap |
@@ -102,6 +103,14 @@ Play Store compatibility problem).
 - **Firebase client config in `src/firebaseSync.js` and `google-services.json`
   are committed on purpose** — Firebase client keys are not secrets; access is
   governed by Firestore security rules.
+- **Anki import reads the real database, not an export text file.** An `.apkg`
+  is a ZIP holding a SQLite collection, zstd-compressed since Anki 2.1.50. Both
+  schema generations are supported (decks as JSON in `col` vs a `decks` table),
+  because AnkiDroid can still export either. `sql.js` pulls in a 660 KB WASM
+  blob, loaded lazily so only an actual Anki import pays for it.
+- **Anki media is deliberately not imported.** Images and audio stay behind and
+  a card whose side was only media is skipped with a count, rather than
+  arriving blank. Cloze notes become one fill-in-the-blank card per marker.
 - **Friending is mutual, but not instant.** A friend list lives in the private
   `users/{uid}` document, so the adder cannot write to the other person's list.
   Instead they leave a marker at `profiles/{them}/friendAdds/{me}` — document id
