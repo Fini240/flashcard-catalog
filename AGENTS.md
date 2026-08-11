@@ -185,6 +185,19 @@ Play Store compatibility problem).
   when the user installs it.** Assume a live account is being read by a client
   weeks behind, and never let a schema change hand that client a valid-looking
   empty state.
+- **Per-card mode must be entered on session *restore*, not just sign-in.**
+  `enterPerCardMode` was once reachable only from `handleSignIn`, so a page
+  reload or app relaunch dropped the client back into legacy mode — no
+  subcollection fetch, no cards listener, and the parent doc's dead `cards`
+  array read as the catalog. Symptom: cards visible on the device that did the
+  import, absent everywhere else. Two invariants hold the fix together:
+  `applyRemote` ignores `remote.cards` whenever `cardsMigratedAt` is set, and a
+  restored session adopts per-card mode for an already-migrated account.
+- **A `useRef` flip does not re-run an effect.** `perCardModeRef` gating the
+  cards listener meant that if the mode turned on after that effect had run,
+  the subcollection went unwatched for the whole session. Mode now lives in
+  state as well (`perCardMode`) and is in the effect's dependency list. Any
+  future "am I in mode X" gate inside an effect needs the same treatment.
 - **The migration can run more than once.** A legacy client's whole-doc write
   drops `cardsMigratedAt`, so the next new client migrates again. That's why
   `migrateCardsToSubcollection` merges against the existing subcollection and
