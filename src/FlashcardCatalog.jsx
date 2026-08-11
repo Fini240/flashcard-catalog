@@ -646,7 +646,30 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
         input, textarea, select { font-family: inherit; }
         .fc-scroll::-webkit-scrollbar { width: 8px; }
         .fc-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
-        @keyframes flipIn { from { transform: rotateY(90deg); opacity: 0.3; } to { transform: rotateY(0deg); opacity: 1; } }
+        /* Two-sided card flip. Both faces sit in the same grid cell so the
+           container is already as tall as the taller face — nothing below the
+           card relayouts mid-flip, which is what made this stutter before. */
+        .fc-flip { perspective: 1200px; }
+        .fc-flip-inner {
+          display: grid;
+          width: 100%;
+          transform-style: preserve-3d;
+          -webkit-transform-style: preserve-3d;
+          transition: transform 0.34s cubic-bezier(0.2, 0.8, 0.3, 1);
+          will-change: transform;
+        }
+        .fc-flip-face {
+          grid-area: 1 / 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+          transform: rotateY(0deg);
+        }
+        .fc-flip-face-back { transform: rotateY(180deg); }
+        .fc-flip-actions { transition: opacity 0.2s ease-out 0.14s; }
         @keyframes popIn { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         @keyframes sheetUp { from { transform: translateY(24px); opacity: 0.4; } to { transform: translateY(0); opacity: 1; } }
         @media (prefers-reduced-motion: reduce) {
@@ -763,9 +786,9 @@ function IconBtn({ onClick, title, children, danger }) {
   );
 }
 
-function PrimaryButton({ onClick, children, style, disabled }) {
+function PrimaryButton({ onClick, children, style, disabled, tabIndex }) {
   return (
-    <button onClick={onClick} disabled={disabled} style={{
+    <button onClick={onClick} disabled={disabled} tabIndex={tabIndex} style={{
       background: disabled ? "var(--shell-raised)" : "var(--accent)", color: disabled ? "var(--on-shell-muted)" : "var(--shell-bg)",
       border: "none", borderRadius: 10, padding: "14px 22px", minHeight: 48,
       fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 15.5,
@@ -774,9 +797,9 @@ function PrimaryButton({ onClick, children, style, disabled }) {
     }}>{children}</button>
   );
 }
-function GhostButton({ onClick, children, style }) {
+function GhostButton({ onClick, children, style, tabIndex }) {
   return (
-    <button onClick={onClick} style={{
+    <button onClick={onClick} tabIndex={tabIndex} style={{
       background: "transparent", color: "#EDE6D3", border: "1px solid rgba(255,255,255,0.18)",
       borderRadius: 10, padding: "13px 20px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: 15.5,
       display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
@@ -2930,26 +2953,30 @@ function FlipCard({ card, onResult }) {
   return (
     <CardShell tabLabel="Flip">
       <div
+        className="fc-flip"
         onClick={() => setFlipped(f => !f)}
-        style={{
-          cursor: "pointer", minHeight: 140, display: "flex", alignItems: "center", justifyContent: "center",
-          textAlign: "center", animation: flipped ? "flipIn 0.25s ease-out" : "none",
-        }}>
-        {flipped
-          ? <CardFace text={card.back} imageId={card.backImageId} />
-          : <CardFace text={card.front} imageId={card.frontImageId} />}
+        style={{ cursor: "pointer", minHeight: 140, display: "flex", alignItems: "center" }}>
+        <div className="fc-flip-inner" style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
+          <div className="fc-flip-face">
+            <CardFace text={card.front} imageId={card.frontImageId} />
+          </div>
+          <div className="fc-flip-face fc-flip-face-back">
+            <CardFace text={card.back} imageId={card.backImageId} />
+          </div>
+        </div>
       </div>
       <p style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "8px 0 18px" }}>
         {flipped ? "That's the answer" : "Tap the card to reveal the answer"}
       </p>
-      {flipped ? (
-        <div style={{ display: "flex", gap: 8 }}>
-          <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
-          <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
-        </div>
-      ) : (
-        <div style={{ height: 40 }} />
-      )}
+      {/* Kept mounted and faded in, so the flip never has to share a frame with
+          the buttons appearing and pushing the layout around. */}
+      <div
+        className="fc-flip-actions"
+        aria-hidden={!flipped}
+        style={{ display: "flex", gap: 8, opacity: flipped ? 1 : 0, pointerEvents: flipped ? "auto" : "none" }}>
+        <GhostButton onClick={() => onResult(false)} tabIndex={flipped ? 0 : -1} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
+        <PrimaryButton onClick={() => onResult(true)} tabIndex={flipped ? 0 : -1} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
+      </div>
     </CardShell>
   );
 }
