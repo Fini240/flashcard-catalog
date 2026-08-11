@@ -12,9 +12,13 @@ export function report(where, err) {
   // eslint-disable-next-line no-console
   console.error(`[${where}]`, err);
   try {
+    // Firestore and the Capacitor plugins put the useful part in `code`
+    // ("permission-denied", "unavailable", "failed-precondition"); the message
+    // alone is often just "An internal error occurred".
+    const code = err && err.code ? String(err.code) : "";
     const entry = {
       where,
-      err: err && err.message ? err.message : String(err),
+      err: [code, err && err.message ? err.message : String(err)].filter(Boolean).join(" — "),
       at: new Date().toISOString(),
     };
     window.__lastErrors = [...(window.__lastErrors || []).slice(-(MAX_ENTRIES - 1)), entry];
@@ -34,10 +38,18 @@ export function recentErrors() {
 
 // Everything the diagnostics dump knows about, as plain text for pasting
 // into a bug report.
+function safe(fn) {
+  try { return String(fn()); } catch (e) { return "unavailable"; }
+}
+
 export function diagnosticsText(extra = {}) {
   const lines = [
     `Flashcard Catalog diagnostics — ${new Date().toISOString()}`,
     `platform: ${navigator.userAgent}`,
+    // Which origin this is matters: local data lives per-origin, so the same
+    // account on two addresses is two different local stores.
+    `origin: ${safe(() => window.location.origin)}`,
+    `online: ${safe(() => navigator.onLine)}`,
   ];
   for (const [k, v] of Object.entries(extra)) lines.push(`${k}: ${v}`);
   const errs = recentErrors();

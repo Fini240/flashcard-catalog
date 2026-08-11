@@ -326,6 +326,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
         if (!result) setError("Couldn't save — your last change may not persist.");
         else setError("");
       } catch (e) {
+        report("sync.saveLocal", e);
         setError("Couldn't save — your last change may not persist.");
       }
       // Only push to Firestore if this data is actually attributed to the
@@ -341,6 +342,10 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
           }
           setSyncState("synced");
         } catch (e) {
+          // Without this, the header goes red and "Copy diagnostics" comes
+          // back empty — the one path most likely to be reported is the one
+          // that left no evidence.
+          report("sync.push", e);
           setSyncState("error");
         }
       }
@@ -511,6 +516,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     } catch (e) {
       setSyncState("error");
       if (e && e.code !== "USER_CANCELLED") {
+        report("sync.signIn", e);
         setError(`Google sign-in failed: ${e && e.message ? e.message : e}`);
       }
     }
@@ -520,7 +526,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     try {
       await firebaseSync.signOut();
     } catch (e) {
-      // ignore
+      report("sync.signOut", e);
     }
     setGoogleUser(null);
     setSyncState("idle");
