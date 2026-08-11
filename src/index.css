@@ -16,6 +16,12 @@ html, body, #root {
    wired to anything. The per-subject palette (SUBJECT_COLORS) deliberately
    stays as literal hex: that's content, not theme. */
 :root {
+  /* Declares that this page handles both schemes itself. Without it, Android's
+     WebView treats the app as light-only and algorithmically inverts the
+     colours when the device is dark — which would fight the theming below
+     rather than complement it. */
+  color-scheme: light dark;
+
   --shell-bg: #16233F;        /* the dark navy app shell; also the ink on --accent */
   --shell-bg-deep: #0F1A30;   /* inputs/recessed surfaces on the shell */
   --shell-raised: #3A4A68;    /* disabled fills, borders on the shell */

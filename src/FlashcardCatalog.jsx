@@ -23,6 +23,10 @@ import * as G from "./gamification";
 import * as social from "./social";
 import * as reminders from "./reminders";
 import * as backup from "./backup";
+import {
+  THEME_CHOICES, DARK_QUERY, getStoredTheme, setStoredTheme,
+  systemPrefersDark, resolveDarkMode,
+} from "./theme";
 import * as drillsLib from "./drills";
 import * as aiDrills from "./aiDrills";
 import { ClozeCard, TrueFalseCard, MatchCard } from "./drillUI";
@@ -47,13 +51,21 @@ const SUBJECT_COLORS = [
   { bg: "#5C7A44", tab: "#496035" }, // moss
   { bg: "#A6435E", tab: "#87344A" }, // rose
 ];
-const THEME_KEY = "flashcard-catalog-dark-mode";
-const getStoredDarkMode = () => {
-  try { return localStorage.getItem(THEME_KEY) === "1"; } catch (e) { return false; }
-};
-const setStoredDarkMode = (value) => {
-  try { localStorage.setItem(THEME_KEY, value ? "1" : "0"); } catch (e) { /* ignore */ }
-};
+// Follows the device while the app is open, not just at launch: Android sends
+// a uiMode configuration change rather than restarting the activity (see the
+// manifest), and a phone on a scheduled dark mode will flip while you're
+// mid-session.
+function useSystemDark() {
+  const [dark, setDark] = useState(systemPrefersDark);
+  useEffect(() => {
+    let mq;
+    try { mq = window.matchMedia(DARK_QUERY); } catch (e) { return undefined; }
+    const onChange = (e) => setDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return dark;
+}
 // The card/modal "paper" surface is themeable; the dark navy shell around it
 // stays the same in both modes (it's already dark) — dark mode only changes
 // how that paper surface itself looks.
@@ -167,7 +179,9 @@ export default function FlashcardCatalog() {
   const [view, setView] = useState("library"); // library | study | session
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(getStoredDarkMode);
+  const [theme, setTheme] = useState(getStoredTheme);
+  const systemDark = useSystemDark();
+  const darkMode = resolveDarkMode(theme, systemDark);
   // Which gamification sheet is open, if any: streak | goal | friends
   const [sheet, setSheet] = useState(null);
   const [nudges, setNudges] = useState([]);
@@ -511,12 +525,9 @@ export default function FlashcardCatalog() {
     startSession(queue.slice(0, Math.max(remaining, 10)), "library");
   };
 
-  const toggleDarkMode = () => {
-    setDarkMode((d) => {
-      const next = !d;
-      setStoredDarkMode(next);
-      return next;
-    });
+  const chooseTheme = (id) => {
+    setTheme(id);
+    setStoredTheme(id);
   };
 
   if (!loaded) {
@@ -583,7 +594,8 @@ export default function FlashcardCatalog() {
         <SettingsModal
           onClose={() => setSettingsOpen(false)}
           darkMode={darkMode}
-          onToggleDarkMode={toggleDarkMode}
+          theme={theme}
+          onChooseTheme={chooseTheme}
           game={game}
           onSetReminder={setReminder}
           onSetListed={setListed}
@@ -2230,7 +2242,7 @@ function Switch({ checked, onChange }) {
   );
 }
 
-function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminder, onSetListed, onExport, onImport, diagInfo }) {
+function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetListed, onExport, onImport, diagInfo }) {
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [reminderNote, setReminderNote] = useState("");
@@ -2283,12 +2295,29 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminde
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
         }}>Appearance</p>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
-            Dark mode
-          </span>
-          <Switch checked={darkMode} onChange={onToggleDarkMode} />
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          {THEME_CHOICES.map(c => {
+            const active = theme === c.id;
+            return (
+              <button key={c.id} onClick={() => onChooseTheme(c.id)} style={{
+                flex: 1, padding: "11px 6px", minHeight: 44, borderRadius: 8,
+                border: `1px solid ${active ? "var(--brand)" : "var(--card-border)"}`,
+                background: active ? "var(--brand)" : "transparent",
+                color: active ? "#FBF7EC" : "var(--text-secondary)",
+                fontFamily: "Inter, sans-serif", fontSize: 13.5, fontWeight: 600,
+                WebkitTapHighlightColor: "transparent",
+              }}>{c.label}</button>
+            );
+          })}
         </div>
+        <p style={{
+          fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)",
+          margin: "0 0 20px", lineHeight: 1.45,
+        }}>
+          {theme === "system"
+            ? <>Following your device, which is currently {darkMode ? "dark" : "light"}. Changes as it does.</>
+            : <>Staying {theme} whatever the device is set to.</>}
+        </p>
         <div style={{ height: 1, background: "var(--card-border)", margin: "0 0 18px" }} />
 
         <p style={{

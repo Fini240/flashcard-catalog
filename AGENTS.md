@@ -63,6 +63,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore` |
 | `firestore.indexes.json` | Composite index behind the global board. Deployed by the same command. |
 | `src/backHandler.js` | Android hardware/gesture back button → in-app navigation |
+| `src/theme.js` | Light/dark choice — automatic (device), light or dark. Holds the migration off the old boolean switch; unit-tested. |
 | `functions/index.js` | Cloud Function `generateFlashcards`; `DAILY_LIMIT` (per user) and `GLOBAL_DAILY_LIMIT` (whole project) live here |
 | `scripts/screenshots.mjs` | Regenerates Play Store screenshots via puppeteer-core |
 | `PLAY_STORE.md` | **The Play Store release runbook. Authoritative — read it before any release work.** |
@@ -183,6 +184,15 @@ Play Store compatibility problem).
 
 ## Known hazards
 
+- **Automatic light/dark needs a native opt-in, not just the media query.**
+  The app follows the device via `prefers-color-scheme` (`src/theme.js`), but
+  for apps targeting SDK 33+ Android's WebView reports that query as *light*
+  regardless of the phone's setting unless `setAlgorithmicDarkeningAllowed` is
+  on — set in `MainActivity`. The activity theme must also stay `DayNight`
+  (`styles.xml`), and `src/index.css` must keep `color-scheme: light dark`, or
+  the WebView decides the page is light-only and inverts the colours itself.
+  Three separate pieces, and the failure is silent: the web build looks right
+  while the APK is stuck in one mode.
 - **A new hosting domain needs three things, not one.** Adding a site gets you
   the URL, but Google sign-in fails with `auth/unauthorized-domain` until the
   domain is added under Auth → Settings → Authorized domains (console only —
