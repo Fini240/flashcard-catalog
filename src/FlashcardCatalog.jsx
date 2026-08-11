@@ -905,7 +905,10 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
   // importCards — that handles exactly one subject, and calling it in a loop
   // would read a stale `subjects` from the closure on every pass after the
   // first. Everything is therefore built up locally and committed once.
-  const importAnkiDecks = (decks, mode) => {
+  const importAnkiDecks = (allDecks, mode) => {
+    // Drop anything already in the catalog before creating any folders, so a
+    // re-import doesn't leave an empty subject behind either.
+    const { decks, skipped } = ankiImport.dropDuplicateCards(allDecks, cards);
     let nextSubjects = subjects;
     const newCards = [];
 
@@ -940,10 +943,10 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
       }
     }
 
-    if (!newCards.length) return 0;
+    if (!newCards.length) return { added: 0, skipped };
     setSubjects(nextSubjects);
     setCards([...cards, ...newCards]);
-    return newCards.length;
+    return { added: newCards.length, skipped };
   };
 
   const totalCards = cards.length;
@@ -1924,9 +1927,16 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
   const ankiSelectedCards = ankiSelection.reduce((n, d) => n + d.cards.length, 0);
 
   const confirmAnkiImport = () => {
-    const count = onImportAnki(ankiSelection, mode);
+    const { added, skipped } = onImportAnki(ankiSelection, mode);
     const subjects = new Set(ankiSelection.map(d => d.subject)).size;
-    setResult(`Imported ${count} card${count !== 1 ? "s" : ""} into ${subjects} subject${subjects !== 1 ? "s" : ""}.`);
+    // Say so when nothing came in, rather than reporting a cheerful "0 cards".
+    // Re-importing a deck you already have is a normal thing to do by accident.
+    const dupes = skipped ? ` ${skipped} duplicate${skipped !== 1 ? "s" : ""} skipped.` : "";
+    setResult(
+      added === 0 && skipped
+        ? `Nothing new — you already have all ${skipped} of those cards.`
+        : `Imported ${added} card${added !== 1 ? "s" : ""} into ${subjects} subject${subjects !== 1 ? "s" : ""}.${dupes}`
+    );
     setAnki(null);
     setAnkiChosen(new Set());
   };
