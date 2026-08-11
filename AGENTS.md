@@ -185,6 +185,15 @@ Play Store compatibility problem).
   when the user installs it.** Assume a live account is being read by a client
   weeks behind, and never let a schema change hand that client a valid-looking
   empty state.
+- **The two Anki routes name the same deck differently, so imports dedupe on
+  content, not folder.** The AnkiDroid content provider reports a deck as it
+  lists it (`Unidad 1`); an `.apkg` carries the full collection path
+  (`¡Adelante 1!::Unidad 1::Primer paso`); a deck with no `::` lands in
+  `Imported`. On 2026-08-11 three attempts at one 959-card deck produced three
+  disjoint folder trees and 8,643 card documents, 5,754 of them orphaned when
+  the parent-doc bugs ate the subject trees. `dropDuplicateCards` now keys on
+  the two card sides — **don't "improve" it by including the folder**, which
+  would restore the bug exactly.
 - **Never learn who is signed in from a one-shot `getCurrentUser()`.** On the
   web it reads `auth.currentUser`, which is `null` until the Firebase JS SDK
   finishes restoring the persisted session — asynchronously, after mount. The
