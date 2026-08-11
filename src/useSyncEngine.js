@@ -79,6 +79,12 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   // including tombstones; pushedRef remembers each card's timestamp at its
   // last successful push so only the dirty ones go up.
   const perCardModeRef = useRef(false);
+  // The ref is what the sync paths read (they run outside render); this state
+  // mirrors it so the listener effect below can actually re-run when per-card
+  // mode turns on. A ref flipping does not retrigger an effect, which is why
+  // the cards-subcollection listener used to be skipped entirely whenever the
+  // effect happened to run before enterPerCardMode finished.
+  const [perCardMode, setPerCardMode] = useState(false);
   const cardMapRef = useRef({});
   const pushedRef = useRef({});
   const migratedAtRef = useRef(null);
@@ -159,7 +165,16 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   const applyRemote = (remote) => {
     skipNextPush.current = true;
     setSubjects(migrate.migrateSubjects(remote.subjects || []));
-    setCards(migrate.migrateCards(remote.cards || []));
+    // Once cardsMigratedAt is on the parent doc, its cards array is a frozen
+    // pre-migration snapshot kept only as the rollback path for old clients —
+    // it is never written again, so it is stale the moment anything changes.
+    // Adopting it here replaces the live catalog with an out-of-date one, or
+    // (post-migration, when the array was emptied) with nothing at all. This
+    // is what left the web app showing an empty catalog while the phone was
+    // fine: a page reload restores the session without entering per-card mode,
+    // and the parent listener then handed this function an empty array.
+    // Cards in this state come from the subcollection only.
+    if (!remote.cardsMigratedAt) setCards(migrate.migrateCards(remote.cards || []));
     // A payload written by an older version of the app has no `game` at all.
     // Adopting it verbatim would silently reset a streak the user built here,
     // so in that case we keep whatever this device already has.
@@ -334,7 +349,11 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     // In per-card mode, also listen to the cards subcollection. Snapshots
     // merge per card; the parent listener above only carries subjects/game.
     let cardsCallbackId;
-    if (perCardModeRef.current) {
+    // Depends on the `perCardMode` state (see the effect deps), so turning the
+    // mode on re-runs this and attaches the listener. Reading only the ref
+    // meant that if the mode flipped after this effect had already run, the
+    // cards subcollection was never watched for the rest of the session.
+    if (perCardMode) {
       cardSync.listenToCards(googleUser.uid, (remoteMap, cardsError) => {
         if (cardsError) { report("sync.cardsListener", cardsError); return; }
         adoptRemoteCards(remoteMap);
@@ -349,7 +368,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       if (cardsCallbackId) firebaseSync.stopListening(cardsCallbackId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [googleUser, loaded]);
+  }, [googleUser, loaded, perCardMode]);
 
   // Decides, on sign-in, whether this account syncs cards per-document, and
   // runs the one-way migration if the parent doc still holds the cards array.
@@ -374,10 +393,47 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     }
     pushedRef.current = pushed;
     perCardModeRef.current = true;
+    setPerCardMode(true);
     // Reflect the merge immediately so the UI doesn't show a stale list.
     skipNextPush.current = true;
     setCards(migrate.migrateCards(cardSync.liveCards(cardMapRef.current)));
   };
+
+  // ---------- adopt per-card mode on a restored session ----------
+  // enterPerCardMode used to be reachable only through handleSignIn, i.e. only
+  // by clicking "Sign in with Google". Reopening the app or reloading the web
+  // page restores the session without it, leaving the client in legacy mode:
+  // it never fetched the cards subcollection, never listened to it, and read
+  // its catalog from the parent doc's dead cards array. The phone looked fine
+  // only because it was still inside the session where it had signed in.
+  //
+  // Only adopts, never migrates — an account with no cardsMigratedAt is left
+  // alone for handleSignIn to migrate deliberately.
+  useEffect(() => {
+    if (!googleUser || !loaded || perCardModeRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await firebaseSync.pullData(googleUser.uid);
+        if (cancelled || perCardModeRef.current) return;
+        // Adopt when the local data already belongs to this account, or has
+        // never been claimed by any account (null) — the same two cases
+        // handleSignIn treats as "not switching accounts". A ref holding a
+        // *different* uid is left alone: that's the account-switch path, and
+        // merging there is exactly the bug that once pushed one account's
+        // cards into another's document.
+        const ownedHere = ownerUidRef.current === googleUser.uid || ownerUidRef.current === null;
+        if (remote && remote.cardsMigratedAt && ownedHere) {
+          ownerUidRef.current = googleUser.uid;
+          await enterPerCardMode(googleUser.uid, remote);
+        }
+      } catch (e) {
+        report("sync.restorePerCardMode", e);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleUser, loaded]);
 
   const handleSignIn = async () => {
     setSyncState("syncing");
