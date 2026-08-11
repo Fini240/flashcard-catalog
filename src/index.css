@@ -4,3 +4,28 @@ html, body, #root {
   width: 100%;
   min-height: 100%;
 }
+
+/* Design tokens — the handful of colors the app actually repeats.
+   The dark navy shell is constant across light/dark mode (only the "paper"
+   card surfaces theme, via THEME_VARS in FlashcardCatalog.jsx). Hardcoded
+   hexes scattered through the components were the source of several contrast
+   bugs; these are the single place to tune them.
+
+   Every token below is actually referenced by the components — a declared-but-
+   unused token is worse than none, because it looks like a control and isn't
+   wired to anything. The per-subject palette (SUBJECT_COLORS) deliberately
+   stays as literal hex: that's content, not theme. */
+:root {
+  --shell-bg: #16233F;        /* the dark navy app shell; also the ink on --accent */
+  --shell-bg-deep: #0F1A30;   /* inputs/recessed surfaces on the shell */
+  --shell-raised: #3A4A68;    /* disabled fills, borders on the shell */
+  --accent: #F2C572;          /* primary action gold */
+  --accent-warm: #F2874E;     /* streak/flame orange */
+  --danger: #D97757;          /* destructive actions, sync errors */
+  --brand: #2F6F6D;           /* teal — links, selected states */
+  --success: #5C7A44;         /* moss green */
+  --highlight: #C98A2B;       /* ochre — selections, warnings */
+  --on-shell-muted: #8CA0C2;  /* muted text/icons on the navy shell */
+  --on-shell-faint: #5A6B8C;  /* fainter shell text */
+  --info: #4E7FA8;            /* informational blue */
+}

@@ -15,7 +15,7 @@ import * as social from "./social";
 
 // ---------- small shared primitives ----------
 
-export function Ring({ value, size = 44, stroke = 5, color = "#F2C572", track = "rgba(255,255,255,0.14)", children }) {
+export function Ring({ value, size = 44, stroke = 5, color = "var(--accent)", track = "rgba(255,255,255,0.14)", children }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(1, value || 0));
@@ -100,12 +100,12 @@ export function StatusBar({ game, onOpenStreak, onOpenFriends, nudgeCount }) {
   return (
     <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
       <button onClick={onOpenStreak} style={{ ...chipStyle, flex: 1, borderColor: atRisk && game.streak > 0 ? "rgba(242,197,114,0.5)" : "rgba(255,255,255,0.12)" }}>
-        <Flame size={16} color={game.streak > 0 ? "#F2874E" : "#5A6B8C"} fill={game.streak > 0 && !atRisk ? "#F2874E" : "none"} />
+        <Flame size={16} color={game.streak > 0 ? "var(--accent-warm)" : "var(--on-shell-faint)"} fill={game.streak > 0 && !atRisk ? "var(--accent-warm)" : "none"} />
         <span style={chipValue}>{game.streak}</span>
         <span style={chipLabel}>day{game.streak !== 1 ? "s" : ""}</span>
       </button>
       <button onClick={onOpenStreak} style={{ ...chipStyle, flex: 1 }}>
-        <Zap size={16} color="#F2C572" />
+        <Zap size={16} color="var(--accent)" />
         <span style={chipValue}>{game.xp}</span>
         <span style={chipLabel}>lvl {lvl.level}</span>
       </button>
@@ -116,7 +116,7 @@ export function StatusBar({ game, onOpenStreak, onOpenFriends, nudgeCount }) {
         {nudgeCount > 0 && (
           <span style={{
             position: "absolute", top: 4, right: 6, minWidth: 16, height: 16, borderRadius: 8,
-            background: "#D97757", color: "#16233F", fontSize: 10, fontWeight: 700,
+            background: "var(--danger)", color: "var(--shell-bg)", fontSize: 10, fontWeight: 700,
             display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px",
             fontFamily: "Inter, sans-serif",
           }}>{nudgeCount}</span>
@@ -132,7 +132,7 @@ const chipStyle = {
   WebkitTapHighlightColor: "transparent", cursor: "pointer",
 };
 const chipValue = { fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 700, color: "#EDE6D3" };
-const chipLabel = { fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8CA0C2", textTransform: "uppercase", letterSpacing: 0.4 };
+const chipLabel = { fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--on-shell-muted)", textTransform: "uppercase", letterSpacing: 0.4 };
 
 // ---------- today's goal + the single most important button in the app ----------
 
@@ -165,9 +165,9 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal }
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <button onClick={onOpenGoal} title="Change your daily goal" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
-          <Ring value={pct} size={56} stroke={6} color={done ? "#5C7A44" : "#F2C572"} track="var(--card-border)">
+          <Ring value={pct} size={56} stroke={6} color={done ? "var(--success)" : "var(--accent)"} track="var(--card-border)">
             {done
-              ? <Check size={22} color="#5C7A44" />
+              ? <Check size={22} color="var(--success)" />
               : <span style={{ fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 700, color: "var(--text-strong)" }}>
                   {t.cards}<span style={{ fontSize: 10, color: "var(--text-faint)" }}>/{game.goalCards}</span>
                 </span>}
@@ -184,7 +184,7 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal }
       </div>
       {totalCards > 0 && (
         <button onClick={onStudyNow} style={{
-          width: "100%", marginTop: 14, background: "#F2C572", color: "#16233F", border: "none",
+          width: "100%", marginTop: 14, background: "var(--accent)", color: "var(--shell-bg)", border: "none",
           borderRadius: 10, padding: "15px 20px", minHeight: 52, fontFamily: "Inter, sans-serif",
           fontWeight: 700, fontSize: 16.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           WebkitTapHighlightColor: "transparent", boxShadow: "0 2px 10px rgba(242,197,114,0.25)",
@@ -213,7 +213,7 @@ export function QuestList({ game }) {
           <div key={q.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "8px 0", borderTop: i ? "1px solid var(--card-border-light)" : "none" }}>
             <div style={{
               width: 26, height: 26, borderRadius: 13, flexShrink: 0,
-              background: done ? "#5C7A44" : "var(--input-bg)",
+              background: done ? "var(--success)" : "var(--input-bg)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
               {done ? <Check size={14} color="#FBF7EC" /> : <Target size={13} color="var(--text-faint)" />}
@@ -225,12 +225,12 @@ export function QuestList({ game }) {
                   color: done ? "var(--text-faint)" : "var(--text-strong)",
                   textDecoration: done ? "line-through" : "none",
                 }}>{def.label}</span>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: done ? "#5C7A44" : "var(--text-faint)", flexShrink: 0 }}>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: done ? "var(--success)" : "var(--text-faint)", flexShrink: 0 }}>
                   +{def.xp} XP
                 </span>
               </div>
               <div style={{ height: 4, background: "var(--card-border)", borderRadius: 2, marginTop: 5, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${pct * 100}%`, background: done ? "#5C7A44" : "#F2C572", transition: "width 0.4s" }} />
+                <div style={{ height: "100%", width: `${pct * 100}%`, background: done ? "var(--success)" : "var(--accent)", transition: "width 0.4s" }} />
               </div>
             </div>
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", flexShrink: 0, minWidth: 34, textAlign: "right" }}>
@@ -282,7 +282,7 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
     <ModalShell title="Your progress" onClose={onClose}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
         <div style={{ textAlign: "center" }}>
-          <Flame size={34} color={game.streak > 0 ? "#F2874E" : "#8CA0C2"} fill={game.streak > 0 ? "#F2874E" : "none"} />
+          <Flame size={34} color={game.streak > 0 ? "var(--accent-warm)" : "var(--on-shell-muted)"} fill={game.streak > 0 ? "var(--accent-warm)" : "none"} />
         </div>
         <div>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 26, fontWeight: 800, color: "var(--text-strong)", margin: 0, lineHeight: 1 }}>
@@ -299,7 +299,7 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
           <div key={d.key} style={{ flex: 1, textAlign: "center" }}>
             <div style={{
               height: 34, borderRadius: 8,
-              background: d.goalMet ? "#F2874E" : d.frozen ? "#4E7FA8" : d.future ? "var(--card-border-light)" : "var(--input-bg)",
+              background: d.goalMet ? "var(--accent-warm)" : d.frozen ? "var(--info)" : d.future ? "var(--card-border-light)" : "var(--input-bg)",
               border: d.today ? "2px solid #F2C572" : "1px solid var(--card-border)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
@@ -318,7 +318,7 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
 
       <SectionLabel>Level {lvl.level}</SectionLabel>
       <div style={{ height: 8, background: "var(--card-border)", borderRadius: 4, overflow: "hidden", marginBottom: 5 }}>
-        <div style={{ height: "100%", width: `${(lvl.into / lvl.span) * 100}%`, background: "#F2C572", transition: "width 0.5s" }} />
+        <div style={{ height: "100%", width: `${(lvl.into / lvl.span) * 100}%`, background: "var(--accent)", transition: "width 0.5s" }} />
       </div>
       <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "0 0 18px" }}>
         {lvl.into} / {lvl.span} XP to level {lvl.level + 1}
@@ -344,9 +344,9 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
               <div key={d.key} title={`${d.key}: ${d.cards} cards`} style={{
                 width: 11, height: 11, borderRadius: 2,
                 background: d.future ? "transparent"
-                  : d.frozen ? "#4E7FA8"
+                  : d.frozen ? "var(--info)"
                   : d.cards === 0 ? "var(--card-border-light)"
-                  : d.goalMet ? "#F2874E"
+                  : d.goalMet ? "var(--accent-warm)"
                   : d.cards > 5 ? "rgba(242,135,78,0.55)" : "rgba(242,135,78,0.28)",
               }} />
             ))}
@@ -407,18 +407,18 @@ export function GoalModal({ game, onClose, onPick }) {
           <button key={g.id} onClick={() => onPick(g.cards)} style={{
             width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
             background: active ? "rgba(242,197,114,0.14)" : "var(--input-bg)",
-            border: `1px solid ${active ? "#F2C572" : "var(--card-border)"}`,
+            border: `1px solid ${active ? "var(--accent)" : "var(--card-border)"}`,
             borderRadius: 10, padding: "14px 16px", minHeight: 56, marginBottom: 8, cursor: "pointer",
           }}>
             <span style={{ textAlign: "left" }}>
-              <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 600, color: active ? "#F2C572" : "var(--text-strong)" }}>
+              <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 600, color: active ? "var(--accent)" : "var(--text-strong)" }}>
                 {g.label}
               </span>
               <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
                 {g.blurb}
               </span>
             </span>
-            {active && <Check size={18} color="#F2C572" />}
+            {active && <Check size={18} color="var(--accent)" />}
           </button>
         );
       })}
@@ -440,7 +440,7 @@ function BoardRow({ row, onRemove }) {
     }}>
       <span style={{
         fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, fontWeight: 700,
-        color: row.position === 1 ? "#F2C572" : "var(--text-faint)", minWidth: 20,
+        color: row.position === 1 ? "var(--accent)" : "var(--text-faint)", minWidth: 20,
       }}>{row.position}</span>
       <span style={{ fontSize: 18 }}>{row.emoji}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -502,8 +502,8 @@ function UsernameRow({ username, editing, onEdit, onCancel, onSave, suggestion }
           }}>{username || "Not set — tap Choose"}</p>
         </div>
         <button onClick={onEdit} style={{
-          background: username ? "transparent" : "#F2C572",
-          color: username ? "var(--text-secondary)" : "#16233F",
+          background: username ? "transparent" : "var(--accent)",
+          color: username ? "var(--text-secondary)" : "var(--shell-bg)",
           border: username ? "1px solid var(--card-border)" : "none",
           borderRadius: 8, padding: "0 14px", minHeight: 40, flexShrink: 0,
           fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 600, cursor: "pointer",
@@ -536,7 +536,7 @@ function UsernameRow({ username, editing, onEdit, onCancel, onSave, suggestion }
           }}
         />
         <button onClick={save} disabled={saving} style={{
-          background: "#F2C572", color: "#16233F", border: "none", borderRadius: 8,
+          background: "var(--accent)", color: "var(--shell-bg)", border: "none", borderRadius: 8,
           padding: "0 16px", minHeight: 46, flexShrink: 0, whiteSpace: "nowrap",
           fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
           cursor: "pointer", opacity: saving ? 0.6 : 1,
@@ -771,7 +771,7 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
         <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 20, fontWeight: 600, letterSpacing: 3, color: "var(--text-strong)" }}>
           {myCode}
         </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "Inter, sans-serif", fontSize: 12.5, color: copied ? "#5C7A44" : "var(--text-secondary)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "Inter, sans-serif", fontSize: 12.5, color: copied ? "var(--success)" : "var(--text-secondary)" }}>
           {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
         </span>
       </button>
@@ -792,7 +792,7 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
           }}
         />
         <button onClick={add} disabled={busy} style={{
-          background: "#F2C572", color: "#16233F", border: "none", borderRadius: 8,
+          background: "var(--accent)", color: "var(--shell-bg)", border: "none", borderRadius: 8,
           padding: "0 18px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 600,
           fontSize: 14.5, display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
           flexShrink: 0, whiteSpace: "nowrap", opacity: busy ? 0.6 : 1,
@@ -840,7 +840,7 @@ export function UsernameNotice({ username, onChange, onKeep }) {
       </p>
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onChange} style={{
-          flex: 1, background: "#F2C572", color: "#16233F", border: "none", borderRadius: 8,
+          flex: 1, background: "var(--accent)", color: "var(--shell-bg)", border: "none", borderRadius: 8,
           minHeight: 48, fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
         }}>Pick my own</button>
         <button onClick={onKeep} style={{
@@ -874,7 +874,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
       <p style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 23, color: "var(--text-strong)", margin: "0 0 2px" }}>
         {award.levelUp ? `Level ${award.levelUp}!` : award.streakUp ? `${award.streak}-day streak!` : award.perfect ? "Flawless" : "Nice work"}
       </p>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 30, fontWeight: 800, color: "#F2C572", margin: "8px 0 2px" }}>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 30, fontWeight: 800, color: "var(--accent)", margin: "8px 0 2px" }}>
         +{award.total} XP
       </p>
 
@@ -894,7 +894,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
 
       <div style={{ margin: "16px 0 4px" }}>
         <div style={{ height: 8, background: "var(--card-border)", borderRadius: 4, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${(lvl.into / lvl.span) * 100}%`, background: "#F2C572", transition: "width 0.8s ease-out" }} />
+          <div style={{ height: "100%", width: `${(lvl.into / lvl.span) * 100}%`, background: "var(--accent)", transition: "width 0.8s ease-out" }} />
         </div>
         <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "5px 0 0" }}>
           Level {lvl.level} · {lvl.span - lvl.into} XP to go
@@ -907,7 +907,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
         </p>
       )}
       {award.freezeEarned && (
-        <p style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "#4E7FA8", margin: "10px 0 0" }}>
+        <p style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--info)", margin: "10px 0 0" }}>
           <Snowflake size={14} /> Streak freeze earned — one missed day is covered.
         </p>
       )}
@@ -934,7 +934,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
           }}>Keep going</button>
         )}
         <button onClick={onDone} style={{
-          flex: 1, background: "#F2C572", color: "#16233F", border: "none", borderRadius: 10,
+          flex: 1, background: "var(--accent)", color: "var(--shell-bg)", border: "none", borderRadius: 10,
           padding: "13px 16px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 600,
           fontSize: 15, cursor: "pointer",
         }}>Done</button>
@@ -955,7 +955,7 @@ export function RiskBanner({ game, onStudyNow }) {
       background: "rgba(242,135,78,0.14)", border: "1px solid rgba(242,135,78,0.4)",
       borderRadius: 10, padding: "12px 14px", marginBottom: 14,
     }}>
-      <Flame size={18} color="#F2874E" />
+      <Flame size={18} color="var(--accent-warm)" />
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, fontWeight: 600, color: "#EDE6D3", margin: 0 }}>
           Your {game.streak}-day streak ends tonight
@@ -965,7 +965,7 @@ export function RiskBanner({ game, onStudyNow }) {
         </p>
       </div>
       <button onClick={onStudyNow} style={{
-        background: "#F2874E", color: "#16233F", border: "none", borderRadius: 8,
+        background: "var(--accent-warm)", color: "var(--shell-bg)", border: "none", borderRadius: 8,
         padding: "9px 14px", minHeight: 40, fontFamily: "Inter, sans-serif",
         fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0,
       }}>Save it</button>

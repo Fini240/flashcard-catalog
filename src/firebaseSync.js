@@ -51,8 +51,10 @@ export async function listenToData(uid, callback) {
   return FirebaseFirestore.addDocumentSnapshotListener(
     { reference: docRef(uid) },
     (event, error) => {
-      if (error) return;
-      callback(event ? event.snapshot.data : null);
+      // Errors are handed to the caller, not dropped — a permission-denied
+      // listener must not be indistinguishable from a quiet one.
+      if (error) { callback(null, error); return; }
+      callback(event ? event.snapshot.data : null, null);
     }
   );
 }

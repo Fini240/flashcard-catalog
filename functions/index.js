@@ -21,6 +21,24 @@ const PLACEHOLDER_KEY = "UNCONFIGURED";
 // a script, from draining the whole project's daily quota.
 const DAILY_LIMIT = 10;
 
+// Per-user limits alone don't bound the project's exposure: the attacker's
+// move is many accounts, not many requests from one. Google sign-in makes that
+// expensive but not impossible, so this is the backstop — a ceiling across all
+// users for the day, after which everyone is offered their own key (the same
+// path an individual hits at DAILY_LIMIT, so no client change is needed).
+//
+// At DAILY_LIMIT = 10 this is ~200 fully-active users a day. Raise it as the
+// user base grows; the cost of it being too low is a day of BYOK prompts, the
+// cost of it being absent is the whole Gemini quota drained by a script.
+//
+// NOTE: this bounds the shared key only. The other half of the defence is that
+// anonymous auth must stay DISABLED in the Firebase console — with it on, uids
+// are free to mint and the per-user limit means nothing.
+const GLOBAL_DAILY_LIMIT = 2000;
+
+// Firebase uids are 28-char alphanumeric, so this can never collide with one.
+const GLOBAL_DOC = "_global";
+
 const MODELS = ["gemini-3.6-flash", "gemini-2.5-flash"];
 
 const ALLOWED_ORIGINS = new Set([
@@ -90,31 +108,53 @@ function setCors(req, res) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-// Reserves one import against today's allowance, resetting the counter when
-// the day rolls over. Done in a transaction so two devices importing at once
-// can't both slip past the limit.
+// Reserves one import against today's allowance — both the caller's own and
+// the project-wide ceiling — resetting each counter when its day rolls over.
+// Done in one transaction so two devices importing at once can't both slip
+// past either limit. Firestore requires every read before any write, hence the
+// two gets up front.
 async function reserveQuota(uid) {
-  const ref = getFirestore().collection("aiUsage").doc(uid);
-  return getFirestore().runTransaction(async (tx) => {
+  const db = getFirestore();
+  const ref = db.collection("aiUsage").doc(uid);
+  const globalRef = db.collection("aiUsage").doc(GLOBAL_DOC);
+  return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
+    const globalSnap = await tx.get(globalRef);
+
     const data = snap.exists ? snap.data() : null;
     const sameDay = data?.day === today();
     const used = sameDay ? data.count || 0 : 0;
-    if (used >= DAILY_LIMIT) return { ok: false, remaining: 0 };
+    if (used >= DAILY_LIMIT) return { ok: false, remaining: 0, reason: "user" };
+
+    const globalData = globalSnap.exists ? globalSnap.data() : null;
+    const globalSameDay = globalData?.day === today();
+    const globalUsed = globalSameDay ? globalData.count || 0 : 0;
+    if (globalUsed >= GLOBAL_DAILY_LIMIT) return { ok: false, remaining: 0, reason: "global" };
+
     tx.set(ref, { day: today(), count: used + 1, updatedAt: FieldValue.serverTimestamp() });
-    return { ok: true, remaining: DAILY_LIMIT - (used + 1) };
+    tx.set(globalRef, { day: today(), count: globalUsed + 1, updatedAt: FieldValue.serverTimestamp() });
+    return { ok: true, remaining: DAILY_LIMIT - (used + 1), reason: null };
   });
 }
 
-// A failed generation shouldn't cost the user one of their ten.
+// A failed generation shouldn't cost the user one of their ten — nor should it
+// eat into the project-wide ceiling, since no Gemini call was actually spent.
 async function refundQuota(uid) {
-  const ref = getFirestore().collection("aiUsage").doc(uid);
+  const db = getFirestore();
+  const ref = db.collection("aiUsage").doc(uid);
+  const globalRef = db.collection("aiUsage").doc(GLOBAL_DOC);
   try {
-    await getFirestore().runTransaction(async (tx) => {
+    await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
+      const globalSnap = await tx.get(globalRef);
       const data = snap.exists ? snap.data() : null;
-      if (data?.day !== today() || !data.count) return;
-      tx.set(ref, { day: today(), count: Math.max(0, data.count - 1) }, { merge: true });
+      const globalData = globalSnap.exists ? globalSnap.data() : null;
+      if (data?.day === today() && data.count) {
+        tx.set(ref, { day: today(), count: Math.max(0, data.count - 1) }, { merge: true });
+      }
+      if (globalData?.day === today() && globalData.count) {
+        tx.set(globalRef, { day: today(), count: Math.max(0, globalData.count - 1) }, { merge: true });
+      }
     });
   } catch {
     // Best effort — losing one credit is far better than failing the request.
@@ -151,7 +191,16 @@ export const generateFlashcards = onRequest(
 
     const quota = await reserveQuota(uid);
     if (!quota.ok) {
-      return res.status(429).json({ error: "QUOTA_EXCEEDED", remaining: 0, dailyLimit: DAILY_LIMIT });
+      // Both cases send the client down the same "offer your own key" path;
+      // the distinct code is so the UI can say "you've used today's ten"
+      // rather than "the app has used today's allowance", and so the two are
+      // told apart in logs — a spike in `global` is the signal worth watching.
+      const shared = quota.reason === "global";
+      return res.status(429).json({
+        error: shared ? "SHARED_QUOTA_EXCEEDED" : "QUOTA_EXCEEDED",
+        remaining: 0,
+        dailyLimit: DAILY_LIMIT,
+      });
     }
 
     const instructions = buildInstructions(existingSubjects);

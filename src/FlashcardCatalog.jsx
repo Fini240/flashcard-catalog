@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
-  FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search
+  FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search, Download, ClipboardList
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -16,6 +16,10 @@ import { pushBackHandler, consumeBack } from "./backHandler";
 import * as G from "./gamification";
 import * as social from "./social";
 import * as reminders from "./reminders";
+import * as backup from "./backup";
+import { applyGrade, isLevelUp, isDue } from "./srs";
+import { report, diagnosticsText } from "./report";
+import { useSyncEngine } from "./useSyncEngine";
 import {
   StatusBar, TodayCard, QuestList, StreakModal, GoalModal, FriendsModal,
   SessionReward, RiskBanner, MasteryPips, MasteryBar, Ring, UsernameNotice,
@@ -34,7 +38,6 @@ const SUBJECT_COLORS = [
   { bg: "#5C7A44", tab: "#496035" }, // moss
   { bg: "#A6435E", tab: "#87344A" }, // rose
 ];
-const STORAGE_KEY = "flashcard-catalog-data";
 const THEME_KEY = "flashcard-catalog-dark-mode";
 const getStoredDarkMode = () => {
   try { return localStorage.getItem(THEME_KEY) === "1"; } catch (e) { return false; }
@@ -86,27 +89,8 @@ const normalize = (s) =>
   (s || "").trim().toLowerCase().replace(/[.,!?;:'"]/g, "").replace(/\s+/g, " ");
 
 // ---------- spaced repetition (Leitner boxes) ----------
-// Every card carries an optional srsBox (0-5) and srsDue timestamp. A correct
-// answer moves it up one box, pushing the next review further out; a miss
-// drops it back to box 0 (due immediately). Cards without these fields are
-// brand new and always count as due.
-const SRS_INTERVAL_DAYS = [0, 1, 3, 7, 14, 30];
-const DAY_MS = 24 * 60 * 60 * 1000;
-function applyGrade(card, correct) {
-  const box = correct ? Math.min((card.srsBox || 0) + 1, SRS_INTERVAL_DAYS.length - 1) : 0;
-  // srsPeak is the highest box this card has ever reached. It's what makes a
-  // "card strengthened" reward honest: re-climbing a box you already had
-  // doesn't pay again, so there's no XP in deliberately failing a strong card.
-  const peak = Math.max(card.srsPeak || 0, box);
-  return { ...card, srsBox: box, srsPeak: peak, srsDue: Date.now() + SRS_INTERVAL_DAYS[box] * DAY_MS };
-}
-// Did this answer push the card past its personal best?
-function isLevelUp(card, correct) {
-  if (!correct) return false;
-  const box = Math.min((card.srsBox || 0) + 1, SRS_INTERVAL_DAYS.length - 1);
-  return box > (card.srsPeak || card.srsBox || 0);
-}
-const isDue = (card) => card.srsDue == null || card.srsDue <= Date.now();
+// The scheduler lives in ./srs (imported above) so it's unit-testable; the
+// study/session code below uses applyGrade/isLevelUp/isDue unqualified.
 
 // ---------- tree helpers (subjects/subcategories nest to any depth) ----------
 function collectIds(node) {
@@ -175,35 +159,12 @@ function migrateCards(rawCards) {
   return (rawCards || []).map(c => ({ ...c, nodeId: c.nodeId || c.categoryId || c.subjectId }));
 }
 
-// ---------- storage (localStorage-backed, works standalone / in the APK) ----------
-const storage = {
-  async get(key) {
-    try {
-      const value = window.localStorage.getItem(key);
-      return { value };
-    } catch (e) {
-      return { value: null };
-    }
-  },
-  async set(key, value) {
-    try {
-      window.localStorage.setItem(key, value);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  },
-};
-
 export default function FlashcardCatalog() {
   const [subjects, setSubjects] = useState([]);
   const [cards, setCards] = useState([]);
   const [game, setGame] = useState(G.emptyGame);
-  const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState("library"); // library | study | session
   const [error, setError] = useState("");
-  const [googleUser, setGoogleUser] = useState(null); // { email, name, accessToken }
-  const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | error
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(getStoredDarkMode);
   // Which gamification sheet is open, if any: streak | goal | friends
@@ -216,15 +177,18 @@ export default function FlashcardCatalog() {
   const [studyNodeId, setStudyNodeId] = useState("all");
   const sessionQueueRef = useRef([]);
   const sessionOriginRef = useRef("study"); // where Exit/back leads from a session
-  const updatedAtRef = useRef(0);
-  const skipNextPush = useRef(false);
-  const currentDataRef = useRef({ subjects: [], cards: [], game: G.emptyGame() });
-  // Which Google account the data currently in `subjects`/`cards` belongs to.
-  // null means it has never been synced to any account yet.
-  const ownerUidRef = useRef(null);
-  useEffect(() => {
-    currentDataRef.current = { subjects, cards, game };
-  }, [subjects, cards, game]);
+
+  // Local persistence + cloud sync + sign-in all live in the sync engine —
+  // extracted so the conflict/ownership logic is reviewable on its own.
+  const {
+    loaded, googleUser, syncState,
+    currentDataRef, ownerUidRef, updatedAtRef, skipNextPush,
+    signIn: handleSignIn, signOut: handleSignOut,
+  } = useSyncEngine({
+    subjects, cards, game,
+    setSubjects, setCards, setGame, setError,
+    migrate: { migrateSubjects, migrateCards },
+  });
 
   // ---------- hardware/gesture back button (Android) ----------
   // Whatever's on top of the backHandler stack (a modal, a drilled-down
@@ -254,28 +218,6 @@ export default function FlashcardCatalog() {
     if (sheet) return pushBackHandler(() => setSheet(null));
   }, [sheet]);
 
-  // ---------- load ----------
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await storage.get(STORAGE_KEY);
-        if (res && res.value) {
-          const parsed = JSON.parse(res.value);
-          setSubjects(migrateSubjects(parsed.subjects || []));
-          setCards(migrateCards(parsed.cards || []));
-          // rollOver settles any missed days (spending freezes) the moment the
-          // app opens, so the streak number on screen is never stale.
-          setGame(G.rollOver(G.normalizeGame(parsed.game)));
-          updatedAtRef.current = parsed.updatedAt || 0;
-          ownerUidRef.current = parsed.ownerUid || null;
-        }
-      } catch (e) {
-        // no existing data yet, that's fine
-      }
-      setLoaded(true);
-    })();
-  }, []);
-
   // An app left open across midnight would otherwise keep showing yesterday's
   // goal ring and yesterday's quests. Checked once a minute — cheap, and it
   // also catches a phone whose clock jumped after a timezone change.
@@ -292,169 +234,53 @@ export default function FlashcardCatalog() {
     return () => clearInterval(id);
   }, [loaded]);
 
-  // ---------- restore Firebase session ----------
-  useEffect(() => {
-    firebaseSync.getCurrentUser().then((user) => {
-      if (user) setGoogleUser(user);
-    }).catch(() => {});
-  }, []);
-
-  // ---------- save (debounced) ----------
-  const saveTimer = useRef(null);
-  useEffect(() => {
-    if (!loaded) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    const shouldPush = !skipNextPush.current;
-    skipNextPush.current = false;
-    // Bump the local edit timestamp right away, not inside the debounced
-    // callback below. Otherwise, for the whole 400ms debounce window after a
-    // real edit, updatedAtRef still holds the *previous* edit's timestamp —
-    // and if a Firestore snapshot from another signed-in device arrives
-    // during that window (acceptRemoteIfNewer, above), it looks "newer than
-    // local" and silently overwrites the edit before it was ever saved.
-    // Skip this when the change came from applyRemote (shouldPush false) —
-    // it already set updatedAtRef to the remote's own timestamp, which is
-    // more accurate than "now" for judging future incoming snapshots.
-    if (shouldPush) updatedAtRef.current = Date.now();
-    const payload = { subjects, cards, game, updatedAt: updatedAtRef.current, ownerUid: ownerUidRef.current };
-    saveTimer.current = setTimeout(async () => {
-      try {
-        const result = await storage.set(STORAGE_KEY, JSON.stringify(payload));
-        if (!result) setError("Couldn't save — your last change may not persist.");
-        else setError("");
-      } catch (e) {
-        setError("Couldn't save — your last change may not persist.");
-      }
-      // Only push to Firestore if this data is actually attributed to the
-      // signed-in account — otherwise a leftover local copy from a previous
-      // account could get written into someone else's document.
-      if (shouldPush && googleUser && ownerUidRef.current === googleUser.uid) {
-        setSyncState("syncing");
-        try {
-          await safePush(googleUser.uid, payload);
-          setSyncState("synced");
-        } catch (e) {
-          setSyncState("error");
-        }
-      }
-    }, 400);
-    return () => clearTimeout(saveTimer.current);
-  }, [subjects, cards, game, loaded, googleUser]);
-
-  const applyRemote = (remote) => {
-    skipNextPush.current = true;
-    setSubjects(migrateSubjects(remote.subjects || []));
-    setCards(migrateCards(remote.cards || []));
-    // A payload written by an older version of the app has no `game` at all.
-    // Adopting it verbatim would silently reset a streak the user built here,
-    // so in that case we keep whatever this device already has.
-    if (remote.game) setGame(G.rollOver(G.normalizeGame(remote.game)));
-    updatedAtRef.current = remote.updatedAt || Date.now();
-  };
-
-  // A remote payload with no subjects and no cards is either a legitimate "user
-  // deleted everything" or a corrupted/half-written sync. We can't tell those
-  // apart, so when local data isn't empty we treat it as suspicious: keep the
-  // local data and push it back up instead of wiping the device.
-  const isEmptyPayload = (p) => (!p.subjects || p.subjects.length === 0) && (!p.cards || p.cards.length === 0);
-
-  const acceptRemoteIfNewer = (remote, user) => {
-    if (!remote || (remote.updatedAt || 0) <= updatedAtRef.current) return;
-    const local = currentDataRef.current;
-    const localBelongsToThisUser = ownerUidRef.current === user.uid;
-    const localHasData = local.subjects.length > 0 || local.cards.length > 0;
-    if (isEmptyPayload(remote) && localHasData && localBelongsToThisUser) {
-      firebaseSync.pushData(user.uid, { ...local, updatedAt: Date.now(), ownerUid: user.uid }).catch(() => {});
-      return;
-    }
-    ownerUidRef.current = user.uid;
-    applyRemote(remote);
-  };
-
-  // Re-reads the remote document immediately before writing so a write from
-  // another concurrently-signed-in session (e.g. testing on two devices with
-  // the same account) can't be silently clobbered by an older payload landing
-  // a moment later. If the remote turns out to be newer than what we're about
-  // to send, we adopt it instead of overwriting it.
-  const safePush = async (uid, payload) => {
-    const current = await firebaseSync.pullData(uid);
-    if (current && (current.updatedAt || 0) > payload.updatedAt) {
-      acceptRemoteIfNewer(current, { uid });
-      return;
-    }
-    await firebaseSync.pushData(uid, payload);
-  };
-
-  // ---------- realtime listener: pick up changes made on other devices ----------
-  // Gated on `loaded` too: until local storage has been read, updatedAtRef.current
-  // is still its initial 0, so an empty/stale remote document would look "newer"
-  // than local data that hasn't been read into the ref yet and wipe it out.
-  useEffect(() => {
-    if (!googleUser || !loaded) return;
-    let callbackId;
-    let cancelled = false;
-    firebaseSync.listenToData(googleUser.uid, (remote) => {
-      acceptRemoteIfNewer(remote, googleUser);
-      setSyncState("synced");
-    }).then((id) => {
-      if (cancelled) firebaseSync.stopListening(id);
-      else callbackId = id;
-    }).catch(() => setSyncState("error"));
-    return () => {
-      cancelled = true;
-      if (callbackId) firebaseSync.stopListening(callbackId);
-    };
-  }, [googleUser, loaded]);
-
-  const handleSignIn = async () => {
-    setSyncState("syncing");
-    setError("");
+  // ---------- backup (export / import) ----------
+  // The one-file escape hatch. Export is best-effort — worst case the user
+  // gets an error message and nothing changes. Import *replaces* the current
+  // catalog (after a confirm in the settings sheet) and re-runs the normal
+  // migrations so old files keep working.
+  //
+  // A restore is attributed to whoever is signed in right now, which is what
+  // makes it actually stick. Left unattributed, the push gate in useSyncEngine
+  // (ownerUidRef === googleUser.uid) would never fire, so the restored catalog
+  // would sit on the device unsynced until the next remote snapshot replaced
+  // it with the cloud copy the user was trying to recover from.
+  const exportCatalog = async () => {
     try {
-      const user = await firebaseSync.signIn();
-      setGoogleUser(user);
-      const remote = await firebaseSync.pullData(user.uid);
-      const switchingAccounts = ownerUidRef.current && ownerUidRef.current !== user.uid;
-
-      if (switchingAccounts) {
-        // The data currently on this device belongs to a different account —
-        // never push it here. Adopt this account's own cloud data instead,
-        // even if that means starting from an empty catalog.
-        ownerUidRef.current = user.uid;
-        if (remote) {
-          applyRemote(remote);
-          if (!remote.game) setGame(G.emptyGame());
-        } else {
-          skipNextPush.current = true;
-          setSubjects([]);
-          setCards([]);
-          setGame(G.emptyGame());
-          updatedAtRef.current = 0;
-        }
-      } else {
-        ownerUidRef.current = user.uid;
-        if (remote && (remote.updatedAt || 0) > updatedAtRef.current && !(isEmptyPayload(remote) && (subjects.length > 0 || cards.length > 0))) {
-          applyRemote(remote);
-        } else {
-          await safePush(user.uid, { subjects, cards, game, updatedAt: updatedAtRef.current || Date.now(), ownerUid: user.uid });
-        }
-      }
-      setSyncState("synced");
+      const payload = backup.buildBackupPayload(currentDataRef.current);
+      await backup.exportBackup(payload);
+      return "";
     } catch (e) {
-      setSyncState("error");
-      if (e && e.code !== "USER_CANCELLED") {
-        setError(`Google sign-in failed: ${e && e.message ? e.message : e}`);
-      }
+      return `Export failed: ${e && e.message ? e.message : e}`;
     }
   };
 
-  const handleSignOut = async () => {
+  const importCatalog = async (file) => {
     try {
-      await firebaseSync.signOut();
+      const text = await file.text();
+      const parsed = backup.parseBackup(text);
+      if (!parsed.ok) return parsed.error;
+      const now = Date.now();
+      // A restore must always push. If a remote snapshot happened to land in
+      // the moment between the user confirming and this running, skipNextPush
+      // would still be set and the restore would be saved locally but never
+      // sent — leaving the device and the cloud disagreeing until the next
+      // unrelated edit.
+      skipNextPush.current = false;
+      setSubjects(migrateSubjects(parsed.backup.subjects));
+      // Re-stamp every restored card as edited *now*. The card in the backup
+      // carries whatever updatedAt it had when exported, which per-card merge
+      // would treat as older than the copy already on the server — the restore
+      // would show on screen and then be merged away. Restoring is an explicit
+      // "this file wins" action, so it has to win the timestamp comparison too.
+      setCards(migrateCards(parsed.backup.cards).map(c => ({ ...c, updatedAt: now })));
+      if (parsed.backup.game) setGame(G.rollOver(G.normalizeGame(parsed.backup.game)));
+      updatedAtRef.current = now;
+      ownerUidRef.current = googleUser ? googleUser.uid : null;
+      return "";
     } catch (e) {
-      // ignore
+      return `Import failed: ${e && e.message ? e.message : e}`;
     }
-    setGoogleUser(null);
-    setSyncState("idle");
   };
 
   const startSession = (queue, origin) => {
@@ -478,7 +304,8 @@ export default function FlashcardCatalog() {
     setGame(nextGame);
     publishProfile(nextGame);
     // Today is done, so today's reminder should stop being pending.
-    reminders.sync(nextGame, nextGame.reminder, currentDataRef.current.cards).catch(() => {});
+    reminders.sync(nextGame, nextGame.reminder, currentDataRef.current.cards)
+      .catch((e) => report("reminders.syncAfterSession", e));
     return award;
   };
 
@@ -500,7 +327,7 @@ export default function FlashcardCatalog() {
       level: G.levelForXp(g.xp),
       rank: G.rankForWeekXp(G.weekXp(g)).id,
       cardsTotal: G.lifetimeTotals(g).cards,
-    }).catch(() => {});
+    }).catch((e) => report("social.publishProfile", e));
   };
 
   // Publish once on sign-in too, so a friend who adds your code sees a real
@@ -541,12 +368,13 @@ export default function FlashcardCatalog() {
     let cancelled = false;
     social.fetchNudges(googleUser.uid)
       .then(n => { if (!cancelled) setNudges(n); })
-      .catch(() => {});
+      .catch((e) => report("social.fetchNudges", e));
     return () => { cancelled = true; };
   }, [googleUser]);
 
   const clearNudges = () => {
-    if (googleUser) social.clearNudges(googleUser.uid, nudges.map(n => n.id)).catch(() => {});
+    if (googleUser) social.clearNudges(googleUser.uid, nudges.map(n => n.id))
+      .catch((e) => report("social.clearNudges", e));
     setNudges([]);
   };
 
@@ -562,7 +390,8 @@ export default function FlashcardCatalog() {
       next.achievements = G.evaluateAchievements(next, currentDataRef.current.cards);
       return next;
     });
-    if (googleUser) social.announceFriend(uid, googleUser.uid).catch(() => {});
+    if (googleUser) social.announceFriend(uid, googleUser.uid)
+      .catch((e) => report("social.announceFriend", e));
   };
 
   // The receiving half: anyone who added us since we last looked joins our own
@@ -581,9 +410,10 @@ export default function FlashcardCatalog() {
           next.achievements = G.evaluateAchievements(next, currentDataRef.current.cards);
           return next;
         });
-        social.clearFriendAdds(googleUser.uid, adds.map(a => a.id)).catch(() => {});
+        social.clearFriendAdds(googleUser.uid, adds.map(a => a.id))
+          .catch((e) => report("social.clearFriendAdds", e));
       })
-      .catch(() => {});
+      .catch((e) => report("social.fetchFriendAdds", e));
     return () => { cancelled = true; };
   }, [googleUser, loaded]);
   const removeFriend = (uid) => {
@@ -643,7 +473,8 @@ export default function FlashcardCatalog() {
     if (!loaded) return;
     const g = currentDataRef.current.game;
     if (!g.reminder || !g.reminder.enabled) return;
-    reminders.sync(g, g.reminder, currentDataRef.current.cards).catch(() => {});
+    reminders.sync(g, g.reminder, currentDataRef.current.cards)
+      .catch((e) => report("reminders.sync", e));
   }, [loaded]);
   const setGoal = (cardsPerDay) => {
     setGame(g => ({ ...g, goalCards: cardsPerDay }));
@@ -654,7 +485,7 @@ export default function FlashcardCatalog() {
   // asking the user a single question: due cards first, weakest cards next,
   // capped at the daily goal so a session always feels finishable.
   const quickStudy = () => {
-    const due = shuffle(cards.filter(isDue));
+    const due = shuffle(cards.filter(c => isDue(c)));
     let queue = due;
     if (queue.length === 0) {
       // Nothing due: practise the shakiest cards instead of a random grab bag.
@@ -741,6 +572,17 @@ export default function FlashcardCatalog() {
           game={game}
           onSetReminder={setReminder}
           onSetListed={setListed}
+          onExport={exportCatalog}
+          onImport={importCatalog}
+          diagInfo={{
+            // uid, not email — this text is built to be pasted into a bug
+            // report, and the uid is both the thing you'd look up in Firestore
+            // and the thing that doesn't identify anyone outside the console.
+            signedIn: googleUser ? `yes (${googleUser.uid})` : "no",
+            syncState,
+            cards: cards.length,
+            subjects: subjects.length,
+          }}
         />
       )}
       {view === "study" && (
@@ -787,7 +629,7 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
   return (
     <div style={{
       minHeight: "100vh",
-      background: "#16233F",
+      background: "var(--shell-bg)",
       backgroundImage:
         "radial-gradient(circle at 20% 10%, rgba(255,255,255,0.03), transparent 40%), radial-gradient(circle at 90% 80%, rgba(255,255,255,0.025), transparent 40%)",
       display: "flex",
@@ -798,7 +640,7 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; }
         body { margin: 0; }
-        ::selection { background: #C98A2B; color: #16233F; }
+        ::selection { background: var(--highlight); color: #16233F; }
         button { font-family: inherit; cursor: pointer; }
         input, textarea, select { font-family: inherit; }
         .fc-scroll::-webkit-scrollbar { width: 8px; }
@@ -822,16 +664,16 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, overflow: "hidden" }}>
           <span style={{
             fontFamily: "Fraunces, serif", fontWeight: 700, fontStyle: "italic",
-            fontSize: 26, color: "#F2C572", letterSpacing: 0.2, flexShrink: 0,
+            fontSize: 26, color: "var(--accent)", letterSpacing: 0.2, flexShrink: 0,
           }}>Catalog</span>
           <span className="fc-subtitle" style={{
-            fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8CA0C2",
+            fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)",
             letterSpacing: 1.5, textTransform: "uppercase", whiteSpace: "nowrap",
           }}>Flashcard drawer</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
           <SyncControl googleUser={googleUser} syncState={syncState} onSignIn={onSignIn} onSignOut={onSignOut} />
-          <IconBtn title="Settings" onClick={onOpenSettings}><Settings size={18} color="#8CA0C2" /></IconBtn>
+          <IconBtn title="Settings" onClick={onOpenSettings}><Settings size={18} color="var(--on-shell-muted)" /></IconBtn>
         </div>
       </header>
       <main style={{ flex: 1, maxWidth: 640, width: "100%", margin: "0 auto", padding: "16px 16px 40px" }}>
@@ -863,13 +705,13 @@ function SyncControl({ googleUser, syncState, onSignIn, onSignOut }) {
       <span title={googleUser.email} style={{
         display: "flex", alignItems: "center", gap: 5,
         fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
-        color: syncState === "error" ? "#D97757" : "#8CA0C2",
+        color: syncState === "error" ? "var(--danger)" : "var(--on-shell-muted)",
       }}>
         <Icon size={14} /> <span className="fc-signin-label">{label}</span>
       </span>
       <button onClick={onSignOut} title={`Sign out of ${googleUser.email}`} style={{
         background: "transparent", border: "1px solid rgba(255,255,255,0.18)",
-        borderRadius: 20, padding: "8px 12px", minHeight: 40, color: "#8CA0C2",
+        borderRadius: 20, padding: "8px 12px", minHeight: 40, color: "var(--on-shell-muted)",
         fontFamily: "Inter, sans-serif", fontSize: 12.5, fontWeight: 600,
         display: "flex", alignItems: "center", gap: 5, WebkitTapHighlightColor: "transparent",
       }}>
@@ -900,7 +742,7 @@ function PunchHole() {
   return (
     <div style={{
       position: "absolute", left: 14, bottom: 14, width: 10, height: 10,
-      borderRadius: "50%", background: "#16233F",
+      borderRadius: "50%", background: "var(--shell-bg)",
       boxShadow: "inset 0 1px 2px rgba(0,0,0,0.4)",
     }} />
   );
@@ -910,7 +752,7 @@ function IconBtn({ onClick, title, children, danger }) {
   return (
     <button onClick={onClick} title={title} style={{
       background: "transparent", border: "none", padding: 10, borderRadius: 8,
-      color: danger ? "#D97757" : "#8CA0C2", display: "flex", alignItems: "center",
+      color: danger ? "var(--danger)" : "var(--on-shell-muted)", display: "flex", alignItems: "center",
       justifyContent: "center", minWidth: 44, minHeight: 44,
       transition: "background 0.15s", WebkitTapHighlightColor: "transparent",
     }}
@@ -923,7 +765,7 @@ function IconBtn({ onClick, title, children, danger }) {
 function PrimaryButton({ onClick, children, style, disabled }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
-      background: disabled ? "#3A4A68" : "#F2C572", color: disabled ? "#8CA0C2" : "#16233F",
+      background: disabled ? "var(--shell-raised)" : "var(--accent)", color: disabled ? "var(--on-shell-muted)" : "var(--shell-bg)",
       border: "none", borderRadius: 10, padding: "14px 22px", minHeight: 48,
       fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 15.5,
       display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
@@ -944,7 +786,7 @@ function GhostButton({ onClick, children, style }) {
 
 function TextField({ value, onChange, placeholder, area, style, ...rest }) {
   const common = {
-    width: "100%", background: "#0F1A30", border: "1px solid rgba(255,255,255,0.14)",
+    width: "100%", background: "var(--shell-bg-deep)", border: "1px solid rgba(255,255,255,0.14)",
     borderRadius: 8, color: "#FBF7EC", padding: "13px 14px", fontFamily: "Inter, sans-serif",
     fontSize: 16, outline: "none", ...style,
   };
@@ -1107,7 +949,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
 
   // ---------- top level: list of subjects ----------
   if (path.length === 0) {
-    const dueCards = cards.filter(isDue);
+    const dueCards = cards.filter(c => isDue(c));
     const query = searchQuery.trim().toLowerCase();
     const searchResults = query
       ? cards.filter(c =>
@@ -1147,7 +989,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
 
         {totalCards > 0 && (
           <div style={{ position: "relative", marginBottom: 14 }}>
-            <Search size={15} color="#8CA0C2" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+            <Search size={15} color="var(--on-shell-muted)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
             <TextField
               value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search all cards…"
@@ -1158,14 +1000,14 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
                 position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
                 background: "none", border: "none", padding: 10, minHeight: 40,
                 display: "flex", alignItems: "center", WebkitTapHighlightColor: "transparent", cursor: "pointer",
-              }}><X size={15} color="#8CA0C2" /></button>
+              }}><X size={15} color="var(--on-shell-muted)" /></button>
             )}
           </div>
         )}
 
         {query ? (
           searchResults.length === 0 ? (
-            <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>
+            <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>
               No cards match "{searchQuery.trim()}".
             </p>
           ) : (
@@ -1188,7 +1030,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
                     <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
                       <MasteryPips card={c} showLabel />
                       {folderNames && (
-                        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8CA0C2" }}>
+                        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)" }}>
                           {folderNames}
                         </span>
                       )}
@@ -1206,7 +1048,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
 
         {subjects.length > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" }}>
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8CA0C2", letterSpacing: 0.8, textTransform: "uppercase" }}>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)", letterSpacing: 0.8, textTransform: "uppercase" }}>
               Your subjects
             </span>
             <div style={{ display: "flex", gap: 6 }}>
@@ -1236,7 +1078,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
               <TextField value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)}
                 placeholder="Subject name (e.g. Biology)" autoFocus
                 onKeyDown={e => { if (e.key === "Enter") addSubject(); if (e.key === "Escape") setAddingSubject(false); }} />
-              <IconBtn title="Save" onClick={addSubject}><Check size={18} color="#5C7A44" /></IconBtn>
+              <IconBtn title="Save" onClick={addSubject}><Check size={18} color="var(--success)" /></IconBtn>
               <IconBtn title="Cancel" onClick={() => setAddingSubject(false)}><X size={18} color="#B5533C" /></IconBtn>
             </div>
           )}
@@ -1265,14 +1107,14 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
   // Study here covers, as opposed to nodeCards (this folder's own cards).
   const folderCardIds = collectIds(currentNode);
   const folderCards = cards.filter(c => folderCardIds.includes(c.nodeId));
-  const folderDue = folderCards.filter(isDue).length;
+  const folderDue = folderCards.filter(c => isDue(c)).length;
 
   return (
     <div>
       <Breadcrumb trail={trail} onJump={(depth) => setPath(path.slice(0, depth))} />
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "14px 0 18px" }}>
-        <h2 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontStyle: "italic", fontSize: 22, color: "#F2C572", margin: 0 }}>
+        <h2 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontStyle: "italic", fontSize: 22, color: "var(--accent)", margin: 0 }}>
           {currentNode.name}
         </h2>
         <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -1319,13 +1161,13 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
             )}
           </div>
           <IconBtn title="Delete this folder" danger onClick={() => deleteNode(currentNode.id)}>
-            <Trash2 size={16} color="#D97757" />
+            <Trash2 size={16} color="var(--danger)" />
           </IconBtn>
         </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 20 }}>
-        <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13, margin: 0 }}>
+        <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13, margin: 0 }}>
           {folderCards.length} card{folderCards.length !== 1 ? "s" : ""}
           {folderDue > 0 && ` · ${folderDue} due`}
         </p>
@@ -1360,19 +1202,19 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
       {addingSubcategory && (
         <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
           <TextField value={newSubcategoryName} onChange={e => setNewSubcategoryName(e.target.value)} placeholder="Subcategory name" />
-          <IconBtn title="Save" onClick={addSubcategory}><Check size={18} color="#5C7A44" /></IconBtn>
+          <IconBtn title="Save" onClick={addSubcategory}><Check size={18} color="var(--success)" /></IconBtn>
           <IconBtn title="Cancel" onClick={() => setAddingSubcategory(false)}><X size={18} color="#B5533C" /></IconBtn>
         </div>
       )}
 
       <div style={{ margin: "4px 0 10px" }}>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: "#8CA0C2", letterSpacing: 0.5, textTransform: "uppercase" }}>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: "var(--on-shell-muted)", letterSpacing: 0.5, textTransform: "uppercase" }}>
           Cards in this folder ({nodeCards.length})
         </span>
       </div>
 
       {nodeCards.length === 0 ? (
-        <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>
+        <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>
           No cards here yet. Add one, or drop into a subcategory.
         </p>
       ) : (
@@ -1427,7 +1269,7 @@ function NodeRow({ name, cards, color, tabColor, onOpen, onDelete, deleteTitle, 
   const list = cards || [];
   const count = list.length;
   const strength = G.deckStrength(list);
-  const due = list.filter(isDue).length;
+  const due = list.filter(c => isDue(c)).length;
   return (
     <div style={{ position: "relative", marginTop: compact ? 10 : 26 }}>
       <div
@@ -1509,7 +1351,7 @@ function Breadcrumb({ trail, onJump }) {
           <ChevronRight size={12} color="#5A6E92" />
           <button onClick={() => onJump(i + 1)} style={{
             ...crumbStyle,
-            color: i === trail.length - 1 ? "#F2C572" : "#8CA0C2",
+            color: i === trail.length - 1 ? "var(--accent)" : "var(--on-shell-muted)",
             fontWeight: i === trail.length - 1 ? 600 : 500,
           }}>{n.name}</button>
         </span>
@@ -1518,7 +1360,7 @@ function Breadcrumb({ trail, onJump }) {
   );
 }
 const crumbStyle = {
-  background: "none", border: "none", fontFamily: "Inter, sans-serif", color: "#8CA0C2",
+  background: "none", border: "none", fontFamily: "Inter, sans-serif", color: "var(--on-shell-muted)",
   fontSize: 13, padding: "8px 4px", minHeight: 36, display: "flex", alignItems: "center", gap: 4,
   WebkitTapHighlightColor: "transparent",
 };
@@ -1532,7 +1374,7 @@ function EmptyState({ onAdd, onImport }) {
       <p style={{ color: "#EDE6D3", fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 19, margin: "0 0 6px" }}>
         Let's get your first cards in.
       </p>
-      <p style={{ color: "#8CA0C2", fontFamily: "Inter, sans-serif", fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>
+      <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>
         Snap a photo of a vocabulary list, drop in a PDF, or type a few by hand.
         Your streak starts the day you answer your first card.
       </p>
@@ -1694,8 +1536,8 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
           {(backType === "image" ? MODES.filter(m => m.id === "flip") : MODES).map(m => (
             <button key={m.id} onClick={() => setMode(m.id)} style={{
               padding: "11px 16px", minHeight: 44, borderRadius: 20, fontSize: 13.5, fontFamily: "Inter, sans-serif", fontWeight: 600,
-              border: mode === m.id ? "1px solid #2F6F6D" : "1px solid var(--card-border)",
-              background: mode === m.id ? "#2F6F6D" : "transparent",
+              border: mode === m.id ? "1px solid var(--brand)" : "1px solid var(--card-border)",
+              background: mode === m.id ? "var(--brand)" : "transparent",
               color: mode === m.id ? "#FBF7EC" : "var(--text-secondary)",
               WebkitTapHighlightColor: "transparent",
             }}>{m.label}</button>
@@ -1740,8 +1582,8 @@ function TypeToggle({ value, onChange }) {
       {options.map(({ id, label, icon: Icon }) => (
         <button key={id} onClick={() => onChange(id)} style={{
           padding: "7px 12px", minHeight: 36, borderRadius: 16, fontSize: 12.5, fontFamily: "Inter, sans-serif", fontWeight: 600,
-          border: value === id ? "1px solid #2F6F6D" : "1px solid var(--card-border)",
-          background: value === id ? "#2F6F6D" : "transparent",
+          border: value === id ? "1px solid var(--brand)" : "1px solid var(--card-border)",
+          background: value === id ? "var(--brand)" : "transparent",
           color: value === id ? "#FBF7EC" : "var(--text-secondary)",
           display: "flex", alignItems: "center", gap: 5, WebkitTapHighlightColor: "transparent",
         }}><Icon size={13} /> {label}</button>
@@ -2046,8 +1888,8 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             <button key={m.id} onClick={() => switchMode(m.id)} style={{
               flex: 1, padding: "10px 8px", minHeight: 44, borderRadius: 10, fontSize: 12.5,
               fontFamily: "Inter, sans-serif", fontWeight: 600,
-              border: importMode === m.id ? "1px solid #2F6F6D" : "1px solid var(--card-border)",
-              background: importMode === m.id ? "#2F6F6D" : "transparent",
+              border: importMode === m.id ? "1px solid var(--brand)" : "1px solid var(--card-border)",
+              background: importMode === m.id ? "var(--brand)" : "transparent",
               color: importMode === m.id ? "#FBF7EC" : "var(--text-secondary)",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
               WebkitTapHighlightColor: "transparent",
@@ -2082,8 +1924,8 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
           {MODES.map(m => (
             <button key={m.id} onClick={() => setMode(m.id)} style={{
               padding: "11px 16px", minHeight: 44, borderRadius: 20, fontSize: 13.5, fontFamily: "Inter, sans-serif", fontWeight: 600,
-              border: mode === m.id ? "1px solid #2F6F6D" : "1px solid var(--card-border)",
-              background: mode === m.id ? "#2F6F6D" : "transparent",
+              border: mode === m.id ? "1px solid var(--brand)" : "1px solid var(--card-border)",
+              background: mode === m.id ? "var(--brand)" : "transparent",
               color: mode === m.id ? "#FBF7EC" : "var(--text-secondary)",
               WebkitTapHighlightColor: "transparent",
             }}>{m.label}</button>
@@ -2105,7 +1947,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
         {importMode === "file" && !pendingCards && !anki && (
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
-              <Sparkles size={13} color="#C98A2B" /> AnkiDroid decks (.apkg) and .txt/.csv/.md files with "Front | Back" lines import instantly, no key needed. PDFs, Word docs, and anything else get read by {aiLabel}.
+              <Sparkles size={13} color="var(--highlight)" /> AnkiDroid decks (.apkg) and .txt/.csv/.md files with "Front | Back" lines import instantly, no key needed. PDFs, Word docs, and anything else get read by {aiLabel}.
             </p>
             <input ref={fileInputRef} type="file" accept=".apkg,.colpkg,.txt,.csv,.tsv,.md,.pdf,.docx" style={{ display: "none" }}
               onChange={e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ""; }} />
@@ -2137,10 +1979,10 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
                   }}>
                     <span style={{
                       width: 20, height: 20, flexShrink: 0, borderRadius: 5,
-                      border: `1.5px solid ${on ? "#C98A2B" : "var(--card-border)"}`,
-                      background: on ? "#F2C572" : "transparent",
+                      border: `1.5px solid ${on ? "var(--highlight)" : "var(--card-border)"}`,
+                      background: on ? "var(--accent)" : "transparent",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>{on && <Check size={13} color="#16233F" />}</span>
+                    }}>{on && <Check size={13} color="var(--shell-bg)" />}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{
                         display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
@@ -2165,7 +2007,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
         {importMode === "photo" && !pendingCards && (
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
-              <Sparkles size={13} color="#C98A2B" /> {ocr.isAvailable()
+              <Sparkles size={13} color="var(--highlight)" /> {ocr.isAvailable()
                 ? `Take or choose a photo of a book page or your notes. Your phone reads the text itself, then ${aiLabel} turns it into cards — offline you still get the text, and plain word lists become cards on their own.`
                 : `Take or choose a photo of a book page or your notes — ${aiLabel} reads it and builds the cards.`}
             </p>
@@ -2221,7 +2063,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
           </p>
         )}
         {result && (
-          <p style={{ fontSize: 12.5, color: "#5C7A44", fontFamily: "Inter, sans-serif", margin: "8px 0 4px", fontWeight: 600 }}>
+          <p style={{ fontSize: 12.5, color: "var(--success)", fontFamily: "Inter, sans-serif", margin: "8px 0 4px", fontWeight: 600 }}>
             {result}
           </p>
         )}
@@ -2268,7 +2110,7 @@ function ApiKeyPrompt({ onOpenSettings, googleUser }) {
       <p style={{ fontSize: 12.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", margin: "0 0 10px" }}>
         {message}
       </p>
-      <GhostButton onClick={onOpenSettings} style={{ color: "#2F6F6D", borderColor: "#2F6F6D", margin: "0 auto" }}>
+      <GhostButton onClick={onOpenSettings} style={{ color: "var(--brand)", borderColor: "var(--brand)", margin: "0 auto" }}>
         <Key size={15} /> Add API key in Settings
       </GhostButton>
     </div>
@@ -2280,7 +2122,7 @@ function Switch({ checked, onChange }) {
   return (
     <button onClick={() => onChange(!checked)} role="switch" aria-checked={checked} style={{
       width: 46, height: 26, borderRadius: 13, border: "none", padding: 3,
-      background: checked ? "#2F6F6D" : "var(--card-border)",
+      background: checked ? "var(--brand)" : "var(--card-border)",
       display: "flex", alignItems: "center", justifyContent: checked ? "flex-end" : "flex-start",
       transition: "background 0.15s", WebkitTapHighlightColor: "transparent", cursor: "pointer", flexShrink: 0,
     }}>
@@ -2289,15 +2131,32 @@ function Switch({ checked, onChange }) {
   );
 }
 
-function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminder, onSetListed }) {
+function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminder, onSetListed, onExport, onImport, diagInfo }) {
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [reminderNote, setReminderNote] = useState("");
+  const [backupNote, setBackupNote] = useState("");
+  const [diagNote, setDiagNote] = useState("");
+  const [confirmImport, setConfirmImport] = useState(null); // File awaiting confirmation
+  const importInputRef = useRef(null);
   const [provider, setProviderState] = useState(aiImport.getProvider());
   const [hasKey, setHasKey] = useState(aiImport.hasApiKey());
   const info = aiImport.getProviderInfo(provider);
 
   useEffect(() => pushBackHandler(onClose), []);
+
+  const pickImportFile = (file) => {
+    if (!file) return;
+    setConfirmImport(file);
+  };
+
+  const runImport = async () => {
+    const file = confirmImport;
+    setConfirmImport(null);
+    setBackupNote("Importing…");
+    const err = await onImport(file);
+    setBackupNote(err || "Backup imported.");
+  };
 
   const chooseProvider = (id) => {
     aiImport.setProvider(id);
@@ -2387,6 +2246,35 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminde
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
+        }}>Backup</p>
+        <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
+          One JSON file with every subject, card and stat. Keep one somewhere safe — it's the fallback if sync ever goes wrong.
+        </p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+          <GhostButton onClick={async () => setBackupNote((await onExport()) || "Backup saved.")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
+            <Download size={16} /> Export
+          </GhostButton>
+          <GhostButton onClick={() => importInputRef.current && importInputRef.current.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
+            <Upload size={16} /> Import
+          </GhostButton>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: "none" }}
+            onChange={(e) => { pickImportFile(e.target.files && e.target.files[0]); e.target.value = ""; }}
+          />
+        </div>
+        {backupNote && (
+          <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 18px" }}>
+            {backupNote}
+          </p>
+        )}
+        {!backupNote && <div style={{ marginBottom: 18 }} />}
+
+        <p style={{
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
+          textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
         }}>AI-powered import</p>
         <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px" }}>
           Signed in, you get 10 AI imports a day with no key at all. Pasting your own "Front | Back" text is always free{ocr.isAvailable() ? ", and photos are read on this device without a key" : ""}. A key of your own lifts the daily limit — pick which service it's for:
@@ -2398,8 +2286,8 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminde
             return (
               <button key={p.id} onClick={() => chooseProvider(p.id)} style={{
                 flex: 1, padding: "11px 10px", minHeight: 52, borderRadius: 10, textAlign: "left",
-                border: `1px solid ${active ? "#2F6F6D" : "var(--card-border)"}`,
-                background: active ? "#2F6F6D" : "transparent",
+                border: `1px solid ${active ? "var(--brand)" : "var(--card-border)"}`,
+                background: active ? "var(--brand)" : "transparent",
                 color: active ? "#FBF7EC" : "var(--text-secondary)",
                 fontFamily: "Inter, sans-serif", WebkitTapHighlightColor: "transparent", cursor: "pointer",
               }}>
@@ -2451,6 +2339,32 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminde
             ? `Opens ${info.keyUrlLabel} in your browser. Sign in with Google, tap "Create API key", then paste it above — no card, no charges.`
             : `Both open the ${info.keyUrlLabel} in your browser. Sign up, add a card, generate a key, then paste it above — usage is billed by Anthropic directly, a few cents per file or photo.`}
         </p>
+
+        <div style={{ height: 1, background: "var(--card-border)", margin: "18px 0" }} />
+        <p style={{
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
+          textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
+        }}>Troubleshooting</p>
+        <GhostButton
+          onClick={async () => {
+            const text = diagnosticsText(diagInfo || {});
+            try {
+              await navigator.clipboard.writeText(text);
+              setBackupNote(""); // keep the two notes from colliding visually
+              setDiagNote("Diagnostics copied — paste it into your bug report.");
+            } catch (e) {
+              setDiagNote(`Couldn't copy: ${e && e.message ? e.message : e}`);
+            }
+          }}
+          style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}
+        >
+          <ClipboardList size={16} /> Copy diagnostics
+        </GhostButton>
+        {diagNote && (
+          <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "8px 0 0" }}>
+            {diagNote}
+          </p>
+        )}
       </div>
 
       {apiKeyEditorOpen && (
@@ -2459,6 +2373,33 @@ function SettingsModal({ onClose, darkMode, onToggleDarkMode, game, onSetReminde
           onClose={() => setApiKeyEditorOpen(false)}
           onSaved={() => setHasKey(aiImport.hasApiKey(provider))}
         />
+      )}
+
+      {confirmImport && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(10,16,30,0.7)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 70,
+        }} onClick={() => setConfirmImport(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "var(--card-bg)", borderRadius: 12, width: "100%", maxWidth: 400,
+            padding: 22, animation: "popIn 0.15s ease-out",
+          }}>
+            <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18, color: "var(--text-strong)", margin: "0 0 10px" }}>
+              Replace your catalog?
+            </h3>
+            <p style={{ fontSize: 13.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", lineHeight: 1.5, margin: "0 0 18px" }}>
+              Importing <b>{confirmImport.name}</b> replaces everything currently in the app — subjects, cards and stats. If you're signed in, the imported catalog becomes the one that syncs.
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <GhostButton onClick={() => setConfirmImport(null)} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
+                Cancel
+              </GhostButton>
+              <GhostButton onClick={runImport} style={{ color: "#B5533C", borderColor: "#B5533C" }}>
+                Import and replace
+              </GhostButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2530,7 +2471,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
   const flat = flattenTree(subjects);
   const selected = flat.find(f => f.id === nodeId);
   const pool = nodeId === "all" ? cards : cards.filter(c => selected && selected.ids.includes(c.nodeId));
-  const duePool = pool.filter(isDue);
+  const duePool = pool.filter(c => isDue(c));
   const useDue = scope === "due" && duePool.length > 0;
   const startPool = useDue ? duePool : pool;
   const strength = G.deckStrength(pool);
@@ -2538,11 +2479,11 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
   return (
     <div>
       <button onClick={onBack} style={{
-        background: "none", border: "none", color: "#8CA0C2", display: "flex", alignItems: "center",
+        background: "none", border: "none", color: "var(--on-shell-muted)", display: "flex", alignItems: "center",
         gap: 6, fontFamily: "Inter, sans-serif", fontSize: 14, padding: "10px 4px", minHeight: 44, marginBottom: 14, WebkitTapHighlightColor: "transparent",
       }}><ArrowLeft size={15} /> Back to catalog</button>
 
-      <h2 style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 24, color: "#F2C572", margin: "0 0 18px" }}>
+      <h2 style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 24, color: "var(--accent)", margin: "0 0 18px" }}>
         Pick your deck
       </h2>
 
@@ -2565,9 +2506,9 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
               disabled={opt.id === "due" && duePool.length === 0}
               style={{
                 flex: 1, padding: "12px 10px", minHeight: 46, borderRadius: 8,
-                border: `1px solid ${active ? "#F2C572" : "rgba(255,255,255,0.14)"}`,
+                border: `1px solid ${active ? "var(--accent)" : "rgba(255,255,255,0.14)"}`,
                 background: active ? "rgba(242,197,114,0.12)" : "transparent",
-                color: active ? "#F2C572" : opt.id === "due" && duePool.length === 0 ? "#5A6B8C" : "#EDE6D3",
+                color: active ? "var(--accent)" : opt.id === "due" && duePool.length === 0 ? "var(--on-shell-faint)" : "#EDE6D3",
                 fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
                 WebkitTapHighlightColor: "transparent",
               }}>{opt.label}</button>
@@ -2580,7 +2521,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
         border: "1px solid rgba(255,255,255,0.08)", fontFamily: "Inter, sans-serif",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <Ring value={strength} size={44} stroke={5} color="#F2C572" track="rgba(255,255,255,0.14)">
+          <Ring value={strength} size={44} stroke={5} color="var(--accent)" track="rgba(255,255,255,0.14)">
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, fontWeight: 600, color: "#EDE6D3" }}>
               {Math.round(strength * 100)}
             </span>
@@ -2589,7 +2530,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
             <p style={{ color: "#EDE6D3", fontSize: 14, fontWeight: 600, margin: 0 }}>
               {Math.round(strength * 100)}% deck strength
             </p>
-            <p style={{ color: "#8CA0C2", fontSize: 12.5, margin: "2px 0 0" }}>
+            <p style={{ color: "var(--on-shell-muted)", fontSize: 12.5, margin: "2px 0 0" }}>
               {duePool.length} due now · {pool.length} card{pool.length !== 1 ? "s" : ""} total
             </p>
           </div>
@@ -2604,7 +2545,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
   );
 }
 const selectStyle = {
-  width: "100%", background: "#0F1A30", border: "1px solid rgba(255,255,255,0.14)",
+  width: "100%", background: "var(--shell-bg-deep)", border: "1px solid rgba(255,255,255,0.14)",
   borderRadius: 8, color: "#FBF7EC", padding: "13px 14px", minHeight: 48, fontFamily: "Inter, sans-serif", fontSize: 16,
 };
 
@@ -2676,7 +2617,7 @@ function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
     return (
       <div>
         <button onClick={onExit} style={{
-          background: "none", border: "none", color: "#8CA0C2", display: "flex", alignItems: "center",
+          background: "none", border: "none", color: "var(--on-shell-muted)", display: "flex", alignItems: "center",
           gap: 6, fontFamily: "Inter, sans-serif", fontSize: 14, padding: "10px 4px", minHeight: 44, marginBottom: 14, WebkitTapHighlightColor: "transparent",
         }}><ArrowLeft size={15} /> Change deck</button>
 
@@ -2711,7 +2652,7 @@ function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
         )}
 
         {award && !perfect && (
-          <p style={{ textAlign: "center", fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "#8CA0C2", margin: "14px 0 0" }}>
+          <p style={{ textAlign: "center", fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--on-shell-muted)", margin: "14px 0 0" }}>
             "Keep going" replays the {missed.length} card{missed.length !== 1 ? "s" : ""} you missed.
           </p>
         )}
@@ -2723,10 +2664,10 @@ function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <button onClick={onExit} style={{
-          background: "none", border: "none", color: "#8CA0C2", display: "flex", alignItems: "center",
+          background: "none", border: "none", color: "var(--on-shell-muted)", display: "flex", alignItems: "center",
           gap: 6, fontFamily: "Inter, sans-serif", fontSize: 14, padding: "10px 4px", minHeight: 44, WebkitTapHighlightColor: "transparent",
         }}><ArrowLeft size={15} /> Exit</button>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#8CA0C2" }}>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--on-shell-muted)" }}>
           {index + 1} / {queue.length}
         </span>
       </div>
@@ -2742,7 +2683,7 @@ function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
 function ProgressBar({ value }) {
   return (
     <div style={{ height: 4, background: "rgba(255,255,255,0.1)", borderRadius: 2, overflow: "hidden" }}>
-      <div style={{ height: "100%", width: `${value * 100}%`, background: "#F2C572", transition: "width 0.3s" }} />
+      <div style={{ height: "100%", width: `${value * 100}%`, background: "var(--accent)", transition: "width 0.3s" }} />
     </div>
   );
 }
@@ -2750,7 +2691,7 @@ function ProgressBar({ value }) {
 function CardShell({ children, tabLabel, tabColor }) {
   return (
     <div style={{ position: "relative", animation: "popIn 0.25s ease-out" }}>
-      {tabLabel && <IndexCardTab color={tabColor || "#2F6F6D"} label={tabLabel} />}
+      {tabLabel && <IndexCardTab color={tabColor || "var(--brand)"} label={tabLabel} />}
       <div style={{
         background: "var(--card-bg)", borderRadius: "2px 12px 12px 12px", padding: "28px 22px 22px",
         minHeight: 220, boxShadow: "0 6px 20px rgba(0,0,0,0.3)", position: "relative",
@@ -2796,7 +2737,7 @@ function FlipCard({ card, onResult }) {
       {flipped ? (
         <div style={{ display: "flex", gap: 8 }}>
           <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
-          <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "#5C7A44", color: "#FBF7EC" }}>Got it</PrimaryButton>
+          <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
         </div>
       ) : (
         <div style={{ height: 40 }} />
@@ -2830,7 +2771,7 @@ function McqCard({ card, allCards, onResult }) {
   const answered = picked !== null;
 
   return (
-    <CardShell tabLabel="Multiple choice" tabColor="#C98A2B">
+    <CardShell tabLabel="Multiple choice" tabColor="var(--highlight)">
       <div style={{ marginBottom: 18 }}>
         <CardFace text={card.front} imageId={card.frontImageId} size={19} />
       </div>
@@ -2839,7 +2780,7 @@ function McqCard({ card, allCards, onResult }) {
           const isCorrect = normalize(opt) === normalize(card.back);
           let bg = "var(--input-bg)", border = "var(--card-border)", color = "var(--text-strong)";
           if (answered) {
-            if (isCorrect) { bg = "#5C7A44"; border = "#5C7A44"; color = "#FBF7EC"; }
+            if (isCorrect) { bg = "var(--success)"; border = "var(--success)"; color = "#FBF7EC"; }
             else if (opt === picked) { bg = "#B5533C"; border = "#B5533C"; color = "#FBF7EC"; }
           }
           return (
@@ -2875,7 +2816,7 @@ function WriteCard({ card, onResult }) {
       {checked && (
         <div style={{
           padding: "10px 12px", borderRadius: 8, marginBottom: 12,
-          background: isCorrect ? "#5C7A44" : "#B5533C", color: "#FBF7EC", fontFamily: "Inter, sans-serif", fontSize: 13.5,
+          background: isCorrect ? "var(--success)" : "#B5533C", color: "#FBF7EC", fontFamily: "Inter, sans-serif", fontSize: 13.5,
         }}>
           {isCorrect ? "Correct!" : <>Not quite — the answer was <strong>{card.back}</strong></>}
         </div>

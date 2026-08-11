@@ -3,7 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // The user's own catalog — cards, subjects, progress. Strictly private.
-    match /users/{userId} {
+    // The {document=**} wildcard covers the cards subcollection
+    // (users/{uid}/cards/{cardId}) — rules do not cascade into subcollections,
+    // so without this every per-card write would be PERMISSION_DENIED.
+    match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 

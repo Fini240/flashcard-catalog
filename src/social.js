@@ -18,8 +18,20 @@
 // without being searchable by name.
 // ---------------------------------------------------------------------------
 import { FirebaseFirestore } from "@capacitor-firebase/firestore";
+import { report } from "./report";
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no I/L/O/0/1 — misread on paper
+
+// Firestore reports a rules rejection differently depending on the layer that
+// surfaces it: the native Android SDK says PERMISSION_DENIED, the JS SDK uses
+// the code `permission-denied`, and both can arrive as the human-readable
+// "Missing or insufficient permissions." Matching only one of those would send
+// every ordinary "name is taken" into the error log and bury the real faults.
+function isPermissionDenied(e) {
+  if (!e) return false;
+  const text = `${e.code || ""} ${e.message || e}`;
+  return /permission[_-]denied|insufficient permissions/i.test(text);
+}
 
 // Deterministic 6-character code derived from the uid: the same account always
 // produces the same code, on every device, with no extra document to keep in
@@ -97,15 +109,23 @@ export async function claimUsername(uid, name, previous) {
       data: { uid },
       merge: false,
     });
-  } catch {
+  } catch (e) {
+    // A denied write is the expected "name is taken" path — the create rule
+    // only passes on a document that doesn't exist yet. Anything else
+    // (offline, rules bug) produces the same user-facing error, so log it —
+    // otherwise a broken rules deploy looks like "every name is taken".
+    if (!isPermissionDenied(e)) report("social.claimUsername", e);
     return { ok: false, error: "That username is taken." };
   }
 
   if (previous && usernameKey(previous) !== key) {
     try {
       await FirebaseFirestore.deleteDocument({ reference: `usernames/${usernameKey(previous)}` });
-    } catch {
-      // A stale reservation only costs one unused name; never fail the claim.
+    } catch (e) {
+      // Never fail the claim over this — but do record it. The reservation is
+      // now leaked: usernames/<oldname> still points at this uid, so that name
+      // is globally unclaimable and nothing on screen would ever say why.
+      report("social.releasePreviousUsername", e);
     }
   }
   return { ok: true, username: name.trim() };
@@ -142,7 +162,10 @@ export async function isUsernameFree(name) {
   try {
     const { snapshot } = await FirebaseFirestore.getDocument({ reference: `usernames/${key}` });
     return !(snapshot && snapshot.data);
-  } catch {
+  } catch (e) {
+    // Offline read says "taken" — same user-facing answer, but log it so a
+    // permissions/rules problem doesn't masquerade as "no names available".
+    report("social.isUsernameFree", e);
     return false;
   }
 }
@@ -187,7 +210,11 @@ export async function fetchProfiles(uids) {
       const p = await fetchProfile(uid);
       if (p) out.push(p);
     } catch (e) {
-      // A friend who deleted their profile shouldn't break the board.
+      // A friend who deleted their profile shouldn't break the board — but a
+      // permissions failure or a dropped connection lands here too, and then a
+      // friend silently disappears from the leaderboard. Same behaviour either
+      // way; log it so "my friends vanished" is diagnosable.
+      report("social.fetchProfiles", e);
     }
   }
   return out;
@@ -240,9 +267,10 @@ export async function clearFriendAdds(uid, ids) {
   for (const id of ids) {
     try {
       await FirebaseFirestore.deleteDocument({ reference: `profiles/${uid}/friendAdds/${id}` });
-    } catch {
+    } catch (e) {
       // A marker that fails to clear is merged again next launch — harmless,
       // because merging is a set union rather than an append.
+      report("social.clearFriendAdds", e);
     }
   }
 }
@@ -283,6 +311,7 @@ export async function clearNudges(uid, ids) {
       await FirebaseFirestore.deleteDocument({ reference: `profiles/${uid}/nudges/${id}` });
     } catch (e) {
       // best effort — a nudge that fails to clear will just show once more
+      report("social.clearNudges", e);
     }
   }
 }

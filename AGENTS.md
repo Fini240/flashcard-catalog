@@ -34,7 +34,13 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 
 | Path | What |
 |---|---|
-| `src/FlashcardCatalog.jsx` | ~106 KB — the entire UI and app state. Almost every feature change lands here. |
+| `src/FlashcardCatalog.jsx` | ~130 KB — the UI and app state. Almost every feature change lands here. Sync no longer does: it moved to `useSyncEngine.js`. |
+| `src/useSyncEngine.js` | **The sync engine.** Local persistence, the debounced push, the realtime listeners, ownership (`ownerUidRef`) and the timestamp guards. Extracted so this logic is reviewable on its own — treat changes here with the same care as `firebaseSync.js`. |
+| `src/cardSync.js` | Per-card Firestore sync: `users/{uid}/cards/{cardId}`, tombstones, dirty-set batching, and the one-way migration off the parent doc's `cards` array. Merge helpers at the bottom are pure and unit-tested. |
+| `src/srs.js` | The spaced-repetition scheduler (Leitner boxes), extracted from the component so it's testable. **`isDue(card, now)` takes two arguments — never pass it straight to `Array.filter`**, which would supply the index as `now`. |
+| `src/backup.js` | JSON export/import of the whole catalog — the user-facing recovery path |
+| `src/report.js` | Error reporting: console + a 20-entry ring buffer behind the Settings "Copy diagnostics" button. Every catch that would otherwise swallow a failure calls `report()`. |
+| `src/*.test.js` | Vitest suites for the pure logic — SRS, gamification, per-card merge. `npm test`. |
 | `src/aiImport.js` | AI card generation; owner-free-tier vs BYOK routing |
 | `src/ocr.js` | On-device ML Kit text recognition + fallback decision |
 | `src/fileImport.js` | PDF / .docx / text extraction |
@@ -48,12 +54,13 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore` |
 | `firestore.indexes.json` | Composite index behind the global board. Deployed by the same command. |
 | `src/backHandler.js` | Android hardware/gesture back button → in-app navigation |
-| `functions/index.js` | Cloud Function `generateFlashcards`; `DAILY_LIMIT` lives here |
+| `functions/index.js` | Cloud Function `generateFlashcards`; `DAILY_LIMIT` (per user) and `GLOBAL_DAILY_LIMIT` (whole project) live here |
 | `scripts/screenshots.mjs` | Regenerates Play Store screenshots via puppeteer-core |
 | `PLAY_STORE.md` | **The Play Store release runbook. Authoritative — read it before any release work.** |
 
-`README.md` is still the stock Vite template and carries no project
-information; don't trust it.
+`README.md` is now a real, human-facing description of the app (what it does,
+install links, dev commands, privacy). `AGENTS.md` — this file — remains the
+authoritative context for how and why.
 
 ## The ship sequence (standing instruction — do it every time, don't ask)
 
@@ -138,8 +145,25 @@ Play Store compatibility problem).
 - **Cross-device sync has bitten this app twice.** Local data once overwrote a
   freshly signed-in account's cards, and cards vanished from a logged-in
   account (~90 lost). Both are fixed (`3d65e77`), but *any* change touching
-  `firebaseSync.js` or the sign-in/sign-out path needs deliberate testing with
-  two accounts and two devices before shipping.
+  `firebaseSync.js`, `useSyncEngine.js` or `cardSync.js`, or the
+  sign-in/sign-out path, needs deliberate testing with two accounts and two
+  devices before shipping.
+- **Per-card sync has two deployment prerequisites.** Cards live in
+  `users/{uid}/cards/{cardId}`, and Firestore rules **do not cascade into
+  subcollections** — the grant is the recursive `match /users/{userId}/{document=**}`.
+  Ship the rules *before* the client: `firebase deploy --only firestore:rules`.
+  Without it every card read/write is `PERMISSION_DENIED`, sign-in fails for
+  users who have cards, and accounts with none get marked migrated and then
+  silently strand every card they add on-device.
+  The parent doc keeps its pre-migration `cards` array as the rollback path, so
+  in per-card mode nothing may adopt `remote.cards` — see
+  `acceptRemoteParentIfNewer`. Breaking that invariant tombstones every card
+  added since migration.
+- **`isDue(card, now)` must never be passed bare to `Array.filter`.** `filter`
+  supplies the index as the second argument, so `cards.filter(isDue)` compares
+  every card against `now = 0` and reports the whole deck as not due. Write
+  `cards.filter(c => isDue(c))`. This shipped once and silently emptied every
+  study queue; `src/srs.test.js` documents it.
 - **Bump `versionCode` in `android/app/build.gradle` before every Play
   upload** — Play permanently rejects a reused versionCode.
 - `android/upload-keystore.jks` and `android/keystore.properties` are

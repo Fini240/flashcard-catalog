@@ -1,16 +1,52 @@
-# React + Vite
+# Flashcard Catalog
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A study app: flashcards organised into subjects and arbitrarily deep
+subcategories, reviewed on a spaced-repetition schedule (1 → 3 → 7 → 14 → 30
+days; a wrong answer keeps the card due). Three answer modes per card — flip,
+multiple choice, typed.
 
-Currently, two official plugins are available:
+Cards can be created by hand, pasted as `Front | Back` lines, or generated
+from a photo, PDF, Word file or pasted text. On-device OCR (ML Kit) runs
+before any network call, so plain vocabulary lists become cards with no API
+key and no internet at all.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Works fully offline with no account. Google sign-in is optional and adds
+cross-device sync plus a free daily AI-import allowance.
 
-## React Compiler
+XP, streaks, daily quests, achievements and a friends + global leaderboard
+keep the habit alive. Daily study reminders escalate through the day and stop
+the moment your goal is met.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Install
 
-## Expanding the Oxlint configuration
+- **Android APK** (latest stable):
+  <https://github.com/Fini240/flashcard-catalog/releases/download/latest/flashcard-catalog.apk>
+- **Web app**: <https://centering-timer-502020-h0.web.app>
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Built with
+
+React 19 + Vite 8, Capacitor 8 (Android), Firebase (Auth, Firestore,
+Hosting, Cloud Functions), ML Kit text recognition, Gemini/Claude for
+AI-powered import.
+
+## Development
+
+```bash
+npm install
+npm run dev        # local dev server
+npm test           # unit tests (spaced repetition + gamification logic)
+npm run build      # production build → dist/
+npx cap sync android
+cd android && ./gradlew assembleDebug
+```
+
+Build environment needs JDK 21 and the Android SDK. `AGENTS.md` carries the
+full project context (architecture, decisions, release runbook) — read it
+before changing anything.
+
+## Privacy
+
+Cards, subjects and progress live in a private Firestore document only you
+can read. The public leaderboard shows a self-chosen username, an emoji and
+scoreboard numbers — never your Google name, never a card. Card images never
+leave your device.
