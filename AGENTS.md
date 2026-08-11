@@ -185,6 +185,16 @@ Play Store compatibility problem).
   when the user installs it.** Assume a live account is being read by a client
   weeks behind, and never let a schema change hand that client a valid-looking
   empty state.
+- **Never learn who is signed in from a one-shot `getCurrentUser()`.** On the
+  web it reads `auth.currentUser`, which is `null` until the Firebase JS SDK
+  finishes restoring the persisted session — asynchronously, after mount. The
+  app polled once on startup and rendered as signed out after *every* reload;
+  since a signed-out client shows no cards, a fully synced catalog looked
+  empty in the browser while the phone was fine. Subscribe to
+  `firebaseSync.onAuthStateChanged` instead. **Native SDKs restore
+  synchronously, so this class of bug is invisible on the phone** — when the
+  web and the APK disagree about sync, suspect startup ordering in the browser
+  before suspecting the data.
 - **Per-card mode must be entered on session *restore*, not just sign-in.**
   `enterPerCardMode` was once reachable only from `handleSignIn`, so a page
   reload or app relaunch dropped the client back into legacy mode — no
