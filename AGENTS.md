@@ -42,6 +42,10 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/report.js` | Error reporting: console + a 20-entry ring buffer behind the Settings "Copy diagnostics" button. Every catch that would otherwise swallow a failure calls `report()`. |
 | `src/*.test.js` | Vitest suites for the pure logic — SRS, gamification, per-card merge. `npm test`. |
 | `src/aiImport.js` | AI card generation; owner-free-tier vs BYOK routing |
+| `src/drills.js` | **How a deck gets studied.** The drill catalogue, which drills a given deck can sustain, offline generation of cloze blanks / distractors / false statements, and `buildQueue()`, which turns cards into the *steps* a session runs. Pure and unit-tested. |
+| `src/aiDrills.js` | The model's version of the same content, plus deck-tuned drill suggestions. Strictly optional — every failure path falls back to `drills.js`, so no study flow may ever depend on it. Cached in `localStorage` against a fingerprint of the card text. |
+| `src/drillUI.jsx` | The cloze, true/false and match-pairs exercises. Match grades a whole group of cards at once. |
+| `src/cardUI.jsx` | The shared visual vocabulary — buttons, fields, the index card itself. Extracted from `FlashcardCatalog.jsx` so `drillUI.jsx` can use it without a circular import. |
 | `src/ocr.js` | On-device ML Kit text recognition + fallback decision |
 | `src/fileImport.js` | PDF / .docx / text extraction |
 | `src/ankiImport.js` | Anki `.apkg` / `.colpkg` file import — unzip, zstd, SQLite, HTML and cloze cleanup. `buildDecks()` is shared by both import routes. |
@@ -102,6 +106,15 @@ Play Store compatibility problem).
 
 ## Decisions already made — don't relitigate these
 
+- **A card has no answer format; a drill does.** Cards used to carry a `mode`
+  (flip / mcq / write) chosen at import time and never revisited, which put the
+  decision months away from the moment it mattered. Both pickers are gone, the
+  field is ignored on read (old cards still carry it harmlessly), and *how* you
+  are asked is now chosen when you sit down to study. `drills.js` owns that.
+- **Drills degrade, they don't fail.** Every drill is fully playable offline
+  with locally generated content. `aiDrills.js` only ever improves one. No
+  study path may block on a network call, a key, or a well-formed reply — a
+  malformed row is dropped per card, not per session.
 - **Sync is Firebase, not Google Drive.** Drive sync was built first and
   abandoned after persistent failures; the user explicitly chose Firebase.
 - **AI import is hybrid.** Every signed-in user gets 10 free imports/day from

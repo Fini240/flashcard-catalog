@@ -1,0 +1,291 @@
+// ---------------------------------------------------------------------------
+// Drills — the ways a deck can be studied.
+//
+// A card used to carry a fixed answer format, chosen at import time, and the
+// session just rendered whatever each card said. That put the decision in the
+// wrong place: the format that suits a card depends on what you're trying to
+// do right now, not on what you happened to pick the day you imported it. So a
+// card is now just a front and a back, and the *drill* — picked when you sit
+// down to study — decides how it gets asked.
+//
+// Everything here is deterministic and offline. aiDrills.js layers better
+// content on top when a key is set, but every drill has to be playable without
+// one, so nothing in the study flow can depend on a network call.
+// ---------------------------------------------------------------------------
+
+export const EXERCISES = {
+  FLIP: "flip",
+  MCQ: "mcq",
+  WRITE: "write",
+  CLOZE: "cloze",
+  TRUEFALSE: "truefalse",
+  MATCH: "match",
+};
+
+// How many cards one match round pairs up at a time.
+export const MATCH_GROUP = 5;
+
+// Rough seconds per exercise, for the "about 3 min" line on each drill. Based
+// on nothing more scientific than how long these take to answer.
+const SECONDS = {
+  [EXERCISES.FLIP]: 7,
+  [EXERCISES.MCQ]: 6,
+  [EXERCISES.TRUEFALSE]: 4,
+  [EXERCISES.CLOZE]: 12,
+  [EXERCISES.WRITE]: 15,
+  [EXERCISES.MATCH]: 30, // per group of MATCH_GROUP
+};
+
+export const DRILLS = [
+  {
+    id: "speed",
+    label: "Speed round",
+    icon: "zap",
+    blurb: "Tap the right answer, fast",
+    types: [EXERCISES.MCQ, EXERCISES.TRUEFALSE],
+    minCards: 4,
+  },
+  {
+    id: "gaps",
+    label: "Fill the gaps",
+    icon: "pencil",
+    blurb: "Type the word that's missing",
+    types: [EXERCISES.CLOZE],
+    minCards: 1,
+    needsText: true,
+  },
+  {
+    id: "pairs",
+    label: "Match the pairs",
+    icon: "shuffle",
+    blurb: "Pair each term with its meaning",
+    types: [EXERCISES.MATCH],
+    minCards: MATCH_GROUP,
+    needsText: true,
+  },
+  {
+    id: "weak",
+    label: "Weak spots",
+    icon: "flag",
+    blurb: "Your shakiest cards, every which way",
+    types: [EXERCISES.MCQ, EXERCISES.CLOZE, EXERCISES.WRITE, EXERCISES.FLIP],
+    minCards: 4,
+    select: "weak",
+  },
+  {
+    id: "classic",
+    label: "Classic flip",
+    icon: "layers",
+    blurb: "Front, then back, at your own pace",
+    types: [EXERCISES.FLIP],
+    minCards: 1,
+  },
+];
+
+export function drillById(id) {
+  return DRILLS.find((d) => d.id === id) || DRILLS[DRILLS.length - 1];
+}
+
+const hasText = (c) => !!(c && typeof c.back === "string" && c.back.trim() && !c.backImageId);
+
+const normalizeish = (s) => String(s || "").trim().toLowerCase();
+
+// A drill is offered only if the deck can actually sustain it: multiple choice
+// needs wrong answers to draw from, matching needs a full group, and anything
+// that reads the answer as words is meaningless for picture cards.
+export function availableDrills(cards) {
+  const usable = cards || [];
+  return DRILLS.filter((d) => {
+    if (usable.length < d.minCards) return false;
+    if (d.id === "pairs") return usable.filter(hasText).length >= MATCH_GROUP;
+    // Flipping asks nothing of a card, so a drill made only of it always
+    // works. For the rest, count the cards that can actually carry one of the
+    // drill's formats — otherwise a deck of picture answers would be offered
+    // a "speed round" that quietly degrades to flipping, which is the classic
+    // drill wearing a different name.
+    const meaty = d.types.filter((t) => t !== EXERCISES.FLIP);
+    if (!meaty.length) return true;
+    const playable = usable.filter((c) => meaty.some((t) => supports(t, c, usable)));
+    return playable.length >= d.minCards;
+  });
+}
+
+export function estimateSeconds(drill, cardCount) {
+  if (drill.types.includes(EXERCISES.MATCH)) {
+    return Math.ceil(cardCount / MATCH_GROUP) * SECONDS[EXERCISES.MATCH];
+  }
+  const avg = drill.types.reduce((sum, t) => sum + (SECONDS[t] || 8), 0) / drill.types.length;
+  return Math.round(cardCount * avg);
+}
+
+export function formatDuration(seconds) {
+  if (seconds < 60) return "under a min";
+  return `${Math.round(seconds / 60)} min`;
+}
+
+// ---------- picking which cards ----------
+
+// Weakest first: a card's box is how many times running it has been right, so
+// a low box with a real history is what "shaky" means. Never-seen cards sit in
+// the middle — unknown, not weak.
+function weakness(card) {
+  const box = typeof card.box === "number" ? card.box : 0;
+  const seen = (card.correctCount || 0) + (card.wrongCount || 0);
+  if (!seen) return 0.5;
+  const wrongRate = (card.wrongCount || 0) / seen;
+  return Math.min(1, wrongRate * 0.7 + (1 - Math.min(box, 5) / 5) * 0.3);
+}
+
+export function selectCards(drill, cards, limit) {
+  const pool = drill.needsText ? cards.filter(hasText) : [...cards];
+  const ordered = drill.select === "weak"
+    ? [...pool].sort((a, b) => weakness(b) - weakness(a))
+    : shuffled(pool);
+  return typeof limit === "number" ? ordered.slice(0, limit) : ordered;
+}
+
+function shuffled(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ---------- offline exercise content ----------
+
+// Words too common to be worth blanking out — removing "the" teaches nothing.
+const STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "of", "to", "in", "is", "are", "was", "were", "it", "its",
+  "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer", "eines",
+  "und", "oder", "von", "zu", "im", "in", "ist", "sind", "war", "waren", "sich", "als", "auf",
+  "für", "mit", "bei", "dass", "daß", "man", "wird", "werden", "durch", "aus", "nicht",
+]);
+
+// Blank out the most contentful word in the answer: the longest one that isn't
+// furniture. Crude next to what a model picks, but it never fails and it never
+// waits on the network.
+export function localCloze(card) {
+  const back = (card.back || "").trim();
+  if (!back) return null;
+  const words = back.split(/\s+/);
+  let bestIndex = -1;
+  let bestLen = 0;
+  words.forEach((w, i) => {
+    const bare = w.replace(/[^\p{L}\p{N}-]/gu, "");
+    if (!bare || STOPWORDS.has(bare.toLowerCase())) return;
+    if (bare.length > bestLen) { bestLen = bare.length; bestIndex = i; }
+  });
+  if (bestIndex === -1) return null;
+  const answer = words[bestIndex].replace(/[^\p{L}\p{N}-]/gu, "");
+  const text = words.map((w, i) => (i === bestIndex ? w.replace(answer, "____") : w)).join(" ");
+  // A single-word answer would blank the whole thing away, leaving no sentence
+  // to reason from — that is just the write-answer exercise with extra steps.
+  return { text, answer, prompt: card.front, whole: words.length === 1 };
+}
+
+export function localDistractors(card, pool, count = 3) {
+  const wrong = pool
+    .filter((c) => c.id !== card.id && hasText(c) && c.back.trim() !== (card.back || "").trim())
+    .map((c) => c.back.trim());
+  return shuffled([...new Set(wrong)]).slice(0, count);
+}
+
+// A false statement built by pairing this card's question with someone else's
+// answer. Obvious once you know the deck, which is the point at this level.
+export function localTrueFalse(card, pool) {
+  const others = pool.filter((c) => c.id !== card.id && hasText(c) && c.back.trim() !== (card.back || "").trim());
+  const makeTrue = Math.random() < 0.5 || others.length === 0;
+  const claimed = makeTrue ? card.back : shuffled(others)[0].back;
+  return { prompt: card.front, claim: claimed, isTrue: makeTrue };
+}
+
+// ---------- building the queue ----------
+
+// A step is one thing the session puts on screen. Most cover a single card;
+// a match step covers a whole group, and grades every card in it.
+function step(type, cards, payload) {
+  return { key: `${type}:${cards.map((c) => c.id).join(",")}:${Math.random().toString(36).slice(2, 7)}`, type, cards, payload };
+}
+
+// `content` is the AI's work when it ran: { [cardId]: { cloze, distractors,
+// trueFalse } }. Anything missing falls back to the local versions above, so a
+// half-finished generation still produces a complete, playable drill.
+export function buildQueue(drill, cards, content = {}, allCards) {
+  const pool = allCards && allCards.length ? allCards : cards;
+  if (drill.types.includes(EXERCISES.MATCH)) return buildMatchQueue(cards);
+
+  const steps = [];
+  cards.forEach((card, i) => {
+    // Rotate through the drill's formats so a mixed drill actually mixes,
+    // rather than leaving it to chance whether you see all of them.
+    const types = drill.types.filter((t) => supports(t, card, pool));
+    const type = types.length ? types[i % types.length] : EXERCISES.FLIP;
+    steps.push(step(type, [card], payloadFor(type, card, pool, content[card.id])));
+  });
+  return steps;
+}
+
+function buildMatchQueue(cards) {
+  const usable = cards.filter(hasText);
+  const steps = [];
+  for (let i = 0; i < usable.length; i += MATCH_GROUP) {
+    const group = usable.slice(i, i + MATCH_GROUP);
+    // A trailing group of one has nothing to pair against, so fold it back
+    // into the previous round rather than showing a one-item match.
+    if (group.length < 2) {
+      if (steps.length) steps[steps.length - 1].cards.push(...group);
+      break;
+    }
+    steps.push(step(EXERCISES.MATCH, group, null));
+  }
+  return steps.map((s) => ({ ...s, payload: { pairs: shuffled(s.cards.map((c) => ({ id: c.id, term: c.front, meaning: c.back }))) } }));
+}
+
+function supports(type, card, pool) {
+  // A picture answer can only be flipped — every other format has to compare
+  // what you said against a text answer, and there isn't one. This is the same
+  // rule the card editor has always enforced.
+  if (card.backImageId || card.frontImageId) return type === EXERCISES.FLIP;
+  switch (type) {
+    case EXERCISES.CLOZE: return !!localCloze(card);
+    case EXERCISES.MCQ: return localDistractors(card, pool, 1).length > 0;
+    case EXERCISES.TRUEFALSE: return hasText(card);
+    default: return true;
+  }
+}
+
+function payloadFor(type, card, pool, aiContent) {
+  const ai = aiContent || {};
+  switch (type) {
+    case EXERCISES.CLOZE: {
+      const cloze = ai.cloze && ai.cloze.text && ai.cloze.answer ? ai.cloze : localCloze(card);
+      return cloze;
+    }
+    case EXERCISES.MCQ: {
+      // Wrong answers the user wrote themselves outrank both the model and the
+      // rest of the deck — they took the trouble to say what this card is
+      // confusable with.
+      const manual = (card.manualOptions || []).filter((o) => normalizeish(o) !== normalizeish(card.back));
+      const distractors = [...manual, ...(ai.distractors || []).filter(Boolean)].slice(0, 3);
+      const filled = distractors.length >= 3
+        ? distractors
+        : [...distractors, ...localDistractors(card, pool, 3 - distractors.length)];
+      return { options: shuffled([...new Set([card.back, ...filled])]) };
+    }
+    case EXERCISES.TRUEFALSE: {
+      // The model writes a wrong-but-believable version of the answer; whether
+      // you're shown that or the real one is decided here, so replaying the
+      // same deck doesn't replay the same answers.
+      if (ai.falseClaim) {
+        return Math.random() < 0.5
+          ? { prompt: card.front, claim: card.back, isTrue: true }
+          : { prompt: card.front, claim: ai.falseClaim, isTrue: false };
+      }
+      return localTrueFalse(card, pool);
+    }
+    default:
+      return null;
+  }
+}

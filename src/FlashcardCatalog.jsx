@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
-  FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search, Download, ClipboardList
+  FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search, Download, ClipboardList,
+  Zap, Flag
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -13,11 +14,18 @@ import * as ocr from "./ocr";
 import * as ankiImport from "./ankiImport";
 import * as ankiDroid from "./ankiDroid";
 import * as imageStore from "./imageStore";
+import {
+  normalize, PrimaryButton, GhostButton, TextField, Label,
+  IndexCardTab, CardShell, CardFace,
+} from "./cardUI";
 import { pushBackHandler, consumeBack } from "./backHandler";
 import * as G from "./gamification";
 import * as social from "./social";
 import * as reminders from "./reminders";
 import * as backup from "./backup";
+import * as drillsLib from "./drills";
+import * as aiDrills from "./aiDrills";
+import { ClozeCard, TrueFalseCard, MatchCard } from "./drillUI";
 import { applyGrade, isLevelUp, isDue } from "./srs";
 import { report, diagnosticsText } from "./report";
 import { useSyncEngine } from "./useSyncEngine";
@@ -71,11 +79,6 @@ const THEME_VARS = {
     "--text-faint": "#6B7A99",
   },
 };
-const MODES = [
-  { id: "flip", label: "Flip card" },
-  { id: "mcq", label: "Multiple choice" },
-  { id: "write", label: "Write answer" },
-];
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const shuffle = (arr) => {
@@ -86,9 +89,6 @@ const shuffle = (arr) => {
   }
   return a;
 };
-const normalize = (s) =>
-  (s || "").trim().toLowerCase().replace(/[.,!?;:'"]/g, "").replace(/\s+/g, " ");
-
 // ---------- spaced repetition (Leitner boxes) ----------
 // The scheduler lives in ./srs (imported above) so it's unit-testable; the
 // study/session code below uses applyGrade/isLevelUp/isDue unqualified.
@@ -177,6 +177,7 @@ export default function FlashcardCatalog() {
   // from inside a folder, so you land on that deck instead of "All subjects".
   const [studyNodeId, setStudyNodeId] = useState("all");
   const sessionQueueRef = useRef([]);
+  const sessionDrillRef = useRef({ drill: null, content: {} }); // how this session asks
   const sessionOriginRef = useRef("study"); // where Exit/back leads from a session
 
   // Local persistence + cloud sync + sign-in all live in the sync engine —
@@ -284,10 +285,23 @@ export default function FlashcardCatalog() {
     }
   };
 
-  const startSession = (queue, origin) => {
-    sessionQueueRef.current = queue;
+  // A session runs a queue of steps, not of cards: one step is one thing put on
+  // screen, and which exercise that is comes from the drill. The quick paths in
+  // and out of the library don't stop to choose one, so they get the classic
+  // flip — the behaviour they've always had.
+  const startSession = (cards, origin, drill, content) => {
+    const chosen = drill || drillsLib.drillById("classic");
+    sessionDrillRef.current = { drill: chosen, content: content || {} };
+    sessionQueueRef.current = drillsLib.buildQueue(chosen, cards, content || {}, currentDataRef.current.cards);
     sessionOriginRef.current = origin;
     setView("session");
+  };
+
+  // Retry rounds and "study again" rebuild their queue through the same drill,
+  // so a re-run of the missed cards is asked the same way the first pass was.
+  const rebuildQueue = (cards) => {
+    const { drill, content } = sessionDrillRef.current;
+    return drillsLib.buildQueue(drill, cards, content, currentDataRef.current.cards);
   };
 
   // A card's first answer in a session moves it through the Leitner boxes;
@@ -591,13 +605,13 @@ export default function FlashcardCatalog() {
           subjects={subjects} cards={cards}
           initialNodeId={studyNodeId}
           onBack={() => setView("library")}
-          onStart={(queue) => startSession(queue, "study")}
+          onStart={({ drill, content, pool, count }) => startSession(drillsLib.selectCards(drill, pool, count), "study", drill, content)}
         />
       )}
       {view === "session" && (
         <Session
           initialQueue={sessionQueueRef.current}
-          allCards={cards}
+          rebuildQueue={rebuildQueue}
           game={game}
           onGrade={gradeCard}
           onFinish={finishSession}
@@ -753,32 +767,7 @@ function SyncControl({ googleUser, syncState, onSignIn, onSignOut }) {
   );
 }
 
-// ---------- shared bits ----------
-function IndexCardTab({ color, label }) {
-  return (
-    <div style={{
-      // The tab hangs 10px above the card but its box overlaps the card's top
-      // edge. Both are positioned, so without this the card — which comes
-      // later in the DOM — paints over the tab and clips the label in half.
-      position: "absolute", top: -10, left: 18, zIndex: 1,
-      background: color, color: "#FBF7EC",
-      fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, fontWeight: 600,
-      padding: "3px 10px", borderRadius: "3px 3px 0 0",
-      letterSpacing: 0.6, textTransform: "uppercase",
-      boxShadow: "0 -1px 3px rgba(0,0,0,0.15)",
-    }}>{label}</div>
-  );
-}
 
-function PunchHole() {
-  return (
-    <div style={{
-      position: "absolute", left: 14, bottom: 14, width: 10, height: 10,
-      borderRadius: "50%", background: "var(--shell-bg)",
-      boxShadow: "inset 0 1px 2px rgba(0,0,0,0.4)",
-    }} />
-  );
-}
 
 function IconBtn({ onClick, title, children, danger }) {
   return (
@@ -794,38 +783,7 @@ function IconBtn({ onClick, title, children, danger }) {
   );
 }
 
-function PrimaryButton({ onClick, children, style, disabled }) {
-  return (
-    <button onClick={onClick} disabled={disabled} style={{
-      background: disabled ? "var(--shell-raised)" : "var(--accent)", color: disabled ? "var(--on-shell-muted)" : "var(--shell-bg)",
-      border: "none", borderRadius: 10, padding: "14px 22px", minHeight: 48,
-      fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 15.5,
-      display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
-      opacity: disabled ? 0.6 : 1, WebkitTapHighlightColor: "transparent", ...style,
-    }}>{children}</button>
-  );
-}
-function GhostButton({ onClick, children, style }) {
-  return (
-    <button onClick={onClick} style={{
-      background: "transparent", color: "#EDE6D3", border: "1px solid rgba(255,255,255,0.18)",
-      borderRadius: 10, padding: "13px 20px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: 15.5,
-      display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
-      WebkitTapHighlightColor: "transparent", ...style,
-    }}>{children}</button>
-  );
-}
 
-function TextField({ value, onChange, placeholder, area, style, ...rest }) {
-  const common = {
-    width: "100%", background: "var(--shell-bg-deep)", border: "1px solid rgba(255,255,255,0.14)",
-    borderRadius: 8, color: "#FBF7EC", padding: "13px 14px", fontFamily: "Inter, sans-serif",
-    fontSize: 16, outline: "none", ...style,
-  };
-  return area
-    ? <textarea value={value} onChange={onChange} placeholder={placeholder} rows={3} style={{ ...common, resize: "vertical" }} {...rest} />
-    : <input value={value} onChange={onChange} placeholder={placeholder} style={common} {...rest} />;
-}
 
 // ---------- LIBRARY ----------
 function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onOpenSheet, onQuickStudy, goStudy, startReview, googleUser, onOpenSettings }) {
@@ -889,7 +847,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
 
   // Accepts either raw `text` (parsed as "Front | Back" lines) or a pre-parsed
   // `cardPairs` array of {front, back} (from file/photo AI extraction).
-  const importCards = ({ subjectName, categoryName, mode, text, cardPairs }) => {
+  const importCards = ({ subjectName, categoryName, text, cardPairs }) => {
     const trimmedSubject = subjectName.trim();
     const trimmedCategory = categoryName.trim();
     if (!trimmedSubject || !trimmedCategory) return 0;
@@ -923,7 +881,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
 
     const newCards = pairs.map(p => ({
       id: uid(), subjectId: subject.id, nodeId: category.id,
-      front: p.front, back: p.back, mode, manualOptions: [],
+      front: p.front, back: p.back, manualOptions: [],
     }));
 
     if (newCards.length === 0) return 0;
@@ -936,7 +894,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
   // importCards — that handles exactly one subject, and calling it in a loop
   // would read a stale `subjects` from the closure on every pass after the
   // first. Everything is therefore built up locally and committed once.
-  const importAnkiDecks = (allDecks, mode) => {
+  const importAnkiDecks = (allDecks) => {
     // Drop anything already in the catalog before creating any folders, so a
     // re-import doesn't leave an empty subject behind either.
     const { decks, skipped } = ankiImport.dropDuplicateCards(allDecks, cards);
@@ -969,7 +927,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
       for (const c of deck.cards) {
         newCards.push({
           id: uid(), subjectId, nodeId,
-          front: c.front, back: c.back, mode, manualOptions: [],
+          front: c.front, back: c.back, manualOptions: [],
         });
       }
     }
@@ -1466,17 +1424,10 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
   const [back, setBack] = useState(existingCard?.back || "");
   const [frontImageId, setFrontImageId] = useState(existingCard?.frontImageId || null);
   const [backImageId, setBackImageId] = useState(existingCard?.backImageId || null);
-  const [mode, setMode] = useState(existingCard?.mode || "flip");
   const [manualOptions, setManualOptions] = useState(existingCard?.manualOptions?.join(", ") || "");
   const [imageError, setImageError] = useState("");
 
   useEffect(() => pushBackHandler(onClose), []);
-
-  // Picture answers can't be compared as text, so multiple-choice and
-  // write-answer modes don't make sense once the back is a picture.
-  useEffect(() => {
-    if (backType === "image" && mode !== "flip") setMode("flip");
-  }, [backType, mode]);
 
   const pickImage = async (file, current, setId) => {
     try {
@@ -1512,8 +1463,7 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
       back: back.trim(),
       frontImageId: frontType === "image" ? frontImageId : null,
       backImageId: backType === "image" ? backImageId : null,
-      mode,
-      manualOptions: mode === "mcq" && backType === "text" && manualOptions.trim()
+      manualOptions: backType === "text" && manualOptions.trim()
         ? manualOptions.split(",").map(s => s.trim()).filter(Boolean)
         : [],
     });
@@ -1566,32 +1516,20 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
           </p>
         )}
 
-        <Label>How should you answer this card?</Label>
-        <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-          {(backType === "image" ? MODES.filter(m => m.id === "flip") : MODES).map(m => (
-            <button key={m.id} onClick={() => setMode(m.id)} style={{
-              padding: "11px 16px", minHeight: 44, borderRadius: 20, fontSize: 13.5, fontFamily: "Inter, sans-serif", fontWeight: 600,
-              border: mode === m.id ? "1px solid var(--brand)" : "1px solid var(--card-border)",
-              background: mode === m.id ? "var(--brand)" : "transparent",
-              color: mode === m.id ? "#FBF7EC" : "var(--text-secondary)",
-              WebkitTapHighlightColor: "transparent",
-            }}>{m.label}</button>
-          ))}
-        </div>
         {backType === "image" && (
           <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 12px" }}>
-            A picture answer can only use flip cards — multiple choice and write-answer need a text answer to check against.
+            A picture answer can only be flipped — the drills that check what you typed need a text answer to compare against.
           </p>
         )}
 
-        {mode === "mcq" && backType === "text" && (
+        {backType === "text" && (
           <>
             <Label>Extra wrong options (optional, comma-separated)</Label>
             <TextField value={manualOptions} onChange={e => setManualOptions(e.target.value)}
               placeholder="e.g. Ribosome, Golgi apparatus, Nucleus"
               style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 4 }} />
             <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 12px" }}>
-              If you leave this blank, we'll pull wrong answers from other cards in this deck.
+              Used as the wrong answers whenever a drill asks you to choose. Leave it blank and they're drawn from your other cards, or written for you by {"AI"}.
             </p>
           </>
         )}
@@ -1668,13 +1606,6 @@ function ImagePicker({ imageId, onPick, onRemove, label }) {
   );
 }
 
-function Label({ children, style }) {
-  return <p style={{
-    fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-muted)",
-    textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-    ...style,
-  }}>{children}</p>;
-}
 
 const IMPORT_MODES = [
   { id: "paste", label: "Paste text", icon: Upload },
@@ -1700,7 +1631,6 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
   const [importMode, setImportMode] = useState(initialMode || "paste");
   const [subjectName, setSubjectName] = useState(initialSubjectName || "");
   const [categoryName, setCategoryName] = useState(initialCategoryName || "");
-  const [mode, setMode] = useState("flip");
   const [text, setText] = useState("");
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
@@ -1753,7 +1683,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
   };
 
   const doPasteImport = () => {
-    const count = onImport({ subjectName, categoryName, mode, text });
+    const count = onImport({ subjectName, categoryName, text });
     if (count > 0) {
       setResult(`Imported ${count} card${count !== 1 ? "s" : ""}. Paste more or close this dialog.`);
       setText("");
@@ -1886,7 +1816,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
   const removePendingCard = (idx) => setPendingCards(pendingCards.filter((_, i) => i !== idx));
 
   const confirmPendingImport = () => {
-    const count = onImport({ subjectName, categoryName, mode, cardPairs: pendingCards });
+    const count = onImport({ subjectName, categoryName, cardPairs: pendingCards });
     setResult(`Imported ${count} card${count !== 1 ? "s" : ""}.`);
     setPendingCards(null);
   };
@@ -1959,7 +1889,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
   const ankiSelectedCards = ankiSelection.reduce((n, d) => n + d.cards.length, 0);
 
   const confirmAnkiImport = () => {
-    const { added, skipped } = onImportAnki(ankiSelection, mode);
+    const { added, skipped } = onImportAnki(ankiSelection);
     const subjects = new Set(ankiSelection.map(d => d.subject)).size;
     // Say so when nothing came in, rather than reporting a cheerful "0 cards".
     // Re-importing a deck you already have is a normal thing to do by accident.
@@ -2031,19 +1961,6 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             </datalist>
           </>
         )}
-
-        <Label>How should you answer these cards?</Label>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          {MODES.map(m => (
-            <button key={m.id} onClick={() => setMode(m.id)} style={{
-              padding: "11px 16px", minHeight: 44, borderRadius: 20, fontSize: 13.5, fontFamily: "Inter, sans-serif", fontWeight: 600,
-              border: mode === m.id ? "1px solid var(--brand)" : "1px solid var(--card-border)",
-              background: mode === m.id ? "var(--brand)" : "transparent",
-              color: mode === m.id ? "#FBF7EC" : "var(--text-secondary)",
-              WebkitTapHighlightColor: "transparent",
-            }}>{m.label}</button>
-          ))}
-        </div>
 
         {importMode === "paste" && (
           <>
@@ -2777,10 +2694,146 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
         </p>
       )}
 
-      <PrimaryButton onClick={() => onStart(shuffle(startPool).slice(0, sessionCount))} disabled={startPool.length === 0} style={{ marginTop: 18, width: "100%" }}>
-        <Shuffle size={16} /> Start session{startPool.length ? ` · ${sessionCount} card${sessionCount !== 1 ? "s" : ""}` : ""}
-      </PrimaryButton>
+      <DrillPicker
+        pool={startPool}
+        sessionCount={sessionCount}
+        onStart={(drill, content) => onStart({ drill, content, pool: startPool, count: sessionCount })}
+      />
     </div>
+  );
+}
+
+// The old flow shuffled the deck and went. Now the last thing you choose is
+// *how* to be asked — the part that used to be decided months earlier, at
+// import time, and then never revisited.
+function DrillPicker({ pool, sessionCount, onStart }) {
+  const [tuning, setTuning] = useState(null);   // null | "loading" | "done" | "off"
+  const [suggestions, setSuggestions] = useState([]);
+  const [content, setContent] = useState({});
+  const [note, setNote] = useState("");
+
+  // A representative sitting, used to work out which drills this deck can
+  // actually sustain — matching needs five cards in the sitting, not five in
+  // the library.
+  const cards = useMemo(() => shuffle(pool).slice(0, sessionCount), [pool, sessionCount]);
+  const drills = useMemo(() => drillsLib.availableDrills(cards), [cards]);
+
+  // What gets sent for tuning. Each drill picks its own cards once chosen, and
+  // "weak spots" deliberately picks different ones from the rest, so tuning
+  // only the random sitting would leave that drill entirely untuned. Sending
+  // both candidate sets means whichever drill is picked is mostly covered, and
+  // any card that isn't just falls back to local content.
+  const tuneSet = useMemo(() => {
+    const weakest = drillsLib.selectCards(drillsLib.drillById("weak"), pool, sessionCount);
+    const seen = new Set();
+    return [...cards, ...weakest].filter((c) => !seen.has(c.id) && seen.add(c.id)).slice(0, 30);
+  }, [cards, pool, sessionCount]);
+
+  // Asking the model costs a call, so it happens once per deck when the
+  // options come into view, not per drill. Its answer is cached against the
+  // card text, so coming back to the same deck is instant and free.
+  useEffect(() => {
+    let live = true;
+    if (!aiDrills.hasKey() || tuneSet.length === 0) { setTuning("off"); return; }
+    setTuning("loading");
+    aiDrills.tuneDeck(tuneSet)
+      .then((res) => {
+        if (!live) return;
+        setContent(res.content || {});
+        setSuggestions(res.suggestions || []);
+        setTuning("done");
+      })
+      .catch((e) => {
+        if (!live) return;
+        setTuning("off");
+        // Worth naming: a rejected key or an exhausted quota is something the
+        // user can act on, and the drills silently getting worse is not.
+        setNote(String(e?.message || "").includes("NO_KEY") ? "" : "Couldn't reach the AI — these are the standard drills.");
+      });
+    return () => { live = false; };
+  }, [tuneSet]);
+
+  // The model's ranking wins where it has an opinion; anything it didn't
+  // mention keeps its place underneath, so every playable drill stays offered.
+  const ordered = useMemo(() => {
+    const rank = new Map(suggestions.map((s, i) => [s.id, i]));
+    const blurbs = new Map(suggestions.map((s) => [s.id, s.blurb]));
+    return [...drills]
+      .sort((a, b) => (rank.has(a.id) ? rank.get(a.id) : 99) - (rank.has(b.id) ? rank.get(b.id) : 99))
+      .map((d) => ({ ...d, tuned: blurbs.get(d.id) || "" }));
+  }, [drills, suggestions]);
+
+  if (!pool.length) {
+    return (
+      <PrimaryButton disabled style={{ marginTop: 18, width: "100%" }}>
+        <Shuffle size={16} /> Nothing to study here
+      </PrimaryButton>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 22 }}>
+        <Label style={{ margin: 0 }}>Pick your drill</Label>
+        {tuning === "loading" && (
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--on-shell-muted)" }}>
+            tuning to this deck…
+          </span>
+        )}
+        {tuning === "done" && (
+          <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--accent)" }}>
+            <Sparkles size={11} /> tuned to this deck
+          </span>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+        {ordered.map((d) => (
+          <button key={d.id} onClick={() => onStart(d, content)} style={{
+            display: "flex", alignItems: "center", gap: 12, textAlign: "left",
+            padding: "14px 16px", minHeight: 64, borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)",
+            WebkitTapHighlightColor: "transparent",
+          }}>
+            <DrillIcon id={d.icon} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{
+                display: "block", fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 600, color: "#EDE6D3",
+              }}>{d.label}</span>
+              <span style={{
+                display: "block", fontFamily: "Inter, sans-serif", fontSize: 12.5,
+                color: d.tuned ? "var(--accent)" : "var(--on-shell-muted)", marginTop: 2,
+              }}>{d.tuned || d.blurb}</span>
+            </span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-faint)", whiteSpace: "nowrap" }}>
+              {drillsLib.formatDuration(drillsLib.estimateSeconds(d, Math.min(sessionCount, cards.length)))}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {(note || tuning === "off") && (
+        <p style={{
+          fontFamily: "Inter, sans-serif", fontSize: 12, color: "var(--on-shell-muted)",
+          margin: "10px 2px 0", lineHeight: 1.45,
+        }}>
+          {note || <>Add an AI key in Settings and the drills get written around your own cards — real gaps to fill, wrong answers worth second-guessing.</>}
+        </p>
+      )}
+    </>
+  );
+}
+
+function DrillIcon({ id }) {
+  const Icon = { zap: Zap, pencil: Pencil, shuffle: Shuffle, flag: Flag, layers: Layers }[id] || Layers;
+  return (
+    <span style={{
+      width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+      background: "rgba(242,197,114,0.14)", color: "var(--accent)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <Icon size={17} />
+    </span>
   );
 }
 const selectStyle = {
@@ -2789,7 +2842,7 @@ const selectStyle = {
 };
 
 // ---------- SESSION ----------
-function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
+function Session({ initialQueue, rebuildQueue, game, onGrade, onFinish, onExit }) {
   const [queue, setQueue] = useState(initialQueue);
   const [index, setIndex] = useState(0);
   const [missed, setMissed] = useState([]);
@@ -2805,34 +2858,50 @@ function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
   const answerLog = useRef([]);
   const current = queue[index];
 
-  const handleResult = (wasCorrect) => {
-    const firstTime = !gradedIds.current.has(current.id);
-    if (onGrade && firstTime) {
-      gradedIds.current.add(current.id);
-      onGrade(current.id, wasCorrect);
-    }
-    answerLog.current.push({
-      correct: wasCorrect,
-      // A card climbing past its personal-best box is the only thing that
-      // pays the "strengthened" bonus.
-      levelUp: firstTime && isLevelUp(current, wasCorrect),
-      repeat: !firstTime,
+  // One step can cover several cards — matching pairs grades a whole group at
+  // once — so everything downstream works from a list of verdicts rather than
+  // a single boolean.
+  const gradeAll = (verdicts) => {
+    let anyWrong = false;
+    verdicts.forEach(({ card, correct }) => {
+      const firstTime = !gradedIds.current.has(card.id);
+      if (onGrade && firstTime) {
+        gradedIds.current.add(card.id);
+        onGrade(card.id, correct);
+      }
+      answerLog.current.push({
+        correct,
+        // A card climbing past its personal-best box is the only thing that
+        // pays the "strengthened" bonus.
+        levelUp: firstTime && isLevelUp(card, correct),
+        repeat: !firstTime,
+      });
+      if (correct) setCorrectCount(n => n + 1);
+      else { anyWrong = true; setMissed(m => [...m, card]); }
     });
-    if (wasCorrect) setCorrectCount(n => n + 1);
-    else setMissed(m => [...m, current]);
+
     if (index + 1 < queue.length) {
       setIndex(index + 1);
     } else {
       // Round over: bank the XP once, then show what it was worth.
-      const perfect = missed.length === 0 && wasCorrect;
+      const perfect = missed.length === 0 && !anyWrong;
       setAward(onFinish ? onFinish({ answers: answerLog.current, perfect }) : null);
       answerLog.current = [];
       setIndex(queue.length); // triggers summary
     }
   };
 
+  // What the single-card exercises call: this step's one card, right or wrong.
+  const handleResult = (wasCorrect) => gradeAll([{ card: current.cards[0], correct: wasCorrect }]);
+
+  // What matching calls: a verdict per card in the group.
+  const handleGroupResult = (results) => {
+    const byId = new Map(current.cards.map(c => [c.id, c]));
+    gradeAll(results.filter(r => byId.has(r.cardId)).map(r => ({ card: byId.get(r.cardId), correct: r.correct })));
+  };
+
   const retryMissed = () => {
-    setQueue(shuffle(missed));
+    setQueue(rebuildQueue ? rebuildQueue(missed) : shuffle(missed));
     setMissed([]);
     setIndex(0);
     setCorrectCount(0);
@@ -2842,7 +2911,10 @@ function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
   };
 
   const studyAgain = () => {
-    setQueue(shuffle(initialQueue));
+    // Rebuilt rather than reshuffled, so a second pass asks the same cards
+    // differently — new blanks, new wrong answers, new pairings.
+    const cards = initialQueue.flatMap(s => s.cards);
+    setQueue(rebuildQueue ? rebuildQueue(cards) : shuffle(initialQueue));
     setMissed([]);
     setIndex(0);
     setCorrectCount(0);
@@ -2875,7 +2947,7 @@ function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
               Round {round} complete
             </p>
             <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15, color: "var(--text-secondary)", margin: "0 0 20px" }}>
-              {correctCount} of {queue.length} correct
+              {correctCount} of {queue.reduce((n, s) => n + s.cards.length, 0)} correct
             </p>
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
               {!perfect && (
@@ -2912,9 +2984,12 @@ function Session({ initialQueue, allCards, game, onGrade, onFinish, onExit }) {
       </div>
       <ProgressBar value={(index) / queue.length} />
       <div style={{ height: 20 }} />
-      {current.mode === "flip" && <FlipCard key={current.id} card={current} onResult={handleResult} />}
-      {current.mode === "mcq" && <McqCard key={current.id} card={current} allCards={allCards} onResult={handleResult} />}
-      {current.mode === "write" && <WriteCard key={current.id} card={current} onResult={handleResult} />}
+      <Exercise
+        key={current.key}
+        step={current}
+        onResult={handleResult}
+        onGroupResult={handleGroupResult}
+      />
     </div>
   );
 }
@@ -2927,39 +3002,7 @@ function ProgressBar({ value }) {
   );
 }
 
-// `fill` is for the two faces of a flip card: the shell stretches to the full
-// height of the flip container (so both faces are exactly the same size, which
-// is what sells the turn) and gives up its own entrance animation, since the
-// flip wrapper plays that once for the pair.
-function CardShell({ children, tabLabel, tabColor, fill }) {
-  return (
-    <div style={{ position: "relative", animation: fill ? undefined : "popIn 0.25s ease-out", height: fill ? "100%" : undefined }}>
-      {tabLabel && <IndexCardTab color={tabColor || "var(--brand)"} label={tabLabel} />}
-      <div style={{
-        background: "var(--card-bg)", borderRadius: "2px 12px 12px 12px", padding: "28px 22px 22px",
-        minHeight: 220, boxShadow: "0 6px 20px rgba(0,0,0,0.3)", position: "relative",
-        ...(fill ? { height: "100%", display: "flex", flexDirection: "column" } : null),
-      }}>
-        {children}
-        <PunchHole />
-      </div>
-    </div>
-  );
-}
 
-function CardFace({ text, imageId, size }) {
-  const src = imageId ? imageStore.getImage(imageId) : null;
-  if (imageId) {
-    return src
-      ? <img src={src} alt={text || ""} style={{ maxWidth: "100%", maxHeight: 220, borderRadius: 8, objectFit: "contain" }} />
-      : <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-faint)", margin: 0 }}>Picture not available on this device</p>;
-  }
-  return (
-    <p style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: size || 21, color: "var(--text-strong)", margin: 0, lineHeight: 1.4 }}>
-      {text}
-    </p>
-  );
-}
 
 function FlipCard({ card, onResult }) {
   const [flipped, setFlipped] = useState(false);
@@ -3006,28 +3049,31 @@ function FlipCard({ card, onResult }) {
   );
 }
 
-function McqCard({ card, allCards, onResult }) {
-  const [options, setOptions] = useState(null);
+// One step in, one exercise out. Everything a step needs was worked out when
+// the queue was built, so nothing here has to know about drills or the model.
+function Exercise({ step, onResult, onGroupResult }) {
+  const card = step.cards[0];
+  switch (step.type) {
+    case drillsLib.EXERCISES.MCQ:
+      return <McqCard card={card} options={step.payload.options} onResult={onResult} />;
+    case drillsLib.EXERCISES.WRITE:
+      return <WriteCard card={card} onResult={onResult} />;
+    case drillsLib.EXERCISES.CLOZE:
+      return <ClozeCard card={card} payload={step.payload} onResult={onResult} />;
+    case drillsLib.EXERCISES.TRUEFALSE:
+      return <TrueFalseCard payload={step.payload} onResult={onResult} />;
+    case drillsLib.EXERCISES.MATCH:
+      return <MatchCard payload={step.payload} onResult={onGroupResult} />;
+    default:
+      return <FlipCard card={card} onResult={onResult} />;
+  }
+}
+
+// The options are built by the drill now — from the wrong answers you wrote,
+// the ones the model wrote, and the rest of the deck, in that order — so this
+// only has to draw them.
+function McqCard({ card, options, onResult }) {
   const [picked, setPicked] = useState(null);
-
-  useEffect(() => {
-    const manual = card.manualOptions || [];
-    let pool = manual.filter(o => normalize(o) !== normalize(card.back));
-    if (pool.length < 3) {
-      const sameCategory = allCards.filter(c => c.id !== card.id && c.nodeId === card.nodeId).map(c => c.back);
-      const sameSubject = allCards.filter(c => c.id !== card.id && c.subjectId === card.subjectId).map(c => c.back);
-      const others = allCards.filter(c => c.id !== card.id).map(c => c.back);
-      const candidates = shuffle([...new Set([...sameCategory, ...sameSubject, ...others])])
-        .filter(o => normalize(o) !== normalize(card.back) && !pool.includes(o));
-      pool = [...pool, ...candidates].slice(0, 3);
-    } else {
-      pool = shuffle(pool).slice(0, 3);
-    }
-    setOptions(shuffle([card.back, ...pool]));
-    setPicked(null);
-  }, [card.id]);
-
-  if (!options) return null;
   const answered = picked !== null;
 
   return (
