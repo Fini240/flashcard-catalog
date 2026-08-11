@@ -75,7 +75,11 @@ npm run build && npx cap sync android && cd android && ./gradlew assembleDebug
 then, all of these — the user treats them as one unit:
 
 1. Copy the rebuilt APK to `~/Downloads/flashcard-catalog.apk`
-2. Deploy the web app: `npx firebase deploy --only hosting --project centering-timer-502020-h0`
+2. Deploy the web app: `firebase deploy --only hosting --project centering-timer-502020-h0`
+   (the global CLI at `/opt/homebrew/bin/firebase` — `firebase-tools` is *not* a
+   local dependency, so `npx firebase` fails with "could not determine
+   executable to run". It fails loudly, but a piped `grep` for the success line
+   will swallow it and look like a no-op, so check the exit status.)
 3. `git add -A && git commit -m "…" && git push` (`origin/main`)
 4. `gh release upload latest ~/Downloads/flashcard-catalog.apk --clobber`
 

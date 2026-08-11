@@ -646,30 +646,29 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
         input, textarea, select { font-family: inherit; }
         .fc-scroll::-webkit-scrollbar { width: 8px; }
         .fc-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
-        /* Two-sided card flip. Both faces sit in the same grid cell so the
-           container is already as tall as the taller face — nothing below the
-           card relayouts mid-flip, which is what made this stutter before. */
-        .fc-flip { perspective: 1200px; }
+        /* Two-sided card flip — the whole card turns, paper and all, so each
+           face is a complete card. Both faces sit in the same grid cell, so the
+           container is already as tall as the taller one and nothing below the
+           card relayouts mid-turn, which is what made this stutter before.
+           Perspective tracks the card's own width: a fixed value distorts a
+           360px phone card and a 1200px desktop card by wildly different
+           amounts. */
+        .fc-flip { perspective: clamp(900px, 140vw, 2200px); }
         .fc-flip-inner {
           display: grid;
           width: 100%;
           transform-style: preserve-3d;
           -webkit-transform-style: preserve-3d;
-          transition: transform 0.34s cubic-bezier(0.2, 0.8, 0.3, 1);
+          transition: transform 0.42s cubic-bezier(0.2, 0.75, 0.3, 1);
           will-change: transform;
         }
         .fc-flip-face {
           grid-area: 1 / 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
           backface-visibility: hidden;
           -webkit-backface-visibility: hidden;
           transform: rotateY(0deg);
         }
         .fc-flip-face-back { transform: rotateY(180deg); }
-        .fc-flip-actions { transition: opacity 0.2s ease-out 0.14s; }
         @keyframes popIn { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         @keyframes sheetUp { from { transform: translateY(24px); opacity: 0.4; } to { transform: translateY(0); opacity: 1; } }
         @media (prefers-reduced-motion: reduce) {
@@ -2919,13 +2918,18 @@ function ProgressBar({ value }) {
   );
 }
 
-function CardShell({ children, tabLabel, tabColor }) {
+// `fill` is for the two faces of a flip card: the shell stretches to the full
+// height of the flip container (so both faces are exactly the same size, which
+// is what sells the turn) and gives up its own entrance animation, since the
+// flip wrapper plays that once for the pair.
+function CardShell({ children, tabLabel, tabColor, fill }) {
   return (
-    <div style={{ position: "relative", animation: "popIn 0.25s ease-out" }}>
+    <div style={{ position: "relative", animation: fill ? undefined : "popIn 0.25s ease-out", height: fill ? "100%" : undefined }}>
       {tabLabel && <IndexCardTab color={tabColor || "var(--brand)"} label={tabLabel} />}
       <div style={{
         background: "var(--card-bg)", borderRadius: "2px 12px 12px 12px", padding: "28px 22px 22px",
         minHeight: 220, boxShadow: "0 6px 20px rgba(0,0,0,0.3)", position: "relative",
+        ...(fill ? { height: "100%", display: "flex", flexDirection: "column" } : null),
       }}>
         {children}
         <PunchHole />
@@ -2950,34 +2954,44 @@ function CardFace({ text, imageId, size }) {
 
 function FlipCard({ card, onResult }) {
   const [flipped, setFlipped] = useState(false);
+  // Both faces are stretched to the taller one (the answer side, which carries
+  // the buttons), so the text and its caption are centred as a pair rather than
+  // pinned top and bottom — otherwise the question side reads as half empty.
+  const body = {
+    flex: 1, minHeight: 140, display: "flex", flexDirection: "column",
+    alignItems: "center", justifyContent: "center", textAlign: "center",
+  };
+  const caption = { textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "14px 0 0" };
   return (
-    <CardShell tabLabel="Flip">
-      <div
-        className="fc-flip"
-        onClick={() => setFlipped(f => !f)}
-        style={{ cursor: "pointer", minHeight: 140, display: "flex", alignItems: "center" }}>
-        <div className="fc-flip-inner" style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
-          <div className="fc-flip-face">
-            <CardFace text={card.front} imageId={card.frontImageId} />
-          </div>
-          <div className="fc-flip-face fc-flip-face-back">
-            <CardFace text={card.back} imageId={card.backImageId} />
-          </div>
+    <div
+      className="fc-flip"
+      onClick={() => setFlipped(f => !f)}
+      style={{ cursor: "pointer", animation: "popIn 0.25s ease-out" }}>
+      <div className="fc-flip-inner" style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
+        <div className="fc-flip-face" aria-hidden={flipped}>
+          <CardShell fill tabLabel="Flip">
+            <div style={body}>
+              <CardFace text={card.front} imageId={card.frontImageId} />
+              <p style={caption}>Tap the card to reveal the answer</p>
+            </div>
+          </CardShell>
+        </div>
+        <div className="fc-flip-face fc-flip-face-back" aria-hidden={!flipped}>
+          <CardShell fill tabLabel="Answer" tabColor="var(--success)">
+            <div style={body}>
+              <CardFace text={card.back} imageId={card.backImageId} />
+              <p style={caption}>That's the answer</p>
+            </div>
+            {/* The buttons ride on the back face, so tapping them must not also
+                count as a tap on the card and turn it back over. */}
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }} onClick={e => e.stopPropagation()}>
+              <GhostButton onClick={() => onResult(false)} tabIndex={flipped ? 0 : -1} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
+              <PrimaryButton onClick={() => onResult(true)} tabIndex={flipped ? 0 : -1} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
+            </div>
+          </CardShell>
         </div>
       </div>
-      <p style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "8px 0 18px" }}>
-        {flipped ? "That's the answer" : "Tap the card to reveal the answer"}
-      </p>
-      {/* Kept mounted and faded in, so the flip never has to share a frame with
-          the buttons appearing and pushing the layout around. */}
-      <div
-        className="fc-flip-actions"
-        aria-hidden={!flipped}
-        style={{ display: "flex", gap: 8, opacity: flipped ? 1 : 0, pointerEvents: flipped ? "auto" : "none" }}>
-        <GhostButton onClick={() => onResult(false)} tabIndex={flipped ? 0 : -1} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
-        <PrimaryButton onClick={() => onResult(true)} tabIndex={flipped ? 0 : -1} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
-      </div>
-    </CardShell>
+    </div>
   );
 }
 
