@@ -266,6 +266,10 @@ export function localTrueFalse(card, pool) {
     prompt: card.front,
     claim: makeTrue ? card.back : others[0],
     isTrue: makeTrue,
+    // Carried so a false claim can be corrected on screen. Being told you were
+    // right that "sobre" doesn't mean "als" teaches nothing on its own — the
+    // point of the exercise is to leave knowing it means "über".
+    answer: card.back,
   };
 }
 
@@ -355,8 +359,8 @@ function payloadFor(type, card, pool, aiContent) {
       // same deck doesn't replay the same answers.
       if (ai.falseClaim) {
         return Math.random() < 0.5
-          ? { prompt: card.front, claim: card.back, isTrue: true }
-          : { prompt: card.front, claim: ai.falseClaim, isTrue: false };
+          ? { prompt: card.front, claim: card.back, isTrue: true, answer: card.back }
+          : { prompt: card.front, claim: ai.falseClaim, isTrue: false, answer: card.back };
       }
       return localTrueFalse(card, pool);
     }

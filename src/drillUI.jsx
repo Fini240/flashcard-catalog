@@ -14,7 +14,16 @@ const captionStyle = {
   color: "var(--text-faint)", margin: "14px 0 0",
 };
 
+// The word being asked about. It was set at 13.5 to read as a caption, but
+// it's the thing you're actually being tested on — in a vocabulary deck it's
+// half the question — so it carries a little more weight than a label.
 const promptStyle = {
+  fontFamily: "Inter, sans-serif", fontSize: 16.5, fontWeight: 500,
+  color: "var(--text-secondary)", margin: "0 0 16px", textAlign: "center",
+};
+
+// Instructions, as opposed to content: these stay quiet.
+const hintStyle = {
   fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-muted)",
   margin: "0 0 14px", textAlign: "center",
 };
@@ -126,6 +135,23 @@ export function TrueFalseCard({ payload, onResult }) {
               : (payload.isTrue ? "It was true" : "It was false")}
           </p>
         )}
+
+        {/* Knowing a claim was false leaves you no better off than before, so
+            the real answer is shown either way once you've committed. */}
+        {answered && !payload.isTrue && payload.answer && (
+          <div style={{
+            marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--card-border)", textAlign: "center",
+          }}>
+            <p style={{
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: 0.6,
+              textTransform: "uppercase", color: "var(--text-faint)", margin: "0 0 6px",
+            }}>The right answer</p>
+            <p style={{
+              fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 19,
+              color: "var(--success)", margin: 0, lineHeight: 1.35,
+            }}>{payload.answer}</p>
+          </div>
+        )}
       </CardShell>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -185,7 +211,7 @@ export function MatchCard({ payload, onResult }) {
   return (
     <>
       <CardShell tabLabel="Match the pairs" tabColor="var(--brand)">
-        <p style={promptStyle}>Tap a term, then tap what it means</p>
+        <p style={hintStyle}>Tap a term, then tap what it means</p>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
             {pairs.map((p) => (

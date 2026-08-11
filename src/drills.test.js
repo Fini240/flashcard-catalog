@@ -70,6 +70,24 @@ describe("localTrueFalse", () => {
   it("tells the truth when there is no other card to borrow from", () => {
     expect(D.localTrueFalse(deck[0], [deck[0]]).isTrue).toBe(true);
   });
+
+  // Being told you were right that "sobre" doesn't mean "als" teaches nothing
+  // unless you also learn it means "über".
+  it("carries the real answer so a false claim can be corrected", () => {
+    for (let i = 0; i < 30; i++) {
+      expect(D.localTrueFalse(deck[0], deck).answer).toBe(deck[0].back);
+    }
+  });
+
+  it("carries it through the queue builder too, model content or not", () => {
+    const withAi = D.buildQueue(D.drillById("speed"), deck, {
+      1: { falseClaim: "Eine glatte, ungestreifte Oberfläche" },
+    }, deck);
+    const withoutAi = D.buildQueue(D.drillById("speed"), deck, {}, deck);
+    [...withAi, ...withoutAi]
+      .filter((s) => s.type === D.EXERCISES.TRUEFALSE)
+      .forEach((s) => expect(s.payload.answer).toBe(s.cards[0].back));
+  });
 });
 
 describe("localDistractors", () => {
