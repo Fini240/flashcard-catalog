@@ -270,9 +270,27 @@ function extract(db) {
     throw new Error("That collection has no notes table — it may not be an Anki file.");
   }
   const notesResult = firstResult(db, "SELECT id, mid, flds FROM notes");
-
   const deckNames = readDecks(db);
   const noteDecks = readNoteDecks(db);
+
+  return buildDecks(rowsOf(notesResult).map(note => {
+    const deckId = noteDecks.get(String(note.id));
+    return { flds: note.flds, deckName: (deckId && deckNames.get(deckId)) || "Anki import" };
+  }));
+}
+
+/**
+ * Turns raw Anki notes into the app's decks-and-cards shape.
+ *
+ * Both import routes end here — the .apkg file reader above, and the direct
+ * AnkiDroid content-provider read in ankiDroid.js. Keeping the field cleanup,
+ * cloze expansion and deck-name splitting in one place is the point: the two
+ * routes differ only in where the notes come from, so a fix to how a field is
+ * read benefits both, and neither can drift into cleaning things differently.
+ *
+ * @param {{flds: string, deckName: string}[]} entries
+ */
+export function buildDecks(entries) {
   const byDeck = new Map();
   const warnings = [];
   let skippedEmpty = 0;
@@ -280,10 +298,9 @@ function extract(db) {
   let clozeCards = 0;
   let total = 0;
 
-  for (const note of rowsOf(notesResult)) {
+  for (const note of entries || []) {
     const fields = String(note.flds == null ? "" : note.flds).split(FIELD_SEP);
-    const deckId = noteDecks.get(String(note.id));
-    const deckName = (deckId && deckNames.get(deckId)) || "Anki import";
+    const deckName = note.deckName || "Anki import";
 
     let made = [];
     if (hasCloze(fields[0])) {

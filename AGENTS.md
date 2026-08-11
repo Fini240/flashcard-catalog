@@ -189,9 +189,18 @@ Play Store compatibility problem).
       `PLAY_STORE.md` §8. Until then every client silently falls back to BYOK;
       nothing is broken, but the README's "free daily AI-import allowance" is
       a promise the app does not currently keep, so this is the one open item
-      that is user-visible. **The `ALLOWED_PROVIDERS` check in
-      `functions/index.js` is also still undeployed** and ships with that same
-      `firebase deploy --only functions`.
+      that is user-visible. The `ALLOWED_PROVIDERS` check is deployed
+      (2026-08-11) but unreachable until then — the key check sits earlier in
+      the handler, so nothing gets as far as the provider check while the
+      function is unconfigured.
+- [ ] **The functions run on Node.js 20, deprecated 2026-04-30 and
+      decommissioned 2026-10-30** — after that date `firebase deploy --only
+      functions` will fail outright, which would strand any urgent fix. Bump
+      the runtime in `functions/package.json` well before then, and take the
+      `firebase-functions` upgrade at the same time (the CLI warns it carries
+      breaking changes, so don't do it in the same change as anything else).
+      Note the CLI is installed via Homebrew at `/opt/homebrew/bin/firebase`;
+      `npx firebase` does **not** work in this repo.
 - [ ] Play Store release is not started: upload keystore not generated, no
       Play Developer account ($25 + identity verification), and a personal
       account needs a **12-tester / 14-day closed test** before production.
