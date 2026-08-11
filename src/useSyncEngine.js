@@ -156,10 +156,33 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   }, []);
 
   // ---------- restore Firebase session ----------
+  // Subscribed, not polled once. See firebaseSync.onAuthStateChanged: a
+  // one-shot getCurrentUser() on mount reads null on the web every time,
+  // because the SDK restores the persisted session asynchronously — the app
+  // then rendered as signed out on every reload, which is what made a synced
+  // catalog look empty in the browser while the phone was fine.
+  //
+  // This also covers sign-out, so the listener is the single source of truth
+  // for `googleUser` rather than one of two competing ones.
   useEffect(() => {
-    firebaseSync.getCurrentUser().then((user) => {
-      if (user) setGoogleUser(user);
+    let handle;
+    let cancelled = false;
+    firebaseSync.onAuthStateChanged((user) => {
+      if (cancelled) return;
+      // Keep the object identity stable when the account hasn't actually
+      // changed. handleSignIn also sets googleUser, so without this the
+      // listener's echo would hand every effect keyed on googleUser a fresh
+      // object and make them tear down and re-register their Firestore
+      // listeners for no reason.
+      setGoogleUser((prev) => (prev?.uid === user?.uid ? prev : user));
+    }).then((h) => {
+      if (cancelled) h?.remove?.();
+      else handle = h;
     }).catch((e) => report("session.restore", e));
+    return () => {
+      cancelled = true;
+      handle?.remove?.();
+    };
   }, []);
 
   const applyRemote = (remote) => {

@@ -38,6 +38,25 @@ export async function getCurrentUser() {
   return toUser(user);
 }
 
+// Use this, not getCurrentUser(), to learn who is signed in at startup.
+//
+// On the web getCurrentUser() reads auth.currentUser straight out of the
+// Firebase JS SDK, and that is null until the SDK has finished restoring the
+// persisted session — which happens asynchronously, after the first paint. A
+// one-shot read on mount therefore reports "signed out" on every single page
+// load even though the session is perfectly intact, and nothing ever asks
+// again. Native SDKs restore synchronously, which is why this only ever
+// misbehaved in the browser.
+//
+// authStateChange fires once the restore settles, and again on every sign-in
+// and sign-out. The plugin emits it with retainUntilConsumed, so subscribing
+// after the event has already fired still delivers it.
+export async function onAuthStateChanged(callback) {
+  return FirebaseAuthentication.addListener("authStateChange", (change) => {
+    callback(toUser(change && change.user));
+  });
+}
+
 export async function pullData(uid) {
   const { snapshot } = await FirebaseFirestore.getDocument({ reference: docRef(uid) });
   return snapshot.data;
