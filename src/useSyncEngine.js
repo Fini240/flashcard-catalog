@@ -93,38 +93,15 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     currentDataRef.current = { subjects, cards, game };
   }, [subjects, cards, game]);
 
-  // Keep the card map in step with local edits. Newest timestamp wins per
-  // card so a React state replace never resurrects a tombstone; cards missing
-  // from state (just deleted in the UI) become tombstones here.
+  // Keep the card map in step with local edits, stamping whatever changed.
+  // The stamping used to happen only for cards that arrived without an
+  // updatedAt at all, which meant studying a card — the single most common
+  // edit in the app — left its timestamp untouched and the progress was
+  // dropped on the next load. See applyLocalEdits.
   useEffect(() => {
-    const now = Date.now();
-    const map = { ...cardMapRef.current };
-    const inState = new Set();
-    for (const c of cards) {
-      inState.add(c.id);
-      const stamped = c.updatedAt ? c : { ...c, updatedAt: now };
-      const existing = map[c.id];
-      if (!existing || (stamped.updatedAt || 0) >= (existing.deletedAt || existing.updatedAt || 0)) {
-        map[c.id] = stamped;
-      }
-    }
-    if (perCardModeRef.current) {
-      // Tombstone whatever vanished from state — but only in per-card mode.
-      // In legacy mode deletions ride the whole-doc push as before, and
-      // pre-migration we can't tell "deleted" from "not loaded yet".
-      for (const id of Object.keys(map)) {
-        if (!inState.has(id) && !map[id].deletedAt) {
-          map[id] = { ...map[id], deletedAt: now };
-        }
-      }
-    } else {
-      // Legacy mode: the map mirrors state exactly, deletions included —
-      // whole-doc pushes carry the state array as-is.
-      for (const id of Object.keys(map)) {
-        if (!inState.has(id)) delete map[id];
-      }
-    }
-    cardMapRef.current = map;
+    cardMapRef.current = cardSync.applyLocalEdits(cardMapRef.current, cards, {
+      perCardMode: perCardModeRef.current,
+    });
   }, [cards]);
 
   // ---------- load ----------

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  mergeCardMaps, diffDirty, liveCards, toCardMap, sweepTombstones, cardsNeedingWrite, TOMBSTONE_MAX_AGE_MS,
+  mergeCardMaps, diffDirty, liveCards, toCardMap, sweepTombstones, cardsNeedingWrite,
+  applyLocalEdits, TOMBSTONE_MAX_AGE_MS,
 } from "./cardSync";
 
 const card = (id, updatedAt, extra = {}) => ({ id, front: `f${id}`, back: `b${id}`, updatedAt, ...extra });
@@ -153,5 +154,132 @@ describe("cardsNeedingWrite — the repeat-migration regression tests", () => {
     const subcollection = toCardMap([card("known", 100)]);
     const merged = mergeCardMaps(parentSnapshot, subcollection);
     expect(cardsNeedingWrite(merged, subcollection).map(c => c.id)).toEqual(["onlyInParent"]);
+  });
+});
+
+// The bug: study a few cards, reload, all the progress is gone.
+//
+// Card objects are produced by applyGrade, which knows nothing about sync and
+// never set updatedAt. The map maintenance stamped only cards that arrived
+// with no timestamp at all, so a studied card kept the stamp it was downloaded
+// with. diffDirty then never saw it as dirty (so the progress never left the
+// device) and mergeCardMaps gives ties to the remote copy (so the next load
+// replaced the studied card with the version it came from).
+describe("applyLocalEdits — studying a card must survive a reload", () => {
+  const graded = (c, box) => ({ ...c, srsBox: box, srsPeak: box, srsDue: 999 });
+
+  it("stamps a card that was studied", () => {
+    const before = toCardMap([card("c1", 100)]);
+    const after = applyLocalEdits(before, [graded(card("c1", 100), 2)], { now: 500 });
+    expect(after.c1.updatedAt).toBe(500);
+    expect(after.c1.srsBox).toBe(2);
+  });
+
+  it("uploads that card — it is dirty against the last push", () => {
+    const pushed = { c1: 100 };
+    const after = applyLocalEdits(toCardMap([card("c1", 100)]), [graded(card("c1", 100), 2)], { now: 500 });
+    expect(diffDirty(after, pushed).map((c) => c.id)).toEqual(["c1"]);
+  });
+
+  it("beats the remote copy it was derived from, instead of being replaced", () => {
+    const remote = toCardMap([card("c1", 100)]);              // what the cloud still holds
+    const local = applyLocalEdits(remote, [graded(card("c1", 100), 2)], { now: 500 });
+    expect(mergeCardMaps(local, remote).c1.srsBox).toBe(2);
+  });
+
+  it("survives the whole round trip: study, reload, merge", () => {
+    const remote = toCardMap([card("c1", 100), card("c2", 100)]);
+    // studied locally
+    const afterStudy = applyLocalEdits(remote, [graded(card("c1", 100), 3), card("c2", 100)], { now: 500 });
+    // reload: local storage is re-read and merged with what the cloud holds
+    const reloaded = mergeCardMaps(toCardMap(liveCards(afterStudy)), remote);
+    expect(reloaded.c1.srsBox).toBe(3);
+    expect(reloaded.c1.updatedAt).toBe(500);
+  });
+
+  it("leaves untouched cards alone, so a session doesn't push the whole deck", () => {
+    const before = toCardMap([card("c1", 100), card("c2", 100), card("c3", 100)]);
+    const after = applyLocalEdits(before, [graded(card("c1", 100), 1), card("c2", 100), card("c3", 100)], { now: 500 });
+    expect(diffDirty(after, { c1: 100, c2: 100, c3: 100 }).map((c) => c.id)).toEqual(["c1"]);
+    expect(after.c2.updatedAt).toBe(100);
+    expect(after.c3.updatedAt).toBe(100);
+  });
+
+  it("treats an edit to the card's text as a change too", () => {
+    const before = toCardMap([card("c1", 100)]);
+    const after = applyLocalEdits(before, [{ ...card("c1", 100), back: "rewritten" }], { now: 500 });
+    expect(after.c1.updatedAt).toBe(500);
+  });
+
+  it("notices a changed list of manual wrong answers", () => {
+    const before = toCardMap([card("c1", 100, { manualOptions: ["a", "b"] })]);
+    const same = applyLocalEdits(before, [card("c1", 100, { manualOptions: ["a", "b"] })], { now: 500 });
+    expect(same.c1.updatedAt).toBe(100);
+    const changed = applyLocalEdits(before, [card("c1", 100, { manualOptions: ["a", "c"] })], { now: 500 });
+    expect(changed.c1.updatedAt).toBe(500);
+  });
+
+  it("does not resurrect a card another device deleted", () => {
+    const before = { c1: { ...card("c1", 100), deletedAt: 200 } };
+    const after = applyLocalEdits(before, [graded(card("c1", 100), 2)], { now: 500 });
+    expect(after.c1.deletedAt).toBe(200);
+  });
+
+  it("tombstones a deleted card in per-card mode", () => {
+    const before = toCardMap([card("c1", 100), card("c2", 100)]);
+    const after = applyLocalEdits(before, [card("c1", 100)], { now: 500, perCardMode: true });
+    expect(after.c2.deletedAt).toBe(500);
+  });
+
+  it("drops a deleted card outright in legacy mode", () => {
+    const before = toCardMap([card("c1", 100), card("c2", 100)]);
+    const after = applyLocalEdits(before, [card("c1", 100)], { now: 500, perCardMode: false });
+    expect(after.c2).toBeUndefined();
+  });
+
+  it("stamps a card that has never been stamped", () => {
+    const after = applyLocalEdits({}, [{ id: "new", front: "f", back: "b" }], { now: 500 });
+    expect(after.new.updatedAt).toBe(500);
+  });
+});
+
+// Rescues progress made *before* local edits were stamped: on those devices the
+// studied card and the cloud's stale copy carry the same timestamp, and the
+// tie used to go to the cloud.
+describe("mergeCardMaps — a tie goes to the card that has been studied", () => {
+  it("keeps local progress when the timestamps are identical", () => {
+    const stale = card("c1", 100, { srsBox: 0, srsPeak: 0 });
+    const studied = card("c1", 100, { srsBox: 3, srsPeak: 3 });
+    expect(mergeCardMaps({ c1: studied }, { c1: stale }).c1.srsBox).toBe(3);
+  });
+
+  it("takes the remote's progress on a tie when the remote is the studied one", () => {
+    const stale = card("c1", 100, { srsBox: 0, srsPeak: 0 });
+    const studied = card("c1", 100, { srsBox: 3, srsPeak: 3 });
+    expect(mergeCardMaps({ c1: stale }, { c1: studied }).c1.srsBox).toBe(3);
+  });
+
+  it("still lets a genuinely newer remote win, progress or not", () => {
+    const local = card("c1", 100, { srsBox: 5, srsPeak: 5 });
+    const remote = card("c1", 200, { srsBox: 1, srsPeak: 1 });
+    expect(mergeCardMaps({ c1: local }, { c1: remote }).c1.srsBox).toBe(1);
+  });
+
+  it("still lets a genuinely newer local win", () => {
+    const local = card("c1", 300, { srsBox: 1, srsPeak: 1 });
+    const remote = card("c1", 200, { srsBox: 5, srsPeak: 5 });
+    expect(mergeCardMaps({ c1: local }, { c1: remote }).c1.srsBox).toBe(1);
+  });
+
+  it("falls back to the remote when a tie is genuinely indistinguishable", () => {
+    const local = card("c1", 100, { srsBox: 2, srsPeak: 2, back: "local" });
+    const remote = card("c1", 100, { srsBox: 2, srsPeak: 2, back: "remote" });
+    expect(mergeCardMaps({ c1: local }, { c1: remote }).c1.back).toBe("remote");
+  });
+
+  it("does not let a tie override a newer tombstone", () => {
+    const local = card("c1", 100, { srsBox: 4, srsPeak: 4 });
+    const remote = { ...card("c1", 100), deletedAt: 300 };
+    expect(mergeCardMaps({ c1: local }, { c1: remote }).c1.deletedAt).toBe(300);
   });
 });

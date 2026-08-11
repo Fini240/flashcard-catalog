@@ -184,6 +184,16 @@ Play Store compatibility problem).
 
 ## Known hazards
 
+- **A card that changes locally must be stamped, and nothing in a reducer will
+  do it for you.** Card objects come out of `applyGrade` and the card editor,
+  neither of which knows about sync, so `cardSync.applyLocalEdits` is the one
+  place that sets `updatedAt` — by comparing content against the sync map. It
+  used to stamp only cards arriving with no timestamp at all, which meant
+  studying a card (the commonest edit in the app) left its stamp untouched:
+  `diffDirty` never saw it, so progress never went up, and `mergeCardMaps` gave
+  the tie to the cloud, so the next load pulled the un-studied copy back down.
+  A whole session's work disappeared on reload. If you add another path that
+  mutates cards, route it through the same place.
 - **Automatic light/dark needs a native opt-in, not just the media query.**
   The app follows the device via `prefers-color-scheme` (`src/theme.js`), but
   for apps targeting SDK 33+ Android's WebView reports that query as *light*

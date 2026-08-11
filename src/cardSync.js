@@ -55,6 +55,74 @@ export function stampCard(card, now = Date.now()) {
   return { ...card, updatedAt: now };
 }
 
+// Sync bookkeeping rather than the card itself — a change to one of these is
+// not a reason to call the card edited.
+const BOOKKEEPING = new Set(["updatedAt", "deletedAt"]);
+
+export function sameCardContent(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ka = Object.keys(a).filter((k) => !BOOKKEEPING.has(k));
+  const kb = Object.keys(b).filter((k) => !BOOKKEEPING.has(k));
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    const va = a[k];
+    const vb = b[k];
+    if (va === vb) continue;
+    // manualOptions is the only array a card carries.
+    if (Array.isArray(va) && Array.isArray(vb) && va.length === vb.length && va.every((x, i) => x === vb[i])) continue;
+    return false;
+  }
+  return true;
+}
+
+// Folds the app's current cards into the sync map, stamping whatever actually
+// changed. This is where "every card gets an updatedAt the moment it changes
+// locally" is enforced — and it has to be enforced somewhere, because the
+// card objects themselves are built by ordinary reducers (applyGrade and the
+// card editor) that know nothing about sync.
+//
+// Without it a studied card keeps the timestamp it was downloaded with, which
+// makes it invisible to diffDirty — so the progress is never uploaded — and a
+// loser in mergeCardMaps, whose ties go to the remote copy. The next load then
+// replaces the studied card with the version it was derived from, and the
+// session's work is gone.
+export function applyLocalEdits(map, cards, { now = Date.now(), perCardMode = false } = {}) {
+  const out = { ...map };
+  const inState = new Set();
+  for (const c of cards) {
+    inState.add(c.id);
+    const existing = out[c.id];
+    let next;
+    if (!existing || existing.deletedAt) {
+      // Unknown here, or known only as a tombstone. Supply a stamp if the card
+      // has none, but don't mint a fresh one — that would resurrect a deletion
+      // that another device is still propagating.
+      next = c.updatedAt ? c : { ...c, updatedAt: now };
+    } else if (sameCardContent(existing, c)) {
+      next = existing;
+    } else {
+      next = { ...c, updatedAt: now };
+    }
+    if (!existing || (next.updatedAt || 0) >= (existing.deletedAt || existing.updatedAt || 0)) {
+      out[c.id] = next;
+    }
+  }
+  if (perCardMode) {
+    // Tombstone whatever vanished from state — but only in per-card mode. In
+    // legacy mode deletions ride the whole-doc push, and pre-migration we
+    // can't tell "deleted" from "not loaded yet".
+    for (const id of Object.keys(out)) {
+      if (!inState.has(id) && !out[id].deletedAt) out[id] = { ...out[id], deletedAt: now };
+    }
+  } else {
+    for (const id of Object.keys(out)) {
+      if (!inState.has(id)) delete out[id];
+    }
+  }
+  return out;
+}
+
 // ---------- merge (pure) ----------
 // Two maps of id → card. A card survives if either side has it live; a
 // tombstone wins over a live card only when it's *newer* — an old tombstone
@@ -66,9 +134,27 @@ export function mergeCardMaps(localMap, remoteMap) {
     if (!local) { out[id] = remote; continue; }
     const lT = local.deletedAt || local.updatedAt || 0;
     const rT = remote.deletedAt || remote.updatedAt || 0;
-    out[id] = rT >= lT ? remote : local;
+    if (rT > lT) out[id] = remote;
+    else if (lT > rT) out[id] = local;
+    else out[id] = studiedFurther(local, remote) ? local : remote;
   }
   return out;
+}
+
+// An exact tie means neither side can prove it is newer, and the card used to
+// go to the remote copy on that basis alone. That is how progress made before
+// local edits were stamped got thrown away: the studied card and the cloud's
+// stale copy carried the same timestamp, so the stale one won.
+//
+// Study history only ever moves forward, so the deeper card is the one that
+// has actually been used. Only reachable on a tie, which after stamping means
+// a card nobody has touched since it was downloaded — or one studied back when
+// local edits went unstamped, which is exactly the case worth rescuing.
+function studiedFurther(a, b) {
+  const peak = (c) => c.srsPeak || c.srsBox || 0;
+  if (peak(a) !== peak(b)) return peak(a) > peak(b);
+  if ((a.srsBox || 0) !== (b.srsBox || 0)) return (a.srsBox || 0) > (b.srsBox || 0);
+  return (a.srsDue || 0) > (b.srsDue || 0);
 }
 
 // Which local cards need to go up: newer than their last-pushed timestamp.
