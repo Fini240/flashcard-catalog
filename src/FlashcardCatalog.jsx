@@ -1949,7 +1949,12 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
               <Sparkles size={13} color="var(--highlight)" /> AnkiDroid decks (.apkg) and .txt/.csv/.md files with "Front | Back" lines import instantly, no key needed. PDFs, Word docs, and anything else get read by {aiLabel}.
             </p>
-            <input ref={fileInputRef} type="file" accept=".apkg,.colpkg,.txt,.csv,.tsv,.md,.pdf,.docx" style={{ display: "none" }}
+            {/* The trailing catch-all is load-bearing on Android: the WebView maps
+                these extensions to MIME types through
+                MimeTypeMap, and .apkg/.colpkg aren't registered there — without a
+                catch-all the system picker greys out the very file the user came
+                to choose. A picker showing too much beats one that can't show it. */}
+            <input ref={fileInputRef} type="file" accept=".apkg,.colpkg,.txt,.csv,.tsv,.md,.pdf,.docx,*/*" style={{ display: "none" }}
               onChange={e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ""; }} />
             <GhostButton onClick={() => fileInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }} >
               <FileUp size={16} /> {busy ? "Reading file…" : "Choose file"}
