@@ -653,7 +653,16 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
            Perspective tracks the card's own width: a fixed value distorts a
            360px phone card and a 1200px desktop card by wildly different
            amounts. */
-        .fc-flip { perspective: clamp(900px, 140vw, 2200px); }
+        .fc-flip {
+          perspective: clamp(900px, 140vw, 2200px);
+          /* Android paints a blue wash over whatever you tap, and a quick
+             second tap starts selecting the question text — both flash blue
+             over the card on every flip. */
+          -webkit-tap-highlight-color: transparent;
+          -webkit-touch-callout: none;
+          user-select: none;
+          -webkit-user-select: none;
+        }
         .fc-flip-inner {
           display: grid;
           width: 100%;
@@ -785,9 +794,9 @@ function IconBtn({ onClick, title, children, danger }) {
   );
 }
 
-function PrimaryButton({ onClick, children, style, disabled, tabIndex }) {
+function PrimaryButton({ onClick, children, style, disabled }) {
   return (
-    <button onClick={onClick} disabled={disabled} tabIndex={tabIndex} style={{
+    <button onClick={onClick} disabled={disabled} style={{
       background: disabled ? "var(--shell-raised)" : "var(--accent)", color: disabled ? "var(--on-shell-muted)" : "var(--shell-bg)",
       border: "none", borderRadius: 10, padding: "14px 22px", minHeight: 48,
       fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 15.5,
@@ -796,9 +805,9 @@ function PrimaryButton({ onClick, children, style, disabled, tabIndex }) {
     }}>{children}</button>
   );
 }
-function GhostButton({ onClick, children, style, tabIndex }) {
+function GhostButton({ onClick, children, style }) {
   return (
-    <button onClick={onClick} tabIndex={tabIndex} style={{
+    <button onClick={onClick} style={{
       background: "transparent", color: "#EDE6D3", border: "1px solid rgba(255,255,255,0.18)",
       borderRadius: 10, padding: "13px 20px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: 15.5,
       display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
@@ -2963,35 +2972,37 @@ function FlipCard({ card, onResult }) {
   };
   const caption = { textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "14px 0 0" };
   return (
-    <div
-      className="fc-flip"
-      onClick={() => setFlipped(f => !f)}
-      style={{ cursor: "pointer", animation: "popIn 0.25s ease-out" }}>
-      <div className="fc-flip-inner" style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
-        <div className="fc-flip-face" aria-hidden={flipped}>
-          <CardShell fill tabLabel="Flip">
-            <div style={body}>
-              <CardFace text={card.front} imageId={card.frontImageId} />
-              <p style={caption}>Tap the card to reveal the answer</p>
-            </div>
-          </CardShell>
-        </div>
-        <div className="fc-flip-face fc-flip-face-back" aria-hidden={!flipped}>
-          <CardShell fill tabLabel="Answer" tabColor="var(--success)">
-            <div style={body}>
-              <CardFace text={card.back} imageId={card.backImageId} />
-              <p style={caption}>That's the answer</p>
-            </div>
-            {/* The buttons ride on the back face, so tapping them must not also
-                count as a tap on the card and turn it back over. */}
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }} onClick={e => e.stopPropagation()}>
-              <GhostButton onClick={() => onResult(false)} tabIndex={flipped ? 0 : -1} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
-              <PrimaryButton onClick={() => onResult(true)} tabIndex={flipped ? 0 : -1} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
-            </div>
-          </CardShell>
+    <>
+      <div
+        className="fc-flip"
+        onClick={() => setFlipped(f => !f)}
+        style={{ cursor: "pointer", animation: "popIn 0.25s ease-out" }}>
+        <div className="fc-flip-inner" style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
+          <div className="fc-flip-face" aria-hidden={flipped}>
+            <CardShell fill tabLabel="Flip">
+              <div style={body}>
+                <CardFace text={card.front} imageId={card.frontImageId} />
+                <p style={caption}>Tap the card to reveal the answer</p>
+              </div>
+            </CardShell>
+          </div>
+          <div className="fc-flip-face fc-flip-face-back" aria-hidden={!flipped}>
+            <CardShell fill tabLabel="Answer" tabColor="var(--success)">
+              <div style={body}>
+                <CardFace text={card.back} imageId={card.backImageId} />
+                <p style={caption}>That's the answer</p>
+              </div>
+            </CardShell>
+          </div>
         </div>
       </div>
-    </div>
+      {/* Deliberately outside the card: these stay put while it turns, so you
+          can grade a card you already know without revealing it first. */}
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
+        <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
+      </div>
+    </>
   );
 }
 
