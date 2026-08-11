@@ -1637,10 +1637,11 @@ function ImagePicker({ imageId, onPick, onRemove, label }) {
   );
 }
 
-function Label({ children }) {
+function Label({ children, style }) {
   return <p style={{
     fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-muted)",
     textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
+    ...style,
   }}>{children}</p>;
 }
 
@@ -2613,11 +2614,39 @@ function ApiKeyModal({ provider, onClose, onSaved }) {
 }
 
 // ---------- STUDY SETUP ----------
+// How many cards one sitting should be. A freshly imported deck is entirely
+// due, so without a cap "Start session" hands over every card in it — 2,877 of
+// them after an Anki import, which is not a session, it's a wall.
+//
+// Because a graded card leaves the due pool, taking a slice off the top of the
+// shuffled pool works through the deck on its own: each sitting draws from
+// what's left. No cursor to store, and the spaced-repetition schedule stays in
+// charge of what comes back and when.
+const SESSION_SIZES = [10, 20, 30, 50];
+const SESSION_SIZE_KEY = "flashcard-session-size";
+
+const readSessionSize = () => {
+  try {
+    const raw = window.localStorage.getItem(SESSION_SIZE_KEY);
+    if (raw === "all") return "all";
+    const n = parseInt(raw, 10);
+    return SESSION_SIZES.includes(n) ? n : 30;
+  } catch {
+    return 30;
+  }
+};
+
 function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
   const [nodeId, setNodeId] = useState(() =>
     initialNodeId && flattenTree(subjects).some(f => f.id === initialNodeId) ? initialNodeId : "all"
   );
   const [scope, setScope] = useState("due"); // due | all
+  const [sessionSize, setSessionSize] = useState(readSessionSize);
+
+  const chooseSize = (size) => {
+    setSessionSize(size);
+    try { window.localStorage.setItem(SESSION_SIZE_KEY, String(size)); } catch { /* not worth failing over */ }
+  };
   const flat = flattenTree(subjects);
   const selected = flat.find(f => f.id === nodeId);
   const pool = nodeId === "all" ? cards : cards.filter(c => selected && selected.ids.includes(c.nodeId));
@@ -2625,6 +2654,9 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
   const useDue = scope === "due" && duePool.length > 0;
   const startPool = useDue ? duePool : pool;
   const strength = G.deckStrength(pool);
+  const sessionCount = sessionSize === "all" ? startPool.length : Math.min(sessionSize, startPool.length);
+  // Only worth explaining when a slice is actually being taken.
+  const isSlice = sessionCount < startPool.length;
 
   return (
     <div>
@@ -2688,8 +2720,34 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
         <MasteryBar cards={pool} height={8} showLegend />
       </div>
 
-      <PrimaryButton onClick={() => onStart(shuffle(startPool))} disabled={startPool.length === 0} style={{ marginTop: 18, width: "100%" }}>
-        <Shuffle size={16} /> Start session
+      <Label style={{ marginTop: 18 }}>How many this sitting?</Label>
+      <div style={{ display: "flex", gap: 8 }}>
+        {[...SESSION_SIZES, "all"].map(size => {
+          const active = sessionSize === size;
+          return (
+            <button key={size} onClick={() => chooseSize(size)} style={{
+              flex: 1, padding: "12px 4px", minHeight: 46, borderRadius: 8,
+              border: `1px solid ${active ? "var(--accent)" : "rgba(255,255,255,0.14)"}`,
+              background: active ? "rgba(242,197,114,0.12)" : "transparent",
+              color: active ? "var(--accent)" : "#EDE6D3",
+              fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
+              WebkitTapHighlightColor: "transparent",
+            }}>{size === "all" ? "All" : size}</button>
+          );
+        })}
+      </div>
+      {isSlice && (
+        <p style={{
+          fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--on-shell-muted)",
+          margin: "8px 2px 0", lineHeight: 1.45,
+        }}>
+          {sessionCount} of the {startPool.length} waiting. Cards you get right move on,
+          so the next sitting picks up where this one left off.
+        </p>
+      )}
+
+      <PrimaryButton onClick={() => onStart(shuffle(startPool).slice(0, sessionCount))} disabled={startPool.length === 0} style={{ marginTop: 18, width: "100%" }}>
+        <Shuffle size={16} /> Start session{startPool.length ? ` · ${sessionCount} card${sessionCount !== 1 ? "s" : ""}` : ""}
       </PrimaryButton>
     </div>
   );
