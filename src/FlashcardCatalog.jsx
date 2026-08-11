@@ -2696,6 +2696,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
 
       <DrillPicker
         pool={startPool}
+        allCards={cards}
         sessionCount={sessionCount}
         onStart={(drill, content) => onStart({ drill, content, pool: startPool, count: sessionCount })}
       />
@@ -2706,7 +2707,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
 // The old flow shuffled the deck and went. Now the last thing you choose is
 // *how* to be asked — the part that used to be decided months earlier, at
 // import time, and then never revisited.
-function DrillPicker({ pool, sessionCount, onStart }) {
+function DrillPicker({ pool, allCards, sessionCount, onStart }) {
   const [tuning, setTuning] = useState(null);   // null | "loading" | "done" | "off"
   const [suggestions, setSuggestions] = useState([]);
   const [content, setContent] = useState({});
@@ -2716,7 +2717,7 @@ function DrillPicker({ pool, sessionCount, onStart }) {
   // actually sustain — matching needs five cards in the sitting, not five in
   // the library.
   const cards = useMemo(() => shuffle(pool).slice(0, sessionCount), [pool, sessionCount]);
-  const drills = useMemo(() => drillsLib.availableDrills(cards), [cards]);
+  const drills = useMemo(() => drillsLib.availableDrills(cards, allCards), [cards, allCards]);
 
   // What gets sent for tuning. Each drill picks its own cards once chosen, and
   // "weak spots" deliberately picks different ones from the rest, so tuning

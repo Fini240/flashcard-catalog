@@ -82,6 +82,11 @@ SECOND, "cards": for every card id below, provide:
   plainly wrong to someone who knows the material, but tempting to someone who
   half-remembers it — the same kind of thing, the same length and register as
   the real answer. Never a rephrasing of the real answer.
+  The list below may span several subjects. A wrong answer must belong to the
+  same subject as the card it is for: a question about muscle fibres is never
+  answered by a Spanish vocabulary word, even if one appears below. Write a
+  fresh wrong answer about this card's own topic rather than borrowing an
+  unrelated one.
 - falseClaim: the answer altered so it is now false, changing as little as
   possible — a swapped number, a neighbouring structure, an inverted relation.
 

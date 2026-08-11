@@ -93,8 +93,12 @@ const normalizeish = (s) => String(s || "").trim().toLowerCase();
 // A drill is offered only if the deck can actually sustain it: multiple choice
 // needs wrong answers to draw from, matching needs a full group, and anything
 // that reads the answer as words is meaningless for picture cards.
-export function availableDrills(cards) {
+export function availableDrills(cards, pool) {
   const usable = cards || [];
+  // Relevance is judged against everything the user has, not just this
+  // sitting — a neighbour that makes a good wrong answer counts whether or
+  // not it happens to be in tonight's slice.
+  const candidatePool = pool && pool.length ? pool : usable;
   return DRILLS.filter((d) => {
     if (usable.length < d.minCards) return false;
     if (d.id === "pairs") return usable.filter(hasText).length >= MATCH_GROUP;
@@ -105,7 +109,7 @@ export function availableDrills(cards) {
     // drill wearing a different name.
     const meaty = d.types.filter((t) => t !== EXERCISES.FLIP);
     if (!meaty.length) return true;
-    const playable = usable.filter((c) => meaty.some((t) => supports(t, c, usable)));
+    const playable = usable.filter((c) => meaty.some((t) => supports(t, c, candidatePool)));
     return playable.length >= d.minCards;
   });
 }
@@ -185,20 +189,84 @@ export function localCloze(card) {
   return { text, answer, prompt: card.front, whole: words.length === 1 };
 }
 
-export function localDistractors(card, pool, count = 3) {
-  const wrong = pool
-    .filter((c) => c.id !== card.id && hasText(c) && c.back.trim() !== (card.back || "").trim())
-    .map((c) => c.back.trim());
-  return shuffled([...new Set(wrong)]).slice(0, count);
+// A wrong answer is only worth offering if it could be mistaken for the right
+// one. "Die Patatas bravas" against a question about muscle fibres isn't a
+// distractor — it's a giveaway, and it makes the question answerable without
+// knowing anything. So candidates come from the same subcategory first, then
+// the same subject, and never from another subject at all.
+function tierOf(card, other) {
+  if (card.nodeId && other.nodeId && card.nodeId === other.nodeId) return 0;
+  if (card.subjectId && other.subjectId) return card.subjectId === other.subjectId ? 1 : 2;
+  if (card.nodeId && other.nodeId) return 2;
+  // Cards old enough to predate the subject/category fields can't be shown to
+  // be unrelated, and dropping them would leave those decks with no wrong
+  // answers at all. Unknown is treated as near, not far.
+  return 1;
 }
 
-// A false statement built by pairing this card's question with someone else's
-// answer. Obvious once you know the deck, which is the point at this level.
+function relevantCandidates(card, pool) {
+  return pool
+    .filter((c) => c.id !== card.id && hasText(c) && normalizeish(c.back) !== normalizeish(card.back))
+    .map((c) => ({ text: c.back.trim(), tier: tierOf(card, c) }))
+    .filter((c) => c.tier < 2);
+}
+
+// Among equally relevant answers, the ones shaped like the real one are the
+// ones worth second-guessing: same sort of length, same use of numbers, some
+// shared vocabulary. A one-word answer next to a full sentence gives itself
+// away.
+function shapeScore(answer, candidate) {
+  const a = String(answer || "");
+  const b = String(candidate || "");
+  if (!b) return -1;
+  const lengthFit = Math.min(a.length, b.length) / Math.max(a.length, b.length, 1);
+  const keyWords = new Set(normalizeish(a).split(/\s+/).filter((w) => w.length > 3));
+  const shared = normalizeish(b).split(/\s+/).filter((w) => keyWords.has(w)).length;
+  const overlap = keyWords.size ? Math.min(shared / keyWords.size, 0.5) : 0;
+  const numbersAgree = /\d/.test(a) === /\d/.test(b) ? 0.1 : 0;
+  return lengthFit * 0.6 + overlap * 0.6 + numbersAgree;
+}
+
+// Relevance is a rule, shape is a preference. The card's own subcategory is
+// exhausted before the wider subject is touched; within one tier the
+// best-shaped answers are shortlisted and then drawn from at random, so the
+// same card doesn't come round with an identical set of wrong answers every
+// time.
+function bestCandidates(card, pool, count) {
+  const all = relevantCandidates(card, pool).map((c) => ({ ...c, score: shapeScore(card.back, c.text) }));
+  const picked = [];
+  for (const tier of [0, 1]) {
+    if (picked.length >= count) break;
+    const need = count - picked.length;
+    const ranked = [...new Map(all.filter((c) => c.tier === tier).map((c) => [c.text, c])).values()]
+      .sort((x, y) => y.score - x.score);
+    if (!ranked.length) continue;
+    // Everything close to the best fit is a fair alternative; a much worse fit
+    // — a bare "Ja." against a full sentence — is not, and would only ever
+    // narrow the question down for free.
+    const cutoff = ranked[0].score * 0.75;
+    const shortlist = ranked.filter((c) => c.score >= cutoff);
+    while (shortlist.length < need && shortlist.length < ranked.length) shortlist.push(ranked[shortlist.length]);
+    picked.push(...shuffled(shortlist).slice(0, need).map((c) => c.text));
+  }
+  return [...new Set(picked)].slice(0, count);
+}
+
+export function localDistractors(card, pool, count = 3) {
+  return bestCandidates(card, pool, count);
+}
+
+// A false statement built by pairing this card's question with a *neighbouring*
+// card's answer — plausible enough that you have to know the material to reject
+// it, which an answer from another subject never is.
 export function localTrueFalse(card, pool) {
-  const others = pool.filter((c) => c.id !== card.id && hasText(c) && c.back.trim() !== (card.back || "").trim());
+  const others = bestCandidates(card, pool, 4);
   const makeTrue = Math.random() < 0.5 || others.length === 0;
-  const claimed = makeTrue ? card.back : shuffled(others)[0].back;
-  return { prompt: card.front, claim: claimed, isTrue: makeTrue };
+  return {
+    prompt: card.front,
+    claim: makeTrue ? card.back : others[0],
+    isTrue: makeTrue,
+  };
 }
 
 // ---------- building the queue ----------
@@ -250,8 +318,15 @@ function supports(type, card, pool) {
   if (card.backImageId || card.frontImageId) return type === EXERCISES.FLIP;
   switch (type) {
     case EXERCISES.CLOZE: return !!localCloze(card);
-    case EXERCISES.MCQ: return localDistractors(card, pool, 1).length > 0;
-    case EXERCISES.TRUEFALSE: return hasText(card);
+    case EXERCISES.MCQ: {
+      // Three options at minimum, all of them believable. A card with only one
+      // credible wrong answer is better asked some other way than padded out
+      // with something from an unrelated deck.
+      const manual = (card.manualOptions || []).filter((o) => normalizeish(o) !== normalizeish(card.back));
+      return manual.length + relevantCandidates(card, pool).length >= 2;
+    }
+    // Without a neighbouring answer to corrupt, every statement would be true.
+    case EXERCISES.TRUEFALSE: return hasText(card) && relevantCandidates(card, pool).length > 0;
     default: return true;
   }
 }

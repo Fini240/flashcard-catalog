@@ -84,6 +84,77 @@ describe("localDistractors", () => {
   });
 });
 
+// The bug this guards against: a biology question offered "die Patatas bravas
+// (wilde Kartoffeln)" as an option, because wrong answers were drawn from the
+// whole library with no regard for what the card was about.
+describe("wrong answers stay on topic", () => {
+  const bio = [
+    card("b1", "Woraus besteht jede Muskelfaser?", "Aus einigen Hundert Myofibrillen von 1µm Durchmesser.", { subjectId: "bio", nodeId: "muskel" }),
+    card("b2", "Was ist ein Sarkomer?", "Der Abschnitt zwischen zwei Z-Scheiben.", { subjectId: "bio", nodeId: "muskel" }),
+    card("b3", "Was ist die Z-Scheibe?", "Die Grenzstruktur des Sarkomers.", { subjectId: "bio", nodeId: "muskel" }),
+    card("b4", "Was speichert die Vakuole?", "Wasser und gelöste Stoffe.", { subjectId: "bio", nodeId: "zelle" }),
+  ];
+  const vocab = [
+    card("v1", "der Geburtstag", "der Geburtstag", { subjectId: "spanisch", nodeId: "unidad1" }),
+    card("v2", "überqueren", "etw. überqueren", { subjectId: "spanisch", nodeId: "unidad1" }),
+    card("v3", "patatas bravas", "die Patatas bravas (wilde Kartoffeln)", { subjectId: "spanisch", nodeId: "unidad1" }),
+  ];
+  const library = [...bio, ...vocab];
+
+  it("never reaches into another subject for a wrong answer", () => {
+    for (let i = 0; i < 30; i++) {
+      const options = D.localDistractors(bio[0], library);
+      options.forEach((o) => expect(vocab.map((v) => v.back)).not.toContain(o));
+    }
+  });
+
+  it("prefers the card's own subcategory over the wider subject", () => {
+    const d = D.localDistractors(bio[0], library, 2);
+    expect(d).toContain(bio[1].back);
+    expect(d).toContain(bio[2].back);
+  });
+
+  it("builds false statements from neighbours, not from other subjects", () => {
+    for (let i = 0; i < 30; i++) {
+      const tf = D.localTrueFalse(bio[0], library);
+      if (!tf.isTrue) expect(vocab.map((v) => v.back)).not.toContain(tf.claim);
+      expect(tf.claim).toBeTruthy();
+    }
+  });
+
+  it("does not offer multiple choice when there is nothing credible to offer", () => {
+    const lonely = card("x1", "Einzelkarte", "Eine ganz eigene Antwort", { subjectId: "allein", nodeId: "allein" });
+    const q = D.buildQueue(D.drillById("speed"), [lonely], {}, [lonely, ...vocab]);
+    expect(q[0].type).toBe(D.EXERCISES.FLIP);
+  });
+
+  it("still uses multiple choice when the user wrote the wrong answers", () => {
+    const lonely = card("x1", "Einzelkarte", "Eine ganz eigene Antwort", {
+      subjectId: "allein", nodeId: "allein", manualOptions: ["Etwas anderes", "Noch etwas"],
+    });
+    const q = D.buildQueue(D.drillById("speed"), [lonely], {}, [lonely, ...vocab]);
+    expect(q[0].type).toBe(D.EXERCISES.MCQ);
+    expect(q[0].payload.options).toContain("Etwas anderes");
+    q[0].payload.options.forEach((o) => expect(vocab.map((v) => v.back)).not.toContain(o));
+  });
+
+  it("keeps working for old cards that predate subject and category ids", () => {
+    // deck[] has no subjectId/nodeId at all — unknown must not mean unrelated,
+    // or these decks would lose multiple choice entirely
+    expect(D.localDistractors(deck[0], deck).length).toBe(3);
+  });
+
+  it("prefers a wrong answer shaped like the right one", () => {
+    const target = card("t", "Frage?", "Aus einigen Hundert Myofibrillen von 1µm Durchmesser.", { subjectId: "s", nodeId: "n" });
+    const pool = [
+      target,
+      card("long", "q", "Aus einigen Tausend Mitochondrien von 2µm Durchmesser.", { subjectId: "s", nodeId: "n" }),
+      card("short", "q", "Ja.", { subjectId: "s", nodeId: "n" }),
+    ];
+    expect(D.localDistractors(target, pool, 1)).toEqual(["Aus einigen Tausend Mitochondrien von 2µm Durchmesser."]);
+  });
+});
+
 describe("buildQueue", () => {
   it("covers every card exactly once", () => {
     const q = D.buildQueue(D.drillById("speed"), deck, {}, deck);
