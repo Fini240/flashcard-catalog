@@ -7,9 +7,10 @@ Handoff distilled from the Claude Code session that built this app
 
 A study app: flashcards organised into subjects and arbitrarily deep
 subcategories, reviewed on a spaced-repetition schedule (1 → 3 → 7 → 14 → 30
-days; a wrong answer keeps the card due). Three answer modes per card — flip,
-multiple choice, typed. Cards can be created by hand, pasted as `Front | Back`
-lines, or generated from a photo, PDF, Word file or pasted text.
+days; a wrong answer keeps the card due). How a card is asked is chosen when
+you sit down to study — see the drills entry under "Decisions already made".
+Cards can be created by hand, pasted as `Front | Back` lines, or generated from
+a photo, PDF, Word file or pasted text.
 
 Works fully offline with no account. Google sign-in is optional and adds
 cross-device sync plus a free daily AI-import allowance.
@@ -21,6 +22,8 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 - **UI**: React 19 + Vite 8, `lucide-react` icons. No CSS framework — styles
   are inline/in-component.
 - **Android**: Capacitor 8, appId `com.flashcardcatalog.app`, `webDir: dist`.
+- **Web app**: <https://flashcard-catalog.web.app> (the project-id URL,
+  `centering-timer-502020-h0.web.app`, is still served so old links keep working)
 - **Backend**: Firebase project `centering-timer-502020-h0` — Auth (Google
   only), Firestore (sync), Hosting (web app + privacy policy), Cloud Functions
   (the free AI tier).
@@ -179,6 +182,16 @@ Play Store compatibility problem).
   user-facing time picker; the times are deliberately not a setting.
 
 ## Known hazards
+
+- **A new hosting domain needs three things, not one.** Adding a site gets you
+  the URL, but Google sign-in fails with `auth/unauthorized-domain` until the
+  domain is added under Auth → Settings → Authorized domains (console only —
+  there is no CLI command), and the free AI import fails CORS until the origin
+  is added to `ALLOWED_ORIGINS` in `functions/index.js` *and* the function is
+  redeployed. Both fail only on the web build, and only once signed in, so
+  neither shows up in a quick check of the new URL. Current authorized domains
+  can be read with:
+  `curl -s "https://identitytoolkit.googleapis.com/v1/projects?key=<webApiKey>"`
 
 - **Cross-device sync has bitten this app three times.** Local data once
   overwrote a freshly signed-in account's cards; cards vanished from a

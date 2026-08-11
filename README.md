@@ -21,7 +21,7 @@ the moment your goal is met.
 
 - **Android APK** (latest stable):
   <https://github.com/Fini240/flashcard-catalog/releases/download/latest/flashcard-catalog.apk>
-- **Web app**: <https://centering-timer-502020-h0.web.app>
+- **Web app**: <https://flashcard-catalog.web.app>
 
 ## Built with
 

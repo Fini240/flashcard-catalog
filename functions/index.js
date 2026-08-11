@@ -55,6 +55,10 @@ const GLOBAL_DOC = "_global";
 const MODELS = ["gemini-3.6-flash", "gemini-2.5-flash"];
 
 const ALLOWED_ORIGINS = new Set([
+  // The app's own address. The two project-id ones below are the defaults
+  // Firebase created and are still served, so anyone holding an old link keeps
+  // working — but this is the one that's published.
+  "https://flashcard-catalog.web.app",
   "https://centering-timer-502020-h0.web.app",
   "https://centering-timer-502020-h0.firebaseapp.com",
   // Capacitor serves the built app from these origins inside the native

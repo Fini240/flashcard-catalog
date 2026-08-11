@@ -97,8 +97,8 @@ All assets are in `play-assets/`, generated to Play's required sizes.
 | Short description (≤80) | `Make flashcards from photos and PDFs, then review them right on time.` |
 | Category | Education |
 | Contact email | der.finn.r@gmail.com |
-| Privacy policy URL | `https://centering-timer-502020-h0.web.app/privacy.html` |
-| Website (optional) | `https://centering-timer-502020-h0.web.app` |
+| Privacy policy URL | `https://flashcard-catalog.web.app/privacy.html` |
+| Website (optional) | `https://flashcard-catalog.web.app` |
 
 **Full description** (paste as-is):
 
@@ -200,7 +200,7 @@ Government apps → No; Financial features → None; Health → None.
 - [ ] Keystore generated and **backed up** (step 1)
 - [ ] `versionCode` bumped
 - [ ] Signed `.aab` built and uploaded
-- [ ] Privacy policy URL live — verify it loads: <https://centering-timer-502020-h0.web.app/privacy.html>
+- [ ] Privacy policy URL live — verify it loads: <https://flashcard-catalog.web.app/privacy.html>
 - [ ] Data safety form completed
 - [ ] Content rating questionnaire completed
 - [ ] Screenshots, icon, feature graphic uploaded
