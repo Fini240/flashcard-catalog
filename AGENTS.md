@@ -44,7 +44,9 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/aiImport.js` | AI card generation; owner-free-tier vs BYOK routing |
 | `src/ocr.js` | On-device ML Kit text recognition + fallback decision |
 | `src/fileImport.js` | PDF / .docx / text extraction |
-| `src/ankiImport.js` | AnkiDroid `.apkg` / `.colpkg` import — unzip, zstd, SQLite, HTML and cloze cleanup |
+| `src/ankiImport.js` | Anki `.apkg` / `.colpkg` file import — unzip, zstd, SQLite, HTML and cloze cleanup. `buildDecks()` is shared by both import routes. |
+| `src/ankiDroid.js` | Direct AnkiDroid import via its content provider (Android only) |
+| `android/.../AnkiDroidPlugin.java` | The native half of that: queries `content://com.ichi2.anki.flashcards` |
 | `src/firebaseSync.js` | Auth + Firestore sync (contains the Firebase client config) |
 | `src/imageStore.js` | Local storage of card images (never uploaded) |
 | `src/gamification.js` | XP, levels, weekly ranks, streaks, quests, achievements, heatmap |
@@ -125,6 +127,15 @@ Play Store compatibility problem).
   schema generations are supported (decks as JSON in `col` vs a `decks` table),
   because AnkiDroid can still export either. `sql.js` pulls in a 660 KB WASM
   blob, loaded lazily so only an actual Anki import pays for it.
+- **There are two Anki import routes, and they share their cleanup.** On
+  Android with AnkiDroid installed, decks are read live from its content
+  provider — no export, no file. Everywhere else (and for decks from a desktop)
+  the `.apkg` reader handles it. Both funnel into `ankiImport.buildDecks()`, so
+  a fix to field handling lands on both and they cannot drift apart.
+- **The `<queries>` block in AndroidManifest.xml is load-bearing.** Since
+  Android 11 another app's content provider is invisible without it, and
+  `resolveContentProvider` returns null — the import would claim AnkiDroid
+  isn't installed on a phone where it obviously is.
 - **Anki media is deliberately not imported.** Images and audio stay behind and
   a card whose side was only media is skipped with a count, rather than
   arriving blank. Cloze notes become one fill-in-the-blank card per marker.
@@ -181,6 +192,11 @@ Play Store compatibility problem).
   able to update the listing.
 
 ## Open items
+- [ ] **The direct AnkiDroid import has never run against a real AnkiDroid.**
+      The plugin compiles and is confirmed present in the packaged APK, and the
+      permission and `<queries>` entries are in the merged manifest — but no one
+      has watched a real deck come across the content provider. Test it on the
+      phone that has AnkiDroid installed.
 
 - [ ] **The free AI tier is not live yet, and no code change can close this.**
       The endpoint returns `{"error":"NOT_CONFIGURED"}` until a real Gemini key

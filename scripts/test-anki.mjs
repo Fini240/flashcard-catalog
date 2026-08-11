@@ -29,8 +29,8 @@ const pure = [
   slice("export function splitDeckName", "// ---------- database ----------"),
   slice("function firstResult", null),
 ].join("\n");
-const M = new Function(`${pure}; return { htmlToText, stripMedia, cleanField, hasCloze, expandCloze, splitDeckName, extract };`)();
-const { htmlToText, stripMedia, cleanField, hasCloze, expandCloze, splitDeckName, extract } = M;
+const M = new Function(`${pure}; return { htmlToText, stripMedia, cleanField, hasCloze, expandCloze, splitDeckName, extract, buildDecks };`)();
+const { htmlToText, stripMedia, cleanField, hasCloze, expandCloze, splitDeckName, extract, buildDecks } = M;
 
 let failures = 0;
 const ok = (n, c, x) => { if (c) console.log("  ✓", n); else { failures++; console.log("  ✗", n, x === undefined ? "" : JSON.stringify(x)); } };

@@ -38,4 +38,18 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Read decks straight out of AnkiDroid, so importing needs no file export. -->
+    <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />
+
+    <!--
+      Package visibility. Since Android 11 another app's content provider is
+      invisible unless it is declared here: resolveContentProvider returns null
+      even when AnkiDroid is installed, so the import would report "AnkiDroid
+      isn't installed" on a phone where it plainly is.
+    -->
+    <queries>
+        <package android:name="com.ichi2.anki" />
+        <provider android:authorities="com.ichi2.anki.flashcards" />
+    </queries>
 </manifest>

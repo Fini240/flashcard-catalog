@@ -11,6 +11,7 @@ import * as aiImport from "./aiImport";
 import { extractTextFromFile, fileToBase64, isTextFile } from "./fileImport";
 import * as ocr from "./ocr";
 import * as ankiImport from "./ankiImport";
+import * as ankiDroid from "./ankiDroid";
 import * as imageStore from "./imageStore";
 import { pushBackHandler, consumeBack } from "./backHandler";
 import * as G from "./gamification";
@@ -1674,6 +1675,18 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
   // A parsed Anki package, and which of its decks the user wants.
   const [anki, setAnki] = useState(null);
   const [ankiChosen, setAnkiChosen] = useState(new Set());
+  // The direct AnkiDroid route: whether it's usable here, and the deck list
+  // once the user has asked for it.
+  const [adStatus, setAdStatus] = useState(null);
+  const [adDecks, setAdDecks] = useState(null);
+  const [adChosen, setAdChosen] = useState(new Set());
+  const [adBusy, setAdBusy] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    ankiDroid.status().then(s => { if (!cancelled) setAdStatus(s); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const galleryInputRef = useRef(null);
@@ -1843,6 +1856,64 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
     setPendingCards(null);
   };
 
+  // Ask for the permission only when the user actually reaches for their decks;
+  // a prompt on opening the import sheet would be asking for something they
+  // may never use.
+  const openAnkiDroid = async () => {
+    setError(""); setResult(""); setAdBusy("Opening AnkiDroid…");
+    try {
+      if (!adStatus?.granted) {
+        const granted = await ankiDroid.requestPermission();
+        setAdStatus({ installed: true, granted });
+        if (!granted) {
+          setError("Without permission to read AnkiDroid, importing has to go through an exported .apkg file instead.");
+          return;
+        }
+      }
+      const decks = await ankiDroid.listDecks();
+      if (!decks.length) {
+        setError("AnkiDroid has no decks to import yet.");
+        return;
+      }
+      setAdDecks(decks);
+      setAdChosen(new Set(decks));
+    } catch (e) {
+      setError(e.message || "Couldn't reach AnkiDroid.");
+    } finally {
+      setAdBusy("");
+    }
+  };
+
+  const toggleAdDeck = (name) => setAdChosen(prev => {
+    const next = new Set(prev);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
+
+  // Reading the notes is the slow part, so it happens only for the decks that
+  // were actually ticked, and lands in the same review step the file import
+  // uses — from here on the two routes are indistinguishable.
+  const loadAnkiDroidDecks = async () => {
+    setError(""); setAdBusy("Reading decks…");
+    try {
+      const chosen = adDecks.filter(d => adChosen.has(d));
+      const parsed = await ankiDroid.importDecks(chosen, (done, total) => {
+        setAdBusy(`Reading deck ${done} of ${total}…`);
+      });
+      if (!parsed.totals.cards) {
+        setError("Nothing importable in those decks. Cards that are only images or audio can't come along.");
+        return;
+      }
+      setAnki(parsed);
+      setAnkiChosen(new Set(parsed.decks.map(d => d.name)));
+      setAdDecks(null);
+    } catch (e) {
+      setError(e.message || "Couldn't read those decks.");
+    } finally {
+      setAdBusy("");
+    }
+  };
+
   const toggleDeck = (name) => setAnkiChosen(prev => {
     const next = new Set(prev);
     if (next.has(name)) next.delete(name); else next.add(name);
@@ -1944,7 +2015,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
           </>
         )}
 
-        {importMode === "file" && !pendingCards && !anki && (
+        {importMode === "file" && !pendingCards && !anki && !adDecks && (
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
               <Sparkles size={13} color="var(--highlight)" /> AnkiDroid decks (.apkg) and .txt/.csv/.md files with "Front | Back" lines import instantly, no key needed. PDFs, Word docs, and anything else get read by {aiLabel}.
@@ -1959,6 +2030,65 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             <GhostButton onClick={() => fileInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }} >
               <FileUp size={16} /> {busy ? "Reading file…" : "Choose file"}
             </GhostButton>
+
+            {adStatus?.installed && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "14px 0" }}>
+                  <div style={{ flex: 1, height: 1, background: "var(--card-border)" }} />
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)", letterSpacing: 0.5 }}>OR</span>
+                  <div style={{ flex: 1, height: 1, background: "var(--card-border)" }} />
+                </div>
+                <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
+                  AnkiDroid is on this phone — take the decks straight from it, no
+                  export needed.
+                </p>
+                <PrimaryButton onClick={openAnkiDroid} disabled={!!adBusy} style={{ width: "100%" }}>
+                  <Sparkles size={16} /> {adBusy || "Import from AnkiDroid"}
+                </PrimaryButton>
+              </>
+            )}
+          </>
+        )}
+
+        {adDecks && (
+          <>
+            <p style={{
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
+              textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 8px",
+            }}>Your AnkiDroid decks</p>
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px", lineHeight: 1.45 }}>
+              Pick what to bring over. Only the ticked decks are read.
+            </p>
+            <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12 }} className="fc-scroll">
+              {adDecks.map(name => {
+                const on = adChosen.has(name);
+                const { subject, category } = ankiImport.splitDeckName(name);
+                return (
+                  <button key={name} onClick={() => toggleAdDeck(name)} style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+                    background: on ? "rgba(242,197,114,0.12)" : "transparent",
+                    border: `1px solid ${on ? "rgba(242,197,114,0.4)" : "var(--card-border)"}`,
+                    borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer", minHeight: 52,
+                  }}>
+                    <span style={{
+                      width: 20, height: 20, flexShrink: 0, borderRadius: 5,
+                      border: `1.5px solid ${on ? "#C98A2B" : "var(--card-border)"}`,
+                      background: on ? "#F2C572" : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>{on && <Check size={13} color="#16233F" />}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{
+                        display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
+                        color: "var(--text-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>{subject}</span>
+                      {category && (
+                        <span style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)" }}>{category}</span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </>
         )}
 
@@ -2087,6 +2217,11 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
           {anki && (
             <PrimaryButton onClick={confirmAnkiImport} style={{ flex: 1 }} disabled={ankiSelectedCards === 0}>
               <Check size={16} /> Import {ankiSelectedCards} card{ankiSelectedCards !== 1 ? "s" : ""}
+            </PrimaryButton>
+          )}
+          {adDecks && (
+            <PrimaryButton onClick={loadAnkiDroidDecks} style={{ flex: 1 }} disabled={adChosen.size === 0 || !!adBusy}>
+              <Check size={16} /> {adBusy || `Read ${adChosen.size} deck${adChosen.size !== 1 ? "s" : ""}`}
             </PrimaryButton>
           )}
           <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>Done</GhostButton>
