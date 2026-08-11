@@ -204,16 +204,36 @@ describe("buildQueue", () => {
     q.forEach((s) => expect(s.payload.options).toContain(s.cards[0].back));
   });
 
+  // Written first against invented fields (box/correctCount/wrongCount) that no
+  // card has ever carried, which the implementation matched — so both agreed
+  // and the drill ordered by nothing at all. These are the real fields.
   it("orders weak spots by how shaky the card is", () => {
     const scored = [
-      card("a", "q", "a", { box: 5, correctCount: 9, wrongCount: 0 }),
-      card("b", "q", "b", { box: 0, correctCount: 1, wrongCount: 8 }),
-      card("c", "q", "c", { box: 3, correctCount: 5, wrongCount: 2 }),
-      card("d", "q", "d", { box: 4, correctCount: 6, wrongCount: 1 }),
+      card("mastered", "q", "a", { srsBox: 5, srsPeak: 5 }),
+      card("struggling", "q", "b", { srsBox: 0, srsPeak: 1 }),
+      card("middling", "q", "c", { srsBox: 3, srsPeak: 3 }),
+      card("strong", "q", "d", { srsBox: 4, srsPeak: 4 }),
     ];
-    const picked = D.selectCards(D.drillById("weak"), scored);
-    expect(picked[0].id).toBe("b");
-    expect(picked[picked.length - 1].id).toBe("a");
+    const picked = D.selectCards(D.drillById("weak"), scored).map((c) => c.id);
+    expect(picked[0]).toBe("struggling");
+    expect(picked[picked.length - 1]).toBe("mastered");
+  });
+
+  it("ranks a card that slipped from a high box above a steady one at the same box", () => {
+    const scored = [
+      card("steady", "q", "a", { srsBox: 3, srsPeak: 3 }),
+      card("slipped", "q", "b", { srsBox: 3, srsPeak: 5 }),
+    ];
+    expect(D.selectCards(D.drillById("weak"), scored)[0].id).toBe("slipped");
+  });
+
+  it("puts a never-answered card between the shaky and the solid", () => {
+    const scored = [
+      card("solid", "q", "a", { srsBox: 5, srsPeak: 5 }),
+      card("new", "q", "b"),
+      card("shaky", "q", "c", { srsBox: 0, srsPeak: 0 }),
+    ];
+    expect(D.selectCards(D.drillById("weak"), scored).map((c) => c.id)).toEqual(["shaky", "new", "solid"]);
   });
 });
 

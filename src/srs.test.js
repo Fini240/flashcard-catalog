@@ -25,11 +25,33 @@ describe("applyGrade", () => {
     expect(card.srsBox).toBe(5);
   });
 
-  it("drops a wrong answer to box 0, due immediately", () => {
+  it("drops a wrong answer one box, not back to the start", () => {
     const card = { id: "a", srsBox: 3, srsPeak: 3, srsDue: NOW + 7 * DAY_MS };
     const next = applyGrade(card, false, NOW);
-    expect(next.srsBox).toBe(0);
-    expect(next.srsDue).toBe(NOW); // interval[0] = 0 days
+    expect(next.srsBox).toBe(2);
+  });
+
+  // The step-down is about strength, not scheduling: a card you just got wrong
+  // has to come back now, or a miss at box 5 would buy it a fortnight off.
+  it("brings a missed card back immediately, whatever box it lands in", () => {
+    [1, 2, 3, 4, 5].forEach((box) => {
+      expect(applyGrade({ id: "a", srsBox: box }, false, NOW).srsDue).toBe(NOW);
+    });
+  });
+
+  it("can't go below the first box", () => {
+    expect(applyGrade({ id: "a", srsBox: 0 }, false, NOW).srsBox).toBe(0);
+    expect(applyGrade({ id: "a" }, false, NOW).srsBox).toBe(0);
+  });
+
+  it("steps down again on a second miss, so repeated failures still bottom out", () => {
+    let card = { id: "a", srsBox: 3, srsPeak: 3 };
+    card = applyGrade(card, false, NOW);
+    expect(card.srsBox).toBe(2);
+    card = applyGrade(card, false, NOW);
+    expect(card.srsBox).toBe(1);
+    card = applyGrade(card, false, NOW);
+    expect(card.srsBox).toBe(0);
   });
 
   it("a wrong answer keeps the peak, so re-climbing doesn't count as new", () => {
@@ -37,8 +59,17 @@ describe("applyGrade", () => {
     card = applyGrade(card, false, NOW);
     expect(card.srsPeak).toBe(4);
     card = applyGrade(card, true, NOW);
-    expect(card.srsBox).toBe(1);
+    expect(card.srsBox).toBe(4);
     expect(card.srsPeak).toBe(4);
+  });
+
+  it("a card recovered after one miss is scheduled by its restored box", () => {
+    // missed at 4 → 3, answered right → back to 4, so 14 days rather than the
+    // single day a reset-to-zero card would have earned
+    let card = { id: "a", srsBox: 4, srsPeak: 4 };
+    card = applyGrade(card, false, NOW);
+    card = applyGrade(card, true, NOW);
+    expect(card.srsDue).toBe(NOW + 14 * DAY_MS);
   });
 
   it("does not mutate the original card", () => {

@@ -129,15 +129,23 @@ export function formatDuration(seconds) {
 
 // ---------- picking which cards ----------
 
-// Weakest first: a card's box is how many times running it has been right, so
-// a low box with a real history is what "shaky" means. Never-seen cards sit in
-// the middle — unknown, not weak.
+// Weakest first, read from the only history a card actually keeps: its Leitner
+// box, and the highest box it has ever held (srs.js). A low box means it keeps
+// needing review; a box below its own peak means it was strong and slipped,
+// which is the sharper signal of the two. A card that has never been answered
+// sits in the middle — unknown, not weak.
+//
+// This previously read card.box, card.correctCount and card.wrongCount, none
+// of which exist. Every card scored the same, so "weak spots" was an arbitrary
+// order wearing a useful name.
 function weakness(card) {
-  const box = typeof card.box === "number" ? card.box : 0;
-  const seen = (card.correctCount || 0) + (card.wrongCount || 0);
-  if (!seen) return 0.5;
-  const wrongRate = (card.wrongCount || 0) / seen;
-  return Math.min(1, wrongRate * 0.7 + (1 - Math.min(box, 5) / 5) * 0.3);
+  const box = typeof card.srsBox === "number" ? card.srsBox : null;
+  if (box === null) return 0.5;
+  const capped = Math.min(Math.max(box, 0), 5);
+  const peak = Math.min(Math.max(card.srsPeak || capped, capped), 5);
+  const strength = capped / 5;
+  const lapsed = (peak - capped) / 5;
+  return Math.min(1, (1 - strength) * 0.75 + lapsed * 0.25);
 }
 
 export function selectCards(drill, cards, limit) {
