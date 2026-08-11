@@ -110,6 +110,16 @@ Play Store compatibility problem).
 - **Firebase client config in `src/firebaseSync.js` and `google-services.json`
   are committed on purpose** — Firebase client keys are not secrets; access is
   governed by Firestore security rules.
+- **The free AI tier checks the sign-in provider, not just the token.**
+  `DAILY_LIMIT` is per uid, so it only means something if a uid costs something
+  to obtain; anonymous sign-in would make them free and the limit decorative.
+  Anonymous auth is disabled in the console (verified 2026-08-11 — Identity
+  Toolkit answers `ADMIN_ONLY_OPERATION`), but a console toggle is one click
+  away and nothing in the repo would notice, so `ALLOWED_PROVIDERS` in
+  `functions/index.js` enforces it server-side as well. **Adding any sign-in
+  provider means adding it there too**, or the free tier returns
+  `PROVIDER_NOT_ALLOWED` for those users (the client treats that as "free path
+  unavailable" and offers BYOK, so it degrades rather than breaks).
 - **Anki import reads the real database, not an export text file.** An `.apkg`
   is a ZIP holding a SQLite collection, zstd-compressed since Anki 2.1.50. Both
   schema generations are supported (decks as JSON in `col` vs a `decks` table),
@@ -172,10 +182,16 @@ Play Store compatibility problem).
 
 ## Open items
 
-- [ ] **The free AI tier is not live yet.** The endpoint still returns
-      `{"error":"NOT_CONFIGURED"}` — it needs a real Gemini key set as the
-      function secret and a redeploy. Exact commands: `PLAY_STORE.md` §8.
-      Until then every client silently falls back to BYOK; nothing is broken.
+- [ ] **The free AI tier is not live yet, and no code change can close this.**
+      The endpoint returns `{"error":"NOT_CONFIGURED"}` until a real Gemini key
+      is set as the function secret and the functions are redeployed. Both
+      steps need the owner's own Google account — exact commands in
+      `PLAY_STORE.md` §8. Until then every client silently falls back to BYOK;
+      nothing is broken, but the README's "free daily AI-import allowance" is
+      a promise the app does not currently keep, so this is the one open item
+      that is user-visible. **The `ALLOWED_PROVIDERS` check in
+      `functions/index.js` is also still undeployed** and ships with that same
+      `firebase deploy --only functions`.
 - [ ] Play Store release is not started: upload keystore not generated, no
       Play Developer account ($25 + identity verification), and a personal
       account needs a **12-tester / 14-day closed test** before production.

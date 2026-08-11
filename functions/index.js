@@ -31,10 +31,23 @@ const DAILY_LIMIT = 10;
 // user base grows; the cost of it being too low is a day of BYOK prompts, the
 // cost of it being absent is the whole Gemini quota drained by a script.
 //
-// NOTE: this bounds the shared key only. The other half of the defence is that
-// anonymous auth must stay DISABLED in the Firebase console — with it on, uids
-// are free to mint and the per-user limit means nothing.
+// NOTE: this bounds the shared key only. The other half of the defence is
+// ALLOWED_PROVIDERS below.
 const GLOBAL_DAILY_LIMIT = 2000;
+
+// A per-user limit is only worth anything if a uid costs something to obtain.
+// Anonymous sign-in makes them free — one script mints a fresh uid per request
+// and DAILY_LIMIT never binds. Keeping anonymous auth disabled in the Firebase
+// console is the first line of defence, but a console toggle is one careless
+// click away and nothing in this repo would notice, so the provider is checked
+// here too: the sign-in method is baked into the ID token and can't be forged.
+//
+// Google is the only provider the app offers (see capacitor.config.json). If a
+// provider is ever added, add it here as well — a new sign-in method will fail
+// the free tier with PROVIDER_NOT_ALLOWED until it does, which is the intended
+// failure direction. Do NOT add a provider whose accounts are free to create in
+// bulk without undoing the point of this check.
+const ALLOWED_PROVIDERS = new Set(["google.com"]);
 
 // Firebase uids are 28-char alphanumeric, so this can never collide with one.
 const GLOBAL_DOC = "_global";
@@ -177,11 +190,22 @@ export const generateFlashcards = onRequest(
     const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!idToken) return res.status(401).json({ error: "Missing ID token" });
 
-    let uid;
+    let uid, provider;
     try {
-      ({ uid } = await getAuth().verifyIdToken(idToken));
+      const decoded = await getAuth().verifyIdToken(idToken);
+      uid = decoded.uid;
+      provider = decoded.firebase?.sign_in_provider;
     } catch {
       return res.status(401).json({ error: "Invalid ID token" });
+    }
+
+    // See ALLOWED_PROVIDERS. The client never hits this — it only ever signs in
+    // with Google — so a rejection here means either a new provider was enabled
+    // without updating the set, or someone is minting uids directly against the
+    // public API key. Logged for that reason.
+    if (!ALLOWED_PROVIDERS.has(provider)) {
+      console.warn(`Rejected free-tier request from sign_in_provider=${provider}`);
+      return res.status(403).json({ error: "PROVIDER_NOT_ALLOWED" });
     }
 
     const { type, text, imageBase64, mediaType, existingSubjects } = req.body || {};
