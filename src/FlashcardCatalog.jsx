@@ -37,6 +37,8 @@ import {
   StatusBar, TodayCard, QuestList, StreakModal, GoalModal, FriendsModal,
   SessionReward, RiskBanner, MasteryPips, MasteryBar, Ring, UsernameNotice,
 } from "./gameUI";
+import { Walkthrough, WhatsNew } from "./onboarding";
+import { introFor, getSeenVersion, setSeenVersion, APP_VERSION } from "./whatsNew";
 
 function openExternal(url) {
   Browser.open({ url }).catch(() => window.open(url, "_blank"));
@@ -187,6 +189,9 @@ export default function FlashcardCatalog() {
   const [nudges, setNudges] = useState([]);
   // The auto-assigned username, shown once so it isn't a surprise.
   const [usernameNotice, setUsernameNotice] = useState(null);
+  // The walkthrough on a fresh install, or the note after an update — see
+  // whatsNew.js. { screen, releases }, or null once nothing is owed.
+  const [intro, setIntro] = useState(null);
   // Which folder the study screen should open on — set when Study is tapped
   // from inside a folder, so you land on that deck instead of "All subjects".
   const [studyNodeId, setStudyNodeId] = useState("all");
@@ -249,6 +254,36 @@ export default function FlashcardCatalog() {
     const id = setInterval(tick, 60000);
     return () => clearInterval(id);
   }, [loaded]);
+
+  // ---------- walkthrough / what's new ----------
+  // Decided once, the moment local data has been read — before any cloud
+  // snapshot arrives, so it can't flash the tour and then take it away.
+  //
+  // "Has this person used the app before?" is answered from what's on the
+  // device: a catalog, progress, or a session that was signed in. A returning
+  // user on a browser they've never opened the app in has none of those and
+  // gets the tour once; that's the cost of not delaying the launch on a
+  // network round trip, and it costs them one tap on Skip.
+  useEffect(() => {
+    if (!loaded) return;
+    const hasData =
+      subjects.length > 0 || cards.length > 0 || (game.xp || 0) > 0 || !!googleUser;
+    const next = introFor({ seenVersion: getSeenVersion(), hasData });
+    if (!next.screen) {
+      // Nothing to say, but this device has now seen this version — otherwise
+      // its first note would arrive as a backlog of every release ever.
+      setSeenVersion(APP_VERSION);
+      return;
+    }
+    setIntro(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+
+  // Whichever of the two was on screen, the version is now acknowledged.
+  const dismissIntro = () => {
+    setSeenVersion(APP_VERSION);
+    setIntro(null);
+  };
 
   // ---------- backup (export / import) ----------
   // The one-file escape hatch. Export is best-effort — worst case the user
@@ -596,6 +631,10 @@ export default function FlashcardCatalog() {
           darkMode={darkMode}
           theme={theme}
           onChooseTheme={chooseTheme}
+          onReplayWalkthrough={() => {
+            setSettingsOpen(false);
+            setIntro({ screen: "walkthrough", releases: [] });
+          }}
           game={game}
           onSetReminder={setReminder}
           onSetListed={setListed}
@@ -629,6 +668,13 @@ export default function FlashcardCatalog() {
           onFinish={finishSession}
           onExit={() => setView(sessionOriginRef.current)}
         />
+      )}
+      {/* Last, and on top of everything (z-index 80/70): the tour is the
+          first thing a fresh install shows, and the update note outranks
+          whatever sheet the app restored underneath it. */}
+      {intro && intro.screen === "walkthrough" && <Walkthrough onDone={dismissIntro} />}
+      {intro && intro.screen === "whatsNew" && (
+        <WhatsNew releases={intro.releases} onClose={dismissIntro} />
       )}
     </Shell>
   );
@@ -2242,7 +2288,14 @@ function Switch({ checked, onChange }) {
   );
 }
 
-function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetListed, onExport, onImport, diagInfo }) {
+// The explanatory prose that used to sit under every control here has moved
+// into the walkthrough — Settings is where you change something, not where
+// the app is explained. What stayed is what the walkthrough can't carry: live
+// state (which theme is actually in force, the reminder times, an error), and
+// the two disclosures a user is entitled to see at the moment they act on
+// them — that Google's free tier may train on what you import, and that an
+// API key never leaves the device.
+function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetListed, onExport, onImport, onReplayWalkthrough, diagInfo }) {
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [reminderNote, setReminderNote] = useState("");
@@ -2295,7 +2348,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
         }}>Appearance</p>
-        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: theme === "system" ? 8 : 20 }}>
           {THEME_CHOICES.map(c => {
             const active = theme === c.id;
             return (
@@ -2310,14 +2363,16 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
             );
           })}
         </div>
-        <p style={{
-          fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)",
-          margin: "0 0 20px", lineHeight: 1.45,
-        }}>
-          {theme === "system"
-            ? <>Following your device, which is currently {darkMode ? "dark" : "light"}. Changes as it does.</>
-            : <>Staying {theme} whatever the device is set to.</>}
-        </p>
+        {/* Which mode "Automatic" currently resolves to is the one thing the
+            buttons can't show on their own. */}
+        {theme === "system" && (
+          <p style={{
+            fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)",
+            margin: "0 0 20px", lineHeight: 1.45,
+          }}>
+            Following your device — currently {darkMode ? "dark" : "light"}.
+          </p>
+        )}
         <div style={{ height: 1, background: "var(--card-border)", margin: "0 0 18px" }} />
 
         <p style={{
@@ -2340,9 +2395,13 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
                 }}
               />
             </div>
-            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
-              {reminderNote || "Starts gently at midday and gets more insistent as the evening closes in — and stops for the day the moment you hit your goal."}
-            </p>
+            {/* Only what the switch can't say for itself: why it refused, and
+                — once it's on — the times it will actually fire. */}
+            {reminderNote && (
+              <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
+                {reminderNote}
+              </p>
+            )}
             {game.reminder.enabled && (
               <p style={{
                 fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--text-faint)",
@@ -2351,6 +2410,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
                 {reminders.ladderSummary()}
               </p>
             )}
+            {!game.reminder.enabled && <div style={{ marginBottom: 18 }} />}
           </>
         ) : (
           <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 14px", lineHeight: 1.45 }}>
@@ -2365,9 +2425,10 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           </span>
           <Switch checked={game.listed !== false} onChange={() => onSetListed(game.listed === false)} />
         </div>
-        <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 20px", lineHeight: 1.45 }}>
-          Off hides you from everyone except the friends you've added. Either way
-          people only ever see your username, streak, level and weekly XP.
+        {/* What is published is a privacy claim, and belongs next to the
+            switch that decides it — not only in a tour seen once. */}
+        <p style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 20px", lineHeight: 1.45 }}>
+          Off leaves only your friends' boards. Either way: username, streak, level and weekly XP — nothing else.
         </p>
         <div style={{ height: 1, background: "var(--card-border)", margin: "0 0 18px" }} />
 
@@ -2375,9 +2436,6 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
         }}>Backup</p>
-        <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
-          One JSON file with every subject, card and stat. Keep one somewhere safe — it's the fallback if sync ever goes wrong.
-        </p>
         <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
           <GhostButton onClick={async () => setBackupNote((await onExport()) || "Backup saved.")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
             <Download size={16} /> Export
@@ -2404,8 +2462,10 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
         }}>AI-powered import</p>
-        <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px" }}>
-          Signed in, you get 10 AI imports a day with no key at all. Pasting your own "Front | Back" text is always free{ocr.isAvailable() ? ", and photos are read on this device without a key" : ""}. A key of your own lifts the daily limit — pick which service it's for:
+        {/* Which service a key is *for* has to be said, because the field
+            below changes meaning with it. */}
+        <p style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 12px" }}>
+          A key of your own lifts the daily limit. Which service it's for:
         </p>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -2449,7 +2509,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           </GhostButton>
         </div>
         <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 18px" }}>
-          Stored only on this device — never synced to your account. Opens in its own window so you can check it without risking an accidental edit here.
+          Stored only on this device — never synced to your account.
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
@@ -2462,13 +2522,27 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
             </GhostButton>
           )}
         </div>
+        {/* The one thing a link can't say: what it costs on the other side. */}
         <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "10px 0 0" }}>
           {provider === "gemini"
-            ? `Opens ${info.keyUrlLabel} in your browser. Sign in with Google, tap "Create API key", then paste it above — no card, no charges.`
-            : `Both open the ${info.keyUrlLabel} in your browser. Sign up, add a card, generate a key, then paste it above — usage is billed by Anthropic directly, a few cents per file or photo.`}
+            ? `${info.keyUrlLabel} — no card, no charges.`
+            : `${info.keyUrlLabel} — billed by Anthropic, a few cents per file or photo.`}
         </p>
 
         <div style={{ height: 1, background: "var(--card-border)", margin: "18px 0" }} />
+        <p style={{
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
+          textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
+        }}>How the app works</p>
+        {/* The tour is the only place the app explains itself now, so it has
+            to be reachable after the day you installed it. */}
+        <GhostButton
+          onClick={onReplayWalkthrough}
+          style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", marginBottom: 18 }}
+        >
+          <BookOpen size={16} /> Show the walkthrough again
+        </GhostButton>
+
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",

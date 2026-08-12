@@ -62,6 +62,8 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/reminders.js` | Daily study reminder — local notifications, scheduled on-device |
 | `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore` |
 | `firestore.indexes.json` | Composite index behind the global board. Deployed by the same command. |
+| `src/whatsNew.js` | `APP_VERSION`, the walkthrough copy and the release notes, plus the pure decision of which (if either) a launch owes the user. Unit-tested. |
+| `src/onboarding.jsx` | How those two look: the first-run walkthrough and the update note. |
 | `src/backHandler.js` | Android hardware/gesture back button → in-app navigation |
 | `src/theme.js` | Light/dark choice — automatic (device), light or dark. Holds the migration off the old boolean switch; unit-tested. |
 | `functions/index.js` | Cloud Function `generateFlashcards`; `DAILY_LIMIT` (per user) and `GLOBAL_DAILY_LIMIT` (whole project) live here |
@@ -74,7 +76,12 @@ authoritative context for how and why.
 
 ## The ship sequence (standing instruction — do it every time, don't ask)
 
-After any completed and verified change:
+After any completed and verified change, and **before** building: if the
+change is user-visible, bump `APP_VERSION` in `src/whatsNew.js`, add a
+`RELEASES` entry with one line per change, and set `versionName` in
+`android/app/build.gradle` to match (`versionCode` goes up regardless). A
+user-visible change shipped without that entry is a silent update — the whole
+point of the note is that nothing lands unannounced. Then:
 
 ```bash
 npm run build && npx cap sync android && cd android && ./gradlew assembleDebug
@@ -181,6 +188,23 @@ Play Store compatibility problem).
   that gets more direct at each rung, all of it cancelled the moment the daily
   *goal* is met — not merely when one card has been answered. There is no
   user-facing time picker; the times are deliberately not a setting.
+
+- **The app explains itself once, in the walkthrough — not in Settings.**
+  Settings used to carry a paragraph of prose under every control. It now
+  keeps only what a tour can't: live state (which mode "Automatic" resolves
+  to, the reminder times, an error) and the two disclosures a user is entitled
+  to see at the moment they act on them — that Google's free tier may train on
+  what you import, and that an API key never leaves the device. Don't put the
+  explanations back; add a walkthrough slide instead, and keep it to six.
+- **"Have I seen this?" is per device, not per account.** The acknowledged
+  version lives in `localStorage` next to the theme and is deliberately not
+  synced: the web app updates on every deploy and the APK only when it's
+  installed, so one account genuinely sits at two versions at once.
+- **An existing user must never be shown the walkthrough.** Someone who has
+  used the app since before this feature existed has no stored version but
+  does have a catalog, so `introFor` decides on the presence of local data —
+  which is also why it runs the moment local storage is read, before any cloud
+  snapshot can arrive and change the answer.
 
 ## Known hazards
 

@@ -13,6 +13,9 @@ key and no internet at all.
 Works fully offline with no account. Google sign-in is optional and adds
 cross-device sync plus a free daily AI-import allowance.
 
+A six-screen walkthrough opens on a fresh install, and a short note after an
+update says what changed. The walkthrough can be reopened from Settings.
+
 XP, streaks, daily quests, achievements and a friends + global leaderboard
 keep the habit alive. Daily study reminders escalate through the day and stop
 the moment your goal is met.

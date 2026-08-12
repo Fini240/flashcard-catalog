@@ -1,0 +1,132 @@
+// ---------------------------------------------------------------------------
+// What the app tells you about itself: the first-run walkthrough and the
+// short "what's new" note after an update.
+//
+// The decision of *which* of the two to show is pure and unit-tested, because
+// it is easy to get wrong in a way nobody notices: an existing user who
+// updates must never be handed the beginner's walkthrough, and a brand-new
+// user must never be handed release notes for features they have never seen
+// the old version of. Both fall out of one stored value — the app version
+// this device last acknowledged.
+//
+// It is stored per device, next to the theme, and deliberately not synced:
+// "have I read this?" is a property of the install, not of the account. The
+// web app updates on every deploy and the APK only when it is installed, so
+// the same account genuinely is at two different versions at once.
+// ---------------------------------------------------------------------------
+
+// Bump this with every user-visible release and add a RELEASES entry to
+// match, or the update note stays silent. Keep it in step with versionName
+// in android/app/build.gradle.
+export const APP_VERSION = "1.1.0";
+
+export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
+
+// The walkthrough. Six screens, one idea each — this is the whole tour, so
+// anything that needs a paragraph doesn't belong here.
+export const WALKTHROUGH = [
+  {
+    icon: "book",
+    title: "Your card drawer",
+    text: "Cards live in subjects, and in folders inside those, as deep as you want them. Everything works offline, with no account.",
+  },
+  {
+    icon: "import",
+    title: "Getting cards in",
+    text: "Type them, paste “Front | Back” lines, photograph a vocabulary list, or drop in a PDF, a Word file or an Anki deck. Photos are read on this device.",
+  },
+  {
+    icon: "clock",
+    title: "Answered once isn't learned",
+    text: "A card you get right comes back a day later, then after three days, a week, a fortnight, a month. Miss it and it steps back down.",
+  },
+  {
+    icon: "drills",
+    title: "Six ways to be asked",
+    text: "Flip, multiple choice, typing, fill the blank, true or false, match the pairs. You pick when you sit down — the same deck, a different kind of hard.",
+  },
+  {
+    icon: "flame",
+    title: "Turning up daily",
+    text: "A daily goal, a streak, XP and quests. Reminders start gently at midday and stop the moment you hit the goal.",
+  },
+  {
+    icon: "users",
+    title: "Optional: sign in",
+    text: "Signing in with Google syncs your cards across devices and puts you on the board with friends. Only a username you choose is ever public.",
+  },
+];
+
+// Newest first. Keep each line to one sentence — this is a note, not a
+// changelog, and a user who skimmed it should still know what changed.
+export const RELEASES = [
+  {
+    version: "1.1.0",
+    date: "2026-08-12",
+    items: [
+      "How a deck is studied is now chosen when you sit down — flip, multiple choice, typing, cloze, true/false or match pairs — instead of being fixed per card.",
+      "Cards turn over in 3D, and can be graded before you flip them.",
+      "A big deck is served in sittings rather than as one endless queue.",
+      "Anki decks import from a .apkg file or straight from AnkiDroid, skipping cards you already have.",
+      "The app follows your phone's light or dark setting.",
+      "A missed card steps down one box instead of starting over, and a session survives a reload.",
+      "This walkthrough, and this note after every update.",
+    ],
+  },
+];
+
+// Numeric, part by part, so "1.10.0" sorts above "1.9.0". Missing parts count
+// as 0, and anything unparseable sorts oldest — a corrupted stored value then
+// reads as "very old", which shows the note rather than swallowing it.
+export function compareVersions(a, b) {
+  const parts = (v) => String(v || "").split(".").map((n) => parseInt(n, 10) || 0);
+  const x = parts(a);
+  const y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] || 0) - (y[i] || 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+// Every release newer than what this device has acknowledged, newest first.
+export function releasesSince(seenVersion, releases = RELEASES) {
+  return releases
+    .filter((r) => compareVersions(r.version, seenVersion) > 0)
+    .sort((a, b) => compareVersions(b.version, a.version));
+}
+
+// What to show on launch, if anything.
+//
+// `hasData` is the one that stops an existing user being taught what a
+// flashcard is: someone who has been using the app since before this feature
+// existed has no stored version, but they do have a catalog. They get the
+// update note if there is one, and nothing if there isn't — never the tour.
+export function introFor({ seenVersion, hasData, releases = RELEASES }) {
+  if (!seenVersion) {
+    if (!hasData) return { screen: "walkthrough", releases: [] };
+    const since = releasesSince(null, releases);
+    return since.length ? { screen: "whatsNew", releases: since } : { screen: null, releases: [] };
+  }
+  if (compareVersions(seenVersion, APP_VERSION) >= 0) return { screen: null, releases: [] };
+  const since = releasesSince(seenVersion, releases);
+  return since.length ? { screen: "whatsNew", releases: since } : { screen: null, releases: [] };
+}
+
+export function getSeenVersion() {
+  try {
+    return localStorage.getItem(SEEN_VERSION_KEY) || null;
+  } catch (e) {
+    // A blocked store means we can't remember; showing the tour twice is a
+    // better failure than crashing the launch.
+    return null;
+  }
+}
+
+export function setSeenVersion(version = APP_VERSION) {
+  try {
+    localStorage.setItem(SEEN_VERSION_KEY, version);
+  } catch (e) {
+    /* costs the acknowledgement, not the session */
+  }
+}
