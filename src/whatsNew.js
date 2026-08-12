@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.1.1";
+export const APP_VERSION = "1.1.2";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -61,11 +61,20 @@ export const WALKTHROUGH = [
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
   {
+    version: "1.1.2",
+    date: "2026-08-12",
+    items: [
+      "Fixed, properly this time: a device holding an empty catalog can no longer publish that emptiness over your subjects and XP — not by signing in, and not on a later sync either.",
+      "A device that was emptied by the earlier bug now heals itself: if it is holding nothing and your account has a catalog, it takes the catalog.",
+      "The server refuses the same write independently, so no future bug in the app can do this again. Deleting your own subjects still works — the app says when a delete is really yours.",
+      "Your cards were never affected by any of this.",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-08-12",
     items: [
-      "Fixed: signing in on a device that had never held your catalog could replace the subjects and XP on your account with that device's empty ones. Your cards were never affected.",
-      "A client that hasn't read your catalog is now refused when it tries to replace it with nothing, whatever route it took to get there.",
+      "Fixed: signing in on a device that had never held your catalog could replace the subjects and XP on your account with that device's empty ones.",
     ],
   },
   {

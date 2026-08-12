@@ -29,6 +29,8 @@ const PROFILE = {
   listed: true, updatedAt: 1,
 };
 const NUDGE = { from: ME, name: "finn", emoji: "O", at: 1 };
+const SUBJECT = { id: "s1", name: "Biology", children: [] };
+const CARD = { id: "k1", front: "a", back: "b" };
 const RESERVATION = { uid: ME };
 const ADD = { from: ME, at: 1 };
 
@@ -109,6 +111,59 @@ const cases = [
   tc("delete own nudge", "/profiles/userAAA/nudges/n1", "delete", ME, null, "ALLOW"),
   tc("delete friend's nudge blocked", "/profiles/userBBB/nudges/n1", "delete", ME, null, "DENY"),
   tc("anon nudge blocked", "/profiles/userBBB/nudges/n1", "create", null, NUDGE, "DENY"),
+  // ---- the wipe guard on users/{uid} ----
+  // 2026-08-12: a client holding an empty catalog wrote it over a real one,
+  // twice in one day. The rule refuses to be the last link in that chain.
+  tcExisting("emptying a real catalog blocked", "/users/userAAA", "update", ME,
+    { subjects: [], cards: [], game: { xp: 0 }, updatedAt: 200 },
+    { subjects: [SUBJECT], cards: [CARD], game: { xp: 3034 }, updatedAt: 100 }, "DENY"),
+  tcExisting("emptying it with a fresh timestamp still blocked", "/users/userAAA", "update", ME,
+    { subjects: [], cards: [CARD], game: { xp: 0 }, updatedAt: 999999 },
+    { subjects: [SUBJECT], cards: [CARD], game: { xp: 3034 }, updatedAt: 100 }, "DENY"),
+  tcExisting("dropping the cards array blocked", "/users/userAAA", "update", ME,
+    { subjects: [SUBJECT], cards: [], updatedAt: 200 },
+    { subjects: [SUBJECT], cards: [CARD], updatedAt: 100 }, "DENY"),
+
+  // A deliberate delete says so, and the flag is only good for the write it
+  // is stamped on.
+  tcExisting("a declared delete goes through", "/users/userAAA", "update", ME,
+    { subjects: [], cards: [], updatedAt: 200, clearedOnPurpose: 200 },
+    { subjects: [SUBJECT], cards: [CARD], updatedAt: 100 }, "ALLOW"),
+  tcExisting("a stale declaration doesn't authorise the next write", "/users/userAAA", "update", ME,
+    { subjects: [], cards: [], updatedAt: 300, clearedOnPurpose: 200 },
+    { subjects: [SUBJECT], cards: [CARD], updatedAt: 100 }, "DENY"),
+
+  // Everything the app does normally must still work.
+  tcExisting("ordinary catalog update", "/users/userAAA", "update", ME,
+    { subjects: [SUBJECT, SUBJECT], cards: [CARD], game: { xp: 3100 }, updatedAt: 200 },
+    { subjects: [SUBJECT], cards: [CARD], game: { xp: 3034 }, updatedAt: 100 }, "ALLOW"),
+  tcExisting("per-card parent write, which omits cards entirely", "/users/userAAA", "update", ME,
+    { subjects: [SUBJECT], game: { xp: 3100 }, updatedAt: 200, cards: [CARD] },
+    { subjects: [SUBJECT], cards: [CARD], updatedAt: 100 }, "ALLOW"),
+  tcExisting("stamping cardsMigratedAt on the way into per-card mode", "/users/userAAA", "update", ME,
+    { subjects: [SUBJECT], cards: [CARD], cardsMigratedAt: 5 },
+    { subjects: [SUBJECT], cards: [CARD] }, "ALLOW"),
+  tcExisting("an account that was already empty", "/users/userAAA", "update", ME,
+    { subjects: [], cards: [], updatedAt: 200 },
+    { subjects: [], cards: [], updatedAt: 100 }, "ALLOW"),
+  tcExisting("an account with no subjects field at all", "/users/userAAA", "update", ME,
+    { cards: [CARD], updatedAt: 200 },
+    { cards: [CARD], updatedAt: 100 }, "ALLOW"),
+  tc("first write of a brand-new account", "/users/userAAA", "create", ME,
+    { subjects: [], cards: [], game: { xp: 0 }, updatedAt: 1 }, "ALLOW"),
+  tcExisting("someone else may still not touch it", "/users/userBBB", "update", ME,
+    { subjects: [SUBJECT], updatedAt: 200 }, { subjects: [SUBJECT], updatedAt: 100 }, "DENY"),
+
+  // The cards subcollection lost its {document=**} wildcard; it needs its own
+  // match block, and per-card sync is dead without it.
+  tc("own card read", "/users/userAAA/cards/k1", "get", ME, null, "ALLOW"),
+  tc("own card write", "/users/userAAA/cards/k1", "create", ME, { front: "a", back: "b" }, "ALLOW"),
+  tc("own card update", "/users/userAAA/cards/k1", "update", ME, { front: "a", back: "c" }, "ALLOW"),
+  tc("own card delete", "/users/userAAA/cards/k1", "delete", ME, null, "ALLOW"),
+  tc("OTHER card read blocked", "/users/userBBB/cards/k1", "get", ME, null, "DENY"),
+  tc("OTHER card write blocked", "/users/userBBB/cards/k1", "create", ME, { front: "a" }, "DENY"),
+  tc("anon card read blocked", "/users/userAAA/cards/k1", "get", null, null, "DENY"),
+
   tc("unknown collection blocked", "/whatever/doc1", "create", ME, { a: 1 }, "DENY"),
 ];
 

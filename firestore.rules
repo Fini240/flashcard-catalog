@@ -2,11 +2,48 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // The user's own catalog — cards, subjects, progress. Strictly private.
-    // The {document=**} wildcard covers the cards subcollection
-    // (users/{uid}/cards/{cardId}) — rules do not cascade into subcollections,
-    // so without this every per-card write would be PERMISSION_DENIED.
-    match /users/{userId}/{document=**} {
+    // The user's own catalog — subjects, progress, and (on older accounts)
+    // the pre-migration cards array. Strictly private.
+    //
+    // Update carries one extra condition, and it is here rather than only in
+    // the client because the client has now got this wrong twice in one day:
+    // a device holding an empty catalog — because it had never read the
+    // account, or because an earlier bug emptied it — wrote that emptiness
+    // over a real subject tree, twice, with a timestamp that made it look
+    // like the freshest word on the subject. Losing 3000 XP and every folder
+    // to a client-side race is not something a security rule should permit.
+    //
+    // So: a write may not take a non-empty subjects array (or cards array) to
+    // an empty one unless it says out loud that a person meant it, by setting
+    // clearedOnPurpose to this write's own updatedAt. Tying the flag to the
+    // timestamp is what stops it from being a switch that, once flipped,
+    // stays on: it authorises exactly one write and nothing after it.
+    //
+    // Everything else — creating the document, reading it, writes that keep
+    // or grow the catalog — is unchanged.
+    match /users/{userId} {
+      allow read, create, delete: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId
+                    && (
+                      (
+                        (request.resource.data.get('subjects', []).size() > 0
+                         || resource.data.get('subjects', []).size() == 0)
+                        &&
+                        (request.resource.data.get('cards', []).size() > 0
+                         || resource.data.get('cards', []).size() == 0)
+                      )
+                      || request.resource.data.get('clearedOnPurpose', 0)
+                         == request.resource.data.get('updatedAt', -1)
+                    );
+    }
+
+    // The cards subcollection (users/{uid}/cards/{cardId}). Rules do not
+    // cascade, so without this every per-card write is PERMISSION_DENIED.
+    // Deliberately NOT a {document=**} wildcard on /users/{userId}: that form
+    // also matches the parent document, and since rules are OR'd it would
+    // hand back exactly the unconditional write access the block above exists
+    // to withhold.
+    match /users/{userId}/cards/{cardId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
