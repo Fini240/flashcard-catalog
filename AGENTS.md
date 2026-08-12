@@ -253,6 +253,36 @@ Play Store compatibility problem).
   longer depends on the card-sync mode; and `syncGuards.js` refuses any push
   that replaces a non-empty subject tree with nothing from a session that has
   never read the account (`parentAdoptedRef`). Recovered from PITR.
+- **The same day, 11:25Z: it happened again, to the fixed client.** The
+  09:08 fix asked "has this session read the account yet?" — and the client
+  that wiped it the second time *had*: correctly, days earlier, before this
+  morning's bug left the empty catalog sitting in its own localStorage. Its
+  clock kept ticking too, so its emptiness always carried the newer
+  timestamp. **No timestamp comparison can separate a deliberate delete from
+  a corrupted client; both are "local is newer".** The question that does is
+  whether a person emptied the tree *in this session, on this device* —
+  `emptiedSubjectsRef`, set on the >0 → 0 transition of a local edit and
+  never on the state. Everything in `syncGuards.js` hangs off that, in both
+  directions: a client holding nothing may not publish it, and a client
+  holding nothing adopts the server's catalog regardless of timestamps
+  (`shouldHealFromRemote`), which is how a device wiped earlier repairs
+  itself.
+- **The wipe invariant is enforced in `firestore.rules`, not just the
+  client.** A write may not take a non-empty `subjects` (or `cards`) array to
+  an empty one unless it carries `clearedOnPurpose` equal to that write's own
+  `updatedAt` — one write's authorisation, not a switch that stays on. The
+  client sets it only when `emptiedSubjectsRef` is true. Two client-side
+  fixes failed in one day; this one cannot be defeated by a client bug, and
+  an old build attempting the wipe now gets `PERMISSION_DENIED` and a sync
+  error instead of destroying an account.
+- **`match /users/{userId}/{document=**}` is gone, deliberately.** That
+  wildcard matches the parent document as well as the subcollection, and
+  rules are OR'd — leaving it in place would grant back exactly the
+  unconditional write access the guard above withholds. The subcollection has
+  its own `match /users/{userId}/cards/{cardId}` block, and per-card sync is
+  dead without it, so **if you add another subcollection under `users/`, it
+  needs its own match block too.** `node scripts/test-rules.mjs` covers all
+  of this (68 assertions) and runs against the real Rules API.
 - **PITR is on, with 7 days of retention.** Any document can be read as it
   was at any past instant: `GET …/documents/users/{uid}?readTime=2026-08-12T09:00:00Z`.
   This is the recovery path for anything sync destroys — check the history
