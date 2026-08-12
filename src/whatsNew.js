@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.1.0";
+export const APP_VERSION = "1.1.1";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,14 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.1.1",
+    date: "2026-08-12",
+    items: [
+      "Fixed: signing in on a device that had never held your catalog could replace the subjects and XP on your account with that device's empty ones. Your cards were never affected.",
+      "A client that hasn't read your catalog is now refused when it tries to replace it with nothing, whatever route it took to get there.",
+    ],
+  },
   {
     version: "1.1.0",
     date: "2026-08-12",

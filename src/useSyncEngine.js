@@ -26,6 +26,7 @@ import * as firebaseSync from "./firebaseSync";
 import * as G from "./gamification";
 import { report } from "./report";
 import * as cardSync from "./cardSync";
+import * as guards from "./syncGuards";
 
 const STORAGE_KEY = "flashcard-catalog-data";
 
@@ -78,6 +79,17 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   // (left in place as the rollback path). cardMapRef holds every card
   // including tombstones; pushedRef remembers each card's timestamp at its
   // last successful push so only the dirty ones go up.
+  // Has this session actually taken this account's remote parent state (its
+  // subject tree and game) into local state? Until it has, this client knows
+  // nothing about the catalog it is signed into, and syncGuards refuses to
+  // let it shrink one. Reset on sign-out and on an account switch.
+  const parentAdoptedRef = useRef(false);
+  // True for the duration of handleSignIn. The restore-a-session effect below
+  // also enters per-card mode, and it used to be able to do so *during*
+  // sign-in — flipping perCardModeRef while handleSignIn was still awaiting
+  // its pull, which made handleSignIn skip applyRemote and then push the
+  // device's own empty subjects over the account. See handleSignIn.
+  const signingInRef = useRef(false);
   const perCardModeRef = useRef(false);
   // The ref is what the sync paths read (they run outside render); this state
   // mirrors it so the listener effect below can actually re-run when per-card
@@ -180,6 +192,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     // so in that case we keep whatever this device already has.
     if (remote.game) setGame(G.rollOver(G.normalizeGame(remote.game)));
     updatedAtRef.current = remote.updatedAt || Date.now();
+    parentAdoptedRef.current = true;
   };
 
   const acceptRemoteIfNewer = (remote, user) => {
@@ -196,15 +209,21 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     applyRemote(remote);
   };
 
+  // Take the parent document's subjects and game as this session's own.
+  const adoptParent = (remote) => {
+    skipNextPush.current = true;
+    setSubjects(migrate.migrateSubjects(remote.subjects || []));
+    if (remote.game) setGame(G.rollOver(G.normalizeGame(remote.game)));
+    updatedAtRef.current = remote.updatedAt || Date.now();
+    parentAdoptedRef.current = true;
+  };
+
   // In per-card mode the parent doc carries subjects/game only — an empty
   // cards array on it is normal, not a wipe. The guard above must not fire.
   const acceptRemoteParentIfNewer = (remote, user) => {
     if (perCardModeRef.current) {
       if (!remote || (remote.updatedAt || 0) <= updatedAtRef.current) return;
-      skipNextPush.current = true;
-      setSubjects(migrate.migrateSubjects(remote.subjects || []));
-      if (remote.game) setGame(G.rollOver(G.normalizeGame(remote.game)));
-      updatedAtRef.current = remote.updatedAt || Date.now();
+      adoptParent(remote);
       return;
     }
     acceptRemoteIfNewer(remote, user);
@@ -214,6 +233,22 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   // the parent doc (subjects/game) without live cards. Tombstones past the
   // retention window are hard-deleted remotely and dropped locally.
   const pushPerCard = async (uid, subjectsPayload, gamePayload) => {
+    // Before shrinking someone's subject tree, be sure this session has read
+    // it. Only checked when we'd be writing fewer subjects than we last saw,
+    // so the ordinary push stays a single write with no extra read.
+    if ((subjectsPayload || []).length === 0) {
+      const current = await firebaseSync.pullData(uid);
+      if (guards.refusesParentPush({ subjects: subjectsPayload, adopted: parentAdoptedRef.current, remote: current })) {
+        report("sync.refusedEmptyParentPush", new Error(
+          `refused to write 0 subjects over ${(current.subjects || []).length} for ${uid}`
+        ));
+        // Adopt unconditionally — not through the timestamp guard. This
+        // client's clock-stamped emptiness may well *look* newer than the
+        // real catalog; that is exactly the state we're refusing to trust.
+        adoptParent(current);
+        return;
+      }
+    }
     const { map, swept } = cardSync.sweepTombstones(cardMapRef.current);
     cardMapRef.current = map;
     const dirty = cardSync.diffDirty(map, pushedRef.current);
@@ -271,6 +306,18 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     const current = await firebaseSync.pullData(uid);
     if (current && (current.updatedAt || 0) > payload.updatedAt) {
       acceptRemoteIfNewer(current, { uid });
+      return;
+    }
+    // pushData overwrites the whole document, so a session that never read
+    // this account can erase the subject tree, the cards array and the game
+    // in one write — with a fresh timestamp, which is why the check above
+    // doesn't catch it.
+    if (guards.refusesLegacyPush({ payload, adopted: parentAdoptedRef.current, remote: current })) {
+      report("sync.refusedEmptyLegacyPush", new Error(
+        `refused to overwrite ${(current.subjects || []).length} subjects / ${(current.cards || []).length} cards with nothing for ${uid}`
+      ));
+      ownerUidRef.current = uid;
+      applyRemote(current);
       return;
     }
     await firebaseSync.pushData(uid, payload);
@@ -415,12 +462,19 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   // Only adopts, never migrates — an account with no cardsMigratedAt is left
   // alone for handleSignIn to migrate deliberately.
   useEffect(() => {
-    if (!googleUser || !loaded || perCardModeRef.current) return;
+    // signingInRef: handleSignIn sets googleUser, which runs this effect while
+    // that function is still deciding what this account's state is. Both then
+    // raced to enter per-card mode, and whichever lost left handleSignIn
+    // believing the mode had always been on — so it skipped adopting the
+    // remote and pushed the device's empty subject tree over the account.
+    // Sign-in owns this decision from start to finish; this effect is only
+    // for sessions restored without it.
+    if (!googleUser || !loaded || perCardModeRef.current || signingInRef.current) return;
     let cancelled = false;
     (async () => {
       try {
         const remote = await firebaseSync.pullData(googleUser.uid);
-        if (cancelled || perCardModeRef.current) return;
+        if (cancelled || perCardModeRef.current || signingInRef.current) return;
         // Adopt when the local data already belongs to this account, or has
         // never been claimed by any account (null) — the same two cases
         // handleSignIn treats as "not switching accounts". A ref holding a
@@ -431,6 +485,17 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
         if (remote && remote.cardsMigratedAt && ownedHere) {
           ownerUidRef.current = googleUser.uid;
           await enterPerCardMode(googleUser.uid, remote);
+          // A restored session must take the subject tree and game too. The
+          // cards come from the subcollection, which is why this used to look
+          // complete: cards appeared, the catalog around them didn't, and
+          // this client then counted as "has data" while holding no subjects.
+          if ((remote.updatedAt || 0) > updatedAtRef.current) adoptParent(remote);
+          // Local is newer than the server's copy: nothing to adopt, but this
+          // session has now seen what the account holds, which is what the
+          // push guard actually asks about. Without this, deleting your last
+          // subject on a device that was already signed in would be refused
+          // as if it were a wipe.
+          else parentAdoptedRef.current = true;
         }
       } catch (e) {
         report("sync.restorePerCardMode", e);
@@ -443,6 +508,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   const handleSignIn = async () => {
     setSyncState("syncing");
     setError("");
+    signingInRef.current = true;
     try {
       const user = await firebaseSync.signIn();
       setGoogleUser(user);
@@ -454,6 +520,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
         // never push it here. Adopt this account's own cloud data instead,
         // even if that means starting from an empty catalog.
         ownerUidRef.current = user.uid;
+        parentAdoptedRef.current = false;
         perCardModeRef.current = false;
         cardMapRef.current = {};
         pushedRef.current = {};
@@ -478,11 +545,25 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
         // the account's real subject tree with nothing.
         let subjectsToPush = currentDataRef.current.subjects;
         let gameToPush = currentDataRef.current.game;
-        if (!perCardModeRef.current && remote && (remote.updatedAt || 0) > updatedAtRef.current && !(isEmptyPayload(remote) && (subjects.length > 0 || cards.length > 0))) {
-          applyRemote(remote);
-          // Mirror exactly what applyRemote just put into state.
+        // Note what is NOT in this condition any more: `!perCardModeRef.current`.
+        // Adopting the account's subject tree and game has nothing to do with
+        // how its cards travel, and gating it on the mode meant that entering
+        // per-card mode a moment earlier turned this whole branch off — the
+        // device kept its empty subjects and pushed them up. The mode decides
+        // where cards come from; the parent doc is adopted either way.
+        if (remote && (remote.updatedAt || 0) > updatedAtRef.current && !(isEmptyPayload(remote) && (subjects.length > 0 || cards.length > 0))) {
+          if (perCardModeRef.current) adoptParent(remote);
+          else applyRemote(remote);
+          // Mirror exactly what was just put into state.
           subjectsToPush = migrate.migrateSubjects(remote.subjects || []);
           if (remote.game) gameToPush = G.rollOver(G.normalizeGame(remote.game));
+        } else if (remote && (remote.updatedAt || 0) <= updatedAtRef.current) {
+          // This device's copy is the newer one. Nothing to adopt, but we have
+          // read the account's document and know what's in it — which is the
+          // question the push guard asks. Deliberately not set on the branch
+          // above's failure modes: a client that was *supposed* to adopt and
+          // somehow didn't must stay untrusted.
+          parentAdoptedRef.current = true;
         }
         await enterPerCardMode(user.uid, remote);
         // Parent doc (subjects/game) still goes through the timestamp-guarded
@@ -496,6 +577,10 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
         report("sync.signIn", e);
         setError(`Google sign-in failed: ${e && e.message ? e.message : e}`);
       }
+    } finally {
+      // Released only here: a sign-in that threw halfway must not leave the
+      // restore effect permanently switched off for the rest of the session.
+      signingInRef.current = false;
     }
   };
 
@@ -506,6 +591,9 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       report("sync.signOut", e);
     }
     setGoogleUser(null);
+    // Whatever is on screen now belongs to nobody in particular; the next
+    // sign-in must earn the right to overwrite an account again.
+    parentAdoptedRef.current = false;
     setSyncState("idle");
   };
 

@@ -237,6 +237,26 @@ Play Store compatibility problem).
   can be read with:
   `curl -s "https://identitytoolkit.googleapis.com/v1/projects?key=<webApiKey>"`
 
+- **2026-08-12: a fresh client signed in and pushed its emptiness up.** The
+  fourth wipe, and the first to take the *subject tree and the game* rather
+  than the cards. A phone opened the web app for the first time (empty
+  localStorage), signed in, and 09:08:53Z the account went from 2 subjects
+  and 3034 XP to none — while the 2889 cards, which travel separately,
+  stayed. On screen: a full study queue, an empty library, level 1.
+  The route in: `handleSignIn` calls `setGoogleUser` *before* awaiting its
+  pull, which let the restore-a-session effect enter per-card mode during the
+  sign-in. `handleSignIn` then hit `if (!perCardModeRef.current && …)`, found
+  the mode already on, skipped `applyRemote`, and pushed the device's own
+  empty `subjects`/`game` — with a fresh timestamp, courtesy of the quest
+  rollover, so no timestamp guard fired. Fixed three ways: sign-in holds
+  `signingInRef` so the effect stays out of it; adopting the parent doc no
+  longer depends on the card-sync mode; and `syncGuards.js` refuses any push
+  that replaces a non-empty subject tree with nothing from a session that has
+  never read the account (`parentAdoptedRef`). Recovered from PITR.
+- **PITR is on, with 7 days of retention.** Any document can be read as it
+  was at any past instant: `GET …/documents/users/{uid}?readTime=2026-08-12T09:00:00Z`.
+  This is the recovery path for anything sync destroys — check the history
+  before concluding data is gone, and before writing anything else over it.
 - **Cross-device sync has bitten this app three times.** Local data once
   overwrote a freshly signed-in account's cards; cards vanished from a
   logged-in account (~90 lost); and on 2026-08-11 a phone was wiped by the
