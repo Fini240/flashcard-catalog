@@ -386,17 +386,22 @@ Play Store compatibility problem).
       has watched a real deck come across the content provider. Test it on the
       phone that has AnkiDroid installed.
 
-- [ ] **The free AI tier is not live yet, and no code change can close this.**
-      The endpoint returns `{"error":"NOT_CONFIGURED"}` until a real Gemini key
-      is set as the function secret and the functions are redeployed. Both
-      steps need the owner's own Google account — exact commands in
-      `PLAY_STORE.md` §8. Until then every client silently falls back to BYOK;
-      nothing is broken, but the README's "free daily AI-import allowance" is
-      a promise the app does not currently keep, so this is the one open item
-      that is user-visible. The `ALLOWED_PROVIDERS` check is deployed
-      (2026-08-11) but unreachable until then — the key check sits earlier in
-      the handler, so nothing gets as far as the provider check while the
-      function is unconfigured.
+- [x] **The free AI tier is live** (2026-08-15). `GEMINI_API_KEY` set as the
+      function secret (version 2) by the owner and the functions redeployed —
+      both steps needed his own Google account; exact commands in
+      `PLAY_STORE.md` §8. Verified: the endpoint now returns
+      `{"error":"Missing ID token"}` instead of `{"error":"NOT_CONFIGURED"}` on
+      both the run.app URL and the cloudfunctions.net URL the client actually
+      calls (`src/aiImport.js:6`) — i.e. it is past the key check and asking for
+      a signed-in user, which is correct. Note the redeploy is not optional: a
+      new secret version only reaches the function on deploy, and the CLI says
+      so explicitly ("1 functions are using stale version of secret").
+      **Still unverified end to end:** no successful AI import has actually run
+      yet. Everything past the key check — `verifyIdToken`, the `DAILY_LIMIT`
+      Firestore transaction, the `ALLOWED_PROVIDERS` check (deployed
+      2026-08-11, unreachable until now) — has never executed in production,
+      and this is also the first real exercise of `firebase-admin` v14. Watch
+      the first import from the app.
 - [x] The functions ran on Node.js 20 (decommissioned 2026-10-30, which would
       have made `firebase deploy --only functions` fail outright and stranded
       any urgent fix). Moved to **Node.js 22 + firebase-functions 7.3.2** on
