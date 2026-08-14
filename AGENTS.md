@@ -421,10 +421,25 @@ Play Store compatibility problem).
       Note the CLI is installed via Homebrew at `/opt/homebrew/bin/firebase`;
       `npx firebase` does **not** work in this repo.
 
-- [ ] `firebase-admin` is still on 13.x; 14.x is out and now installable (it
-      requires Node >= 22, which the runtime bump just satisfied). Not urgent —
-      nothing needs it — and it was deliberately left out of the runtime change
-      to keep that isolated.
+- [x] `firebase-admin` 13.x → **14.2.0** (2026-08-14), deployed. v14 requires
+      Node >= 22, so it only became installable after the runtime bump, and it
+      was kept to its own commit for that reason. None of v14's breaking
+      changes reach this code: legacy namespace support was removed but the
+      imports here are already modular (`firebase-admin/app` | `/auth` |
+      `/firestore`), and the dropped Instance ID and legacy FCM types are
+      unused. The v14 "error handling revamp" is the one to keep in mind if
+      error handling here ever starts inspecting admin error codes — today
+      nothing does; the only message-sniffing (`isUnknownModel`,
+      `RESOURCE_EXHAUSTED`) is on `@google/genai` errors, not admin ones.
+
+      **Caveat on how far this was verified:** while the function is
+      unconfigured it returns `NOT_CONFIGURED` *before* reaching
+      `verifyIdToken` or any Firestore transaction, so the admin SDK's real
+      work is not exercised by any check available today. What is confirmed is
+      that the module loads, `initializeApp()` succeeds, and the live endpoint
+      is byte-identical before and after. The first real test of admin v14 will
+      be the first successful AI import once the Gemini key is set — watch that
+      import specifically.
 - [ ] Play Store release is not started: upload keystore not generated, no
       Play Developer account ($25 + identity verification), and a personal
       account needs a **12-tester / 14-day closed test** before production.
