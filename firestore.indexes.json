@@ -1,0 +1,15 @@
+{
+  "indexes": [
+    {
+      "//": "Global leaderboard: listed players, this week only, best XP first.",
+      "collectionGroup": "profiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "listed", "order": "ASCENDING" },
+        { "fieldPath": "weekKey", "order": "ASCENDING" },
+        { "fieldPath": "weekXp", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The user's own catalog — subjects, progress, and (on older accounts)
+    // the pre-migration cards array. Strictly private.
+    //
+    // Update carries one extra condition, and it is here rather than only in
+    // the client because the client has now got this wrong twice in one day:
+    // a device holding an empty catalog — because it had never read the
+    // account, or because an earlier bug emptied it — wrote that emptiness
+    // over a real subject tree, twice, with a timestamp that made it look
+    // like the freshest word on the subject. Losing 3000 XP and every folder
+    // to a client-side race is not something a security rule should permit.
+    //
+    // So: a write may not take a non-empty subjects array (or cards array) to
+    // an empty one unless it says out loud that a person meant it, by setting
+    // clearedOnPurpose to this write's own updatedAt. Tying the flag to the
+    // timestamp is what stops it from being a switch that, once flipped,
+    // stays on: it authorises exactly one write and nothing after it.
+    //
+    // Everything else — creating the document, reading it, writes that keep
+    // or grow the catalog — is unchanged.
+    match /users/{userId} {
+      allow read, create, delete: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId
+                    && (
+                      (
+                        (request.resource.data.get('subjects', []).size() > 0
+                         || resource.data.get('subjects', []).size() == 0)
+                        &&
+                        (request.resource.data.get('cards', []).size() > 0
+                         || resource.data.get('cards', []).size() == 0)
+                      )
+                      || request.resource.data.get('clearedOnPurpose', 0)
+                         == request.resource.data.get('updatedAt', -1)
+                    );
+    }
+
+    // The cards subcollection (users/{uid}/cards/{cardId}). Rules do not
+    // cascade, so without this every per-card write is PERMISSION_DENIED.
+    // Deliberately NOT a {document=**} wildcard on /users/{userId}: that form
+    // also matches the parent document, and since rules are OR'd it would
+    // hand back exactly the unconditional write access the block above exists
+    // to withhold.
+    match /users/{userId}/cards/{cardId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Username reservations. The document id is the lowercased name, so
+    // uniqueness is the database's job rather than the client's.
+    //
+    // `create` only ever fires on a document that does not exist, which makes
+    // this the whole concurrency story: two clients racing for the same name
+    // produce one winner and one PERMISSION_DENIED, with no transaction.
+    // Rewriting a reservation you already hold is allowed so re-claiming your
+    // own name isn't reported as "taken"; taking one someone else holds is not.
+    match /usernames/{name} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.keys().hasOnly(['uid'])
+                    && request.resource.data.uid == request.auth.uid
+                    && name.size() >= 3 && name.size() <= 16
+                    && name.matches('^[a-z0-9_-]+$');
+      allow update: if request.auth != null
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
+    // Public competition profile. Deliberately tiny: a self-chosen username, an
+    // avatar emoji, a friend code and the scoreboard numbers.
+    //
+    // There is no `name` key in this list, and that is the point. Every signed
+    // in user can read every profile and the global board shows them to
+    // strangers, so publishing the Google display name would be publishing
+    // people's real names. Pinning the key set means the client cannot send
+    // one even by mistake — the write is rejected rather than merged.
+    match /profiles/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId
+                   && request.resource.data.keys().hasOnly([
+                        'uid', 'username', 'emoji', 'code', 'xp', 'weekXp', 'weekKey',
+                        'streak', 'level', 'rank', 'cardsTotal', 'listed', 'updatedAt'
+                      ])
+                   && request.resource.data.username is string
+                   && request.resource.data.username.size() <= 16;
+
+      // "I added you" markers, which is how a friendship becomes mutual: a
+      // friend list lives in a private document nobody else can write, so the
+      // adder leaves this instead and the owner folds it into their own list.
+      //
+      // The document id must be the sender's own uid. That makes it idempotent
+      // and caps the damage: one person can leave exactly one marker, so this
+      // can't be used to flood someone's inbox or as free storage.
+      match /friendAdds/{friendId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create, update: if request.auth != null
+                              && friendId == request.auth.uid
+                              && request.resource.data.keys().hasOnly(['from', 'at'])
+                              && request.resource.data.from == request.auth.uid;
+      }
+
+      // Nudges are the one thing a friend may write into your space: a tap
+      // that says "your streak is at risk". Create-only, and only for
+      // yourself as the sender, so it can't be forged or used as storage.
+      match /nudges/{nudgeId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+                      && request.resource.data.from == request.auth.uid
+                      && request.resource.data.keys().hasOnly(['from', 'name', 'emoji', 'at']);
+      }
+    }
+  }
+}

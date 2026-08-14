@@ -1,0 +1,11 @@
+{
+  "appId": "com.flashcardcatalog.app",
+  "appName": "Flashcard Catalog",
+  "webDir": "dist",
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["google.com"]
+    }
+  }
+}
