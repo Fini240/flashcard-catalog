@@ -208,6 +208,16 @@ Play Store compatibility problem).
 
 ## Known hazards
 
+- **To exercise the Cloud Function locally, mount it on Express.** Cloud
+  Functions serves an `onRequest` handler through Express, and that is what
+  supplies `res.set` / `res.status` / `res.json` and the parsed `req.body` the
+  handler uses. Calling the exported handler with a hand-rolled fake `res`
+  fails (v7 waits on the response's `finish` event), and `http.createServer(fn)`
+  fails on `res.set is not a function` — both are harness bugs that look
+  convincingly like the function being broken. `express` is already present
+  under `functions/node_modules`; `app.use(express.json())` then
+  `app.all(/.*/, handler)` reproduces production closely enough to check
+  status codes and CORS headers without deploying.
 - **A card that changes locally must be stamped, and nothing in a reducer will
   do it for you.** Card objects come out of `applyGrade` and the card editor,
   neither of which knows about sync, so `cardSync.applyLocalEdits` is the one
@@ -387,14 +397,34 @@ Play Store compatibility problem).
       (2026-08-11) but unreachable until then — the key check sits earlier in
       the handler, so nothing gets as far as the provider check while the
       function is unconfigured.
-- [ ] **The functions run on Node.js 20, deprecated 2026-04-30 and
-      decommissioned 2026-10-30** — after that date `firebase deploy --only
-      functions` will fail outright, which would strand any urgent fix. Bump
-      the runtime in `functions/package.json` well before then, and take the
-      `firebase-functions` upgrade at the same time (the CLI warns it carries
-      breaking changes, so don't do it in the same change as anything else).
+- [x] The functions ran on Node.js 20 (decommissioned 2026-10-30, which would
+      have made `firebase deploy --only functions` fail outright and stranded
+      any urgent fix). Moved to **Node.js 22 + firebase-functions 7.3.2** on
+      2026-08-14 and deployed; the endpoint's behaviour is byte-identical
+      across the upgrade. Next dates: deprecated 2027-04-30, decommissioned
+      2028-10-31. `nodejs24` is also GA and decommissions on the *same* day,
+      so it buys a longer un-deprecated window and nothing else; 22 was chosen
+      to match this machine's local `node`, keeping local and production on one
+      major and avoiding a mismatch warning on every deploy.
+
+      **The runtime is pinned in two places** — `engines.node` in
+      `functions/package.json` *and* `functions[].runtime` in `firebase.json`.
+      Changing only the first silently leaves the deploy on the old runtime.
+
+      v7's breaking changes were all inapplicable here: `functions.config()` was
+      already replaced by `defineSecret`, there is no TypeScript, and the v1
+      `Event` type is unused. v7.0.1 fixed a dual-package hazard for
+      parameterized config in ESM projects, which is exactly this setup
+      (`"type": "module"` + `defineSecret`) — so the upgrade removed a latent
+      hazard rather than adding one.
+
       Note the CLI is installed via Homebrew at `/opt/homebrew/bin/firebase`;
       `npx firebase` does **not** work in this repo.
+
+- [ ] `firebase-admin` is still on 13.x; 14.x is out and now installable (it
+      requires Node >= 22, which the runtime bump just satisfied). Not urgent —
+      nothing needs it — and it was deliberately left out of the runtime change
+      to keep that isolated.
 - [ ] Play Store release is not started: upload keystore not generated, no
       Play Developer account ($25 + identity verification), and a personal
       account needs a **12-tester / 14-day closed test** before production.
