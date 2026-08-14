@@ -223,12 +223,17 @@ Nothing is broken in the meantime.
 2. Store it as the function's secret and redeploy:
 
 ```bash
-printf 'YOUR_GEMINI_KEY' | npx firebase functions:secrets:set GEMINI_API_KEY --data-file - --project centering-timer-502020-h0
+printf 'YOUR_GEMINI_KEY' | /opt/homebrew/bin/firebase functions:secrets:set GEMINI_API_KEY --data-file - --project centering-timer-502020-h0
 ```
 
 ```bash
-npx firebase deploy --only functions --project centering-timer-502020-h0
+/opt/homebrew/bin/firebase deploy --only functions --project centering-timer-502020-h0
 ```
+
+The full path is deliberate: `firebase-tools` is installed globally via Homebrew
+and is *not* a dependency of this repo, so `npx firebase` fails with "could not
+determine executable to run". (`npx cap` elsewhere in this file is fine —
+`@capacitor/cli` really is a local devDependency.)
 
 The redeploy is required — functions pick up a new secret version only on
 deploy. To confirm it worked, the endpoint should stop returning
