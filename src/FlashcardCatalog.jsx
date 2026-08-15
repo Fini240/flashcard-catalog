@@ -864,6 +864,17 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
 
   const trail = getTrail(subjects, path);
   const currentNode = trail[trail.length - 1] || null;
+  // `path` can outlive the nodes it names: getTrail stops at the first id it
+  // can't resolve, so a subject deleted on another device (a sync snapshot
+  // lands and calls setSubjects) or missing from a restored backup leaves a
+  // non-empty path with a shorter — possibly empty — trail. Nothing else
+  // reconciles the two, and every read below assumes currentNode exists, so
+  // this render would throw and take the whole React tree down with it.
+  // Clamping happens in an effect to keep render pure; the guard further down
+  // is what carries this render safely until the effect runs.
+  useEffect(() => {
+    if (path.length > 0 && trail.length !== path.length) setPath(trail.map(n => n.id));
+  }, [path, trail.length]);
   const rootSubjectId = path[0];
   const rootColorIdx = Math.max(0, subjects.findIndex(s => s.id === rootSubjectId));
   const rootColor = SUBJECT_COLORS[rootColorIdx % SUBJECT_COLORS.length];
@@ -1152,6 +1163,9 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
   }
 
   // ---------- inside a subject / subcategory ----------
+  // The folder we were in no longer exists; the effect above is already
+  // clamping `path`, so this render just has to not touch currentNode.
+  if (!currentNode) return null;
   const currentChildren = currentNode.children || [];
   const nodeCards = cards.filter(c => c.nodeId === currentNode.id);
   // Everything filed under this folder, including its subcategories — what
@@ -2698,10 +2712,23 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
     setSessionSize(size);
     try { window.localStorage.setItem(SESSION_SIZE_KEY, String(size)); } catch { /* not worth failing over */ }
   };
-  const flat = flattenTree(subjects);
-  const selected = flat.find(f => f.id === nodeId);
-  const pool = nodeId === "all" ? cards : cards.filter(c => selected && selected.ids.includes(c.nodeId));
-  const duePool = pool.filter(c => isDue(c));
+  // These are memoised for their *identity*, not their cost. `startPool` is a
+  // dependency of DrillPicker's shuffle, which feeds the deck fingerprint the
+  // AI tuning call is cached on. Rebuilt fresh on every render, it reshuffled
+  // the sample each time, missed the cache every time, and billed a real API
+  // request to the user's key for anything that re-rendered this screen — a
+  // nudge arriving, a sync state change, toggling Due/All.
+  const flat = useMemo(() => flattenTree(subjects), [subjects]);
+  const selected = useMemo(() => flat.find(f => f.id === nodeId), [flat, nodeId]);
+  const pool = useMemo(
+    () => (nodeId === "all" ? cards : cards.filter(c => selected && selected.ids.includes(c.nodeId))),
+    [cards, nodeId, selected]
+  );
+  // Due-ness is time-dependent, so this settles when the cards do rather than
+  // ticking with the clock. A card crossing into due while the setup screen is
+  // open waits for the next session; the alternative is re-shuffling underneath
+  // the user and paying for a tuning call to do it.
+  const duePool = useMemo(() => pool.filter(c => isDue(c)), [pool]);
   const useDue = scope === "due" && duePool.length > 0;
   const startPool = useDue ? duePool : pool;
   const strength = G.deckStrength(pool);

@@ -133,7 +133,13 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
           // Seed the per-card map so the first sign-in merge knows what this
           // device already holds (offline-created cards, edits since the
           // last sync). Without this they look like remote-only deletions.
-          cardMapRef.current = cardSync.toCardMap(loadedCards);
+          // Tombstones first-class: without them a deletion made offline is
+          // forgotten across a restart and the next remote merge undoes it.
+          // Absent on payloads written by older builds, hence the fallback.
+          cardMapRef.current = {
+            ...cardSync.toCardMap(loadedCards),
+            ...(parsed.cardTombstones || {}),
+          };
           // rollOver settles any missed days (spending freezes) the moment the
           // app opens, so the streak number on screen is never stale.
           setGame(G.rollOver(G.normalizeGame(parsed.game)));
@@ -312,6 +318,14 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       // updatedAt, so it can't linger as a permanent exemption.
       ...(emptiedSubjectsRef.current ? { clearedOnPurpose: updatedAtRef.current } : null),
     });
+    // The exemption is spent. It authorises the write that just landed and
+    // nothing after it — leaving the flag set meant every later push in the
+    // session carried `clearedOnPurpose` too, so the rule that refuses to let
+    // a catalog go empty was permanently satisfied in advance, for exactly the
+    // kind of client bug it was added to stop. Reset only after the write
+    // succeeded: a throw above leaves the flag standing for the retry.
+    emptiedSubjectsRef.current = false;
+    clearedCardsRef.current = false;
   };
 
   // A snapshot of the whole cards subcollection arrived: merge per card and
@@ -363,6 +377,9 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       return;
     }
     await firebaseSync.pushData(uid, payload);
+    // Same one-write exemption as the per-card path above.
+    emptiedSubjectsRef.current = false;
+    clearedCardsRef.current = false;
   };
 
   // ---------- save (debounced) ----------
@@ -396,8 +413,19 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     // the stamps are what let the next launch's merge tell fresh local edits
     // from stale remote echoes.
     const stampedCards = cardSync.liveCards(cardMapRef.current);
+    // Tombstones are stored alongside the live cards, and this is load-bearing:
+    // `cards` holds live cards only, so a restart used to rebuild cardMapRef
+    // without any record of what had been deleted. Delete 20 cards offline,
+    // restart, reconnect, and the remote merge reads every one of them as a
+    // card this device is missing and restores it — the exact resurrection the
+    // tombstone design exists to prevent, working only until the process ends.
+    // Kept in a separate key so older builds still read `cards` unchanged.
+    const cardTombstones = {};
+    for (const [id, c] of Object.entries(cardMapRef.current)) {
+      if (c && c.deletedAt) cardTombstones[id] = c;
+    }
     const payload = {
-      subjects, cards: stampedCards, game,
+      subjects, cards: stampedCards, cardTombstones, game,
       updatedAt: updatedAtRef.current, ownerUid: ownerUidRef.current,
       // Same declaration the per-card path makes, for the legacy whole-doc
       // write — which can empty the cards array as well as the subjects.

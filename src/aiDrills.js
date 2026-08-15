@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
+import { normalizeAnswer } from "./drills";
 import { getApiKey, getProvider, getProviderInfo } from "./aiImport";
 import { DRILLS } from "./drills";
 
@@ -162,10 +163,12 @@ export function shapeContent(data, cards) {
       .map((d) => d.trim())
       // A "wrong" answer identical to the right one makes the question
       // unanswerable, and models do occasionally hand one back.
-      .filter((d) => d.toLowerCase() !== String(card.back || "").trim().toLowerCase());
+      // Same rule the UI grades with — a model-supplied distractor that differs
+      // from the answer only in punctuation is a second correct option.
+      .filter((d) => normalizeAnswer(d) !== normalizeAnswer(card.back));
     if (distractors.length) entry.distractors = [...new Set(distractors)].slice(0, 3);
     const falseClaim = typeof row.falseClaim === "string" ? row.falseClaim.trim() : "";
-    if (falseClaim && falseClaim.toLowerCase() !== String(card.back || "").trim().toLowerCase()) {
+    if (falseClaim && normalizeAnswer(falseClaim) !== normalizeAnswer(card.back)) {
       entry.falseClaim = falseClaim;
     }
     if (Object.keys(entry).length) content[card.id] = entry;

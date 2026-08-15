@@ -8,8 +8,10 @@
 // ---------------------------------------------------------------------------
 import * as imageStore from "./imageStore";
 
-export const normalize = (s) =>
-  (s || "").trim().toLowerCase().replace(/[.,!?;:'"]/g, "").replace(/\s+/g, " ");
+// Re-exported rather than redefined: the distractor filter in drills.js has to
+// use the very same rule, or a "wrong" answer can grade as correct. See the
+// comment on normalizeAnswer there.
+export { normalizeAnswer as normalize } from "./drills";
 
 export function PrimaryButton({ onClick, children, style, disabled }) {
   return (

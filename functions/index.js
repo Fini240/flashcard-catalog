@@ -54,6 +54,19 @@ const GLOBAL_DOC = "_global";
 
 const MODELS = ["gemini-3.6-flash", "gemini-2.5-flash"];
 
+// The text path has always been capped (see the slice below); the image path
+// was not, and the two need to be bounded together. A day's allowance is ten
+// requests whether each carries 2KB or the 32MB the platform will accept, so
+// without a ceiling here the quota counts requests while the bill counts bytes.
+// 8MB of base64 is ~6MB of image — comfortably above a phone camera photo of a
+// book page, which is what this path is for, and far below the platform limit.
+const MAX_IMAGE_BASE64 = 8 * 1024 * 1024;
+const MAX_TEXT_CHARS = 50000;
+
+// Passed straight to Gemini as the inline data mimeType, so it does not get to
+// be arbitrary caller-controlled input.
+const ALLOWED_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]);
+
 const ALLOWED_ORIGINS = new Set([
   // The app's own address. The two project-id ones below are the defaults
   // Firebase created and are still served, so anyone holding an old link keeps
@@ -217,6 +230,23 @@ export const generateFlashcards = onRequest(
       return res.status(400).json({ error: "type must be 'text' or 'image'" });
     }
 
+    // Validated before the quota is reserved, not after: a malformed request
+    // never reached Gemini anyway, and charging a credit for it (to refund it a
+    // moment later, if the refund succeeds) is work for nothing.
+    if (type === "image") {
+      if (typeof imageBase64 !== "string" || !imageBase64) {
+        return res.status(400).json({ error: "imageBase64 is required for type 'image'" });
+      }
+      if (imageBase64.length > MAX_IMAGE_BASE64) {
+        return res.status(413).json({ error: "IMAGE_TOO_LARGE" });
+      }
+      if (!ALLOWED_MEDIA_TYPES.has(mediaType)) {
+        return res.status(400).json({ error: "UNSUPPORTED_MEDIA_TYPE" });
+      }
+    } else if (typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({ error: "text is required for type 'text'" });
+    }
+
     const quota = await reserveQuota(uid);
     if (!quota.ok) {
       // Both cases send the client down the same "offer your own key" path;
@@ -237,7 +267,7 @@ export const generateFlashcards = onRequest(
           { inlineData: { mimeType: mediaType, data: imageBase64 } },
           { text: `This is a photo of a book page or study material. ${instructions}` },
         ]
-      : [{ text: `${instructions}\n\n---\n\n${String(text).slice(0, 50000)}` }];
+      : [{ text: `${instructions}\n\n---\n\n${text.slice(0, MAX_TEXT_CHARS)}` }];
 
     const ai = new GoogleGenAI({ apiKey });
     const isUnknownModel = (e) =>

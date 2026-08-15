@@ -53,17 +53,36 @@ export async function importDecks(deckNames, onProgress) {
   const failed = [];
   let done = 0;
 
-  for (const name of deckNames) {
+  // `deck:"Name"` matches subdecks too — that is Anki's own search semantics,
+  // not a quirk of the plugin — so reading a parent returns everything filed
+  // beneath it as well. Every listed deck starts ticked, so parent and child
+  // were normally both selected and each note came back twice. buildDecks
+  // credits a note to the deck it was first seen under and sorts decks by card
+  // count, so the parent swallowed the lot and every subdeck ended up empty
+  // and dropped — the .apkg route, which resolves each note's real deck id,
+  // never had this problem, which is what made the two routes disagree.
+  //
+  // Reading most-specific-first and keeping the first attribution files each
+  // note under the deepest selected deck that actually holds it.
+  const ordered = [...deckNames].sort(
+    (a, b) => b.split("::").length - a.split("::").length || b.length - a.length
+  );
+  const seen = new Set();
+
+  for (const name of ordered) {
     try {
       const res = await AnkiDroid.readDeck({ deck: name });
       for (const note of (res && res.notes) || []) {
+        const key = note.id != null ? String(note.id) : JSON.stringify(note.flds);
+        if (seen.has(key)) continue;
+        seen.add(key);
         entries.push({ flds: note.flds, deckName: name });
       }
     } catch (e) {
       failed.push(name);
     }
     done++;
-    if (onProgress) onProgress(done, deckNames.length);
+    if (onProgress) onProgress(done, ordered.length);
   }
 
   const built = buildDecks(entries);

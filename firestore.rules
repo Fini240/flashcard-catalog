@@ -21,8 +21,16 @@ service cloud.firestore {
     //
     // Everything else — creating the document, reading it, writes that keep
     // or grow the catalog — is unchanged.
+    // `delete` is deliberately absent. It was the guard's blind spot: the update
+    // rule below refuses to let a catalog go empty without a deliberate flag,
+    // and an unconditional delete walked straight around it — remove the
+    // document, recreate it empty, and the protection never fires. No client
+    // path deletes this document, so withholding it costs nothing. (A delete
+    // also would not remove the `cards` subcollection, leaving it orphaned.)
+    // Account deletion, if it is ever added, belongs in a Cloud Function that
+    // can clear the subcollection too.
     match /users/{userId} {
-      allow read, create, delete: if request.auth != null && request.auth.uid == userId;
+      allow read, create: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId
                     && (
                       (
@@ -62,8 +70,12 @@ service cloud.firestore {
                     && request.resource.data.uid == request.auth.uid
                     && name.size() >= 3 && name.size() <= 16
                     && name.matches('^[a-z0-9_-]+$');
+      // hasOnly mirrors `create`. Without it the key set was pinned when the
+      // reservation was made and unpinned forever after, so the holder could
+      // grow their own reservation into arbitrary storage one update at a time.
       allow update: if request.auth != null
                     && resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['uid'])
                     && request.resource.data.uid == request.auth.uid;
       allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
@@ -84,7 +96,30 @@ service cloud.firestore {
                         'streak', 'level', 'rank', 'cardsTotal', 'listed', 'updatedAt'
                       ])
                    && request.resource.data.username is string
-                   && request.resource.data.username.size() <= 16;
+                   && request.resource.data.username.size() <= 16
+                   && request.resource.data.uid == userId
+                   // The scoreboard numbers are still computed on the client, so
+                   // these bounds are not a claim that the board is honest —
+                   // a determined user can write any value in range. What they
+                   // do is bound the damage: the board sorts on weekXp, and an
+                   // unbounded one lets a single write pin someone to the top of
+                   // it permanently. The ceilings are far above any real play
+                   // (weekXp: ~7 days of solid study) so no honest write is
+                   // rejected. Making the board trustworthy needs a Cloud
+                   // Function that owns these fields; this is the cheap half.
+                   && request.resource.data.xp is number
+                   && request.resource.data.xp >= 0
+                   && request.resource.data.xp <= 100000000
+                   && request.resource.data.weekXp is number
+                   && request.resource.data.weekXp >= 0
+                   && request.resource.data.weekXp <= 1000000
+                   && request.resource.data.streak is number
+                   && request.resource.data.streak >= 0
+                   && request.resource.data.streak <= 20000
+                   && request.resource.data.level is number
+                   && request.resource.data.level >= 0
+                   && request.resource.data.cardsTotal is number
+                   && request.resource.data.cardsTotal >= 0;
 
       // "I added you" markers, which is how a friendship becomes mutual: a
       // friend list lives in a private document nobody else can write, so the
@@ -102,13 +137,28 @@ service cloud.firestore {
       }
 
       // Nudges are the one thing a friend may write into your space: a tap
-      // that says "your streak is at risk". Create-only, and only for
-      // yourself as the sender, so it can't be forged or used as storage.
+      // that says "your streak is at risk".
+      //
+      // The document id must be the sender's own uid, for the same reason as
+      // friendAdds above — and this rule previously left it free, which made
+      // the "can't be used as storage" claim false: with auto-ids one script
+      // could create unlimited documents, each carrying an unbounded `name`
+      // string, in any profile it could read (which is all of them). Pinning
+      // the id makes a nudge idempotent — one sender, one document, overwritten
+      // rather than piled up — and the size bounds cap what a single one costs.
+      //
+      // A resend has to be an update once the id is fixed, so `update` is
+      // allowed too; it is the same write with the same constraints.
       match /nudges/{nudgeId} {
         allow read, delete: if request.auth != null && request.auth.uid == userId;
-        allow create: if request.auth != null
+        allow create, update: if request.auth != null
+                      && nudgeId == request.auth.uid
                       && request.resource.data.from == request.auth.uid
-                      && request.resource.data.keys().hasOnly(['from', 'name', 'emoji', 'at']);
+                      && request.resource.data.keys().hasOnly(['from', 'name', 'emoji', 'at'])
+                      && request.resource.data.name is string
+                      && request.resource.data.name.size() <= 32
+                      && request.resource.data.emoji is string
+                      && request.resource.data.emoji.size() <= 8;
       }
     }
   }

@@ -89,7 +89,17 @@ export async function exportBackup(payload) {
   const a = document.createElement("a");
   a.href = url;
   a.download = fileName;
+  // Both of these matter outside Chrome: a detached anchor's click is ignored
+  // by Firefox, and revoking the object URL on the same tick can pull the blob
+  // out from under a download that hasn't started reading it yet. Either way
+  // the user got "Backup saved." and no file, which is the worst version of
+  // this failure — it looks like their data is safe when nothing was written.
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 0);
   return { ok: true, uri: null };
 }

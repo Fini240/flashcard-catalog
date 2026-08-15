@@ -290,10 +290,22 @@ export function mergeFriendAdds(friends, adds, myUid) {
 // A nudge is a single tap that lands in the friend's app as "Anna poked you —
 // your streak is at risk". Duolingo's own numbers say a shared commitment is
 // the strongest social lever there is; this is the cheapest version of it.
+//
+// Keyed by the sender's uid, like friendAdds: nudging the same person twice
+// replaces the earlier nudge instead of stacking a second one, so a chatty
+// friend can't bury the recipient's list — and the rules can check the sender
+// by looking at the path. `name` is truncated to the length the rule accepts,
+// so an over-long display name resends as a shorter nudge rather than failing.
 export async function sendNudge(toUid, from) {
-  await FirebaseFirestore.addDocument({
-    reference: `profiles/${toUid}/nudges`,
-    data: { from: from.uid, name: from.name || "A friend", emoji: from.emoji || "🦉", at: Date.now() },
+  await FirebaseFirestore.setDocument({
+    reference: `profiles/${toUid}/nudges/${from.uid}`,
+    data: {
+      from: from.uid,
+      name: (from.name || "A friend").slice(0, 32),
+      emoji: (from.emoji || "🦉").slice(0, 8),
+      at: Date.now(),
+    },
+    merge: true,
   });
 }
 

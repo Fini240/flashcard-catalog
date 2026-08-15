@@ -149,11 +149,29 @@ export function rollOver(game, today = dayKey()) {
     // The streak survives, and the frozen days count as covered — so the
     // streak keeps growing rather than silently stalling at the old number.
     next.streak = game.streak + missed;
+    // The streak can overtake the recorded best here without a session ever
+    // being recorded, and recordSession is the only other place that maintains
+    // bestStreak — so without this the modal reads "8 days · Best: 6".
+    next.bestStreak = Math.max(next.bestStreak || 0, next.streak);
+    // The jump can carry the streak past a multiple of 7; recordSession only
+    // ever sees the post-jump number, so the award has to happen here.
+    const earned = freezesEarnedBetween(game.streak, next.streak);
+    if (earned > 0) next.freezes = Math.min(MAX_FREEZES, next.freezes + earned);
     next.lastStudyDay = addDays(game.lastStudyDay, missed);
   } else {
     next.streak = 0;
   }
   return next;
+}
+
+// Freezes are earned every 7 streak days. Reaching a multiple of 7 and landing
+// exactly on one are not the same thing: a freeze-covered gap carries the
+// streak from 6 to 8 in a single step, and an `=== 0` test silently drops the
+// day-7 award. Counting the multiples crossed covers the ordinary +1 and the
+// jump with the same rule.
+function freezesEarnedBetween(from, to) {
+  if (to <= from) return 0;
+  return Math.floor(to / 7) - Math.floor(Math.max(0, from) / 7);
 }
 
 export function streakAtRisk(game, today = dayKey()) {
@@ -437,8 +455,9 @@ export function recordSession(game, cards, result) {
   // not a purchase.
   let freezes = next.freezes;
   let freezeEarned = false;
-  if (streakUp && streak > 0 && streak % 7 === 0 && freezes < MAX_FREEZES) {
-    freezes = Math.min(MAX_FREEZES, freezes + 1);
+  const earnedNow = streakUp ? freezesEarnedBetween(next.streak, streak) : 0;
+  if (earnedNow > 0 && freezes < MAX_FREEZES) {
+    freezes = Math.min(MAX_FREEZES, freezes + earnedNow);
     freezeEarned = true;
   }
 

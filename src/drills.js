@@ -88,7 +88,19 @@ export function drillById(id) {
 
 const hasText = (c) => !!(c && typeof c.back === "string" && c.back.trim() && !c.backImageId);
 
-const normalizeish = (s) => String(s || "").trim().toLowerCase();
+// The single definition of "these two answers are the same string", used both
+// when filtering distractors here and when grading the pick in the UI. It used
+// to be two: this side trimmed and lowercased, the grading side (cardUI's
+// `normalize`) also stripped punctuation. A distractor differing from the
+// answer only in a full stop therefore survived the filter and was then graded
+// as correct — "Mitochondria" offered against a back of "Mitochondria.", both
+// buttons turning green. cardUI re-exports this, so there is one rule and the
+// two sides cannot drift apart again. This module stays import-free, which is
+// why the definition lives here rather than in the .jsx.
+export const normalizeAnswer = (s) =>
+  String(s || "").trim().toLowerCase().replace(/[.,!?;:'"]/g, "").replace(/\s+/g, " ");
+
+const normalizeish = normalizeAnswer;
 
 // A drill is offered only if the deck can actually sustain it: multiple choice
 // needs wrong answers to draw from, matching needs a full group, and anything
