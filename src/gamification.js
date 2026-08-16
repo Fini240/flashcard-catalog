@@ -91,7 +91,46 @@ export function emptyGame() {
     usernamePrompted: false, // has the "you're on the board as …" note been shown
     listed: true, // appear on the global board (opt-out lives in Settings)
     reminder: { enabled: false }, // escalating daily nudges — see reminders.js
+    // One entry per answer, and the only record of what actually happened:
+    // history above is per-day totals, which cannot say whether a card was
+    // recalled at the interval the scheduler predicted. stats.js reads this for
+    // retention and calibration, and fsrs.optimizeParameters fits against it.
+    // Capped in appendReviewLog — see MAX_REVIEW_LOG.
+    reviewLog: [],
+    // Scheduler settings (target retention, daily limits, fitted parameters).
+    // Null means "the defaults"; srs.normalizeSettings fills them in, so this
+    // stays small in every save file that never changed them.
+    srs: null,
   };
+}
+
+// A year of enthusiastic study is roughly this many answers. Past it the oldest
+// are dropped: the log exists to describe how the user learns *now*, and a
+// review from two years ago neither predicts that nor fits into a phone's
+// storage quota alongside the cards.
+export const MAX_REVIEW_LOG = 20000;
+
+// Records one answer. Kept deliberately small — five short fields — because
+// this array is synced, and a fat entry multiplied by twenty thousand is a
+// slow sync and a full quota.
+export function appendReviewLog(game, entry) {
+  const log = Array.isArray(game?.reviewLog) ? game.reviewLog : [];
+  const next = [
+    ...log,
+    {
+      at: entry.at || Date.now(),
+      correct: !!entry.correct,
+      // The stability the card had *going in* — what the prediction was made
+      // from. Recording the post-review value instead would make every
+      // calibration check trivially self-confirming.
+      stability: entry.stability ?? null,
+      elapsedDays: entry.elapsedDays ?? null,
+      ...(entry.isNew ? { isNew: true } : {}),
+      ...(entry.sameDay ? { sameDay: true } : {}),
+      ...(entry.ms ? { ms: entry.ms } : {}),
+    },
+  ];
+  return next.length > MAX_REVIEW_LOG ? next.slice(next.length - MAX_REVIEW_LOG) : next;
 }
 
 export function normalizeGame(raw) {
@@ -112,6 +151,8 @@ export function normalizeGame(raw) {
     // board existed must not read as a silent opt-out.
     listed: raw.listed !== false,
     reminder: normalizeReminder(raw.reminder),
+    reviewLog: Array.isArray(raw.reviewLog) ? raw.reviewLog.slice(-MAX_REVIEW_LOG) : [],
+    srs: raw.srs && typeof raw.srs === "object" ? raw.srs : null,
   };
 }
 

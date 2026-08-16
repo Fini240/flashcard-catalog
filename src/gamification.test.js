@@ -289,3 +289,39 @@ describe("describeDue", () => {
     expect(G.describeDue({ srsDue: NOW + 14 * 86400000 }, NOW)).toBe("Due in 2 weeks");
   });
 });
+
+// ---------------------------------------------------------------------------
+// The review log (1.2.0) — the record stats.js and the FSRS optimiser read.
+// ---------------------------------------------------------------------------
+describe("review log", () => {
+  it("appends an entry and keeps only the small fields", () => {
+    const game = G.emptyGame();
+    const log = G.appendReviewLog(game, { at: 1000, correct: true, stability: 12, elapsedDays: 10 });
+    expect(log).toHaveLength(1);
+    expect(log[0]).toEqual({ at: 1000, correct: true, stability: 12, elapsedDays: 10 });
+  });
+
+  it("marks first looks and same-day repeats, which retention has to exclude", () => {
+    const game = G.emptyGame();
+    expect(G.appendReviewLog(game, { correct: true, isNew: true })[0].isNew).toBe(true);
+    expect(G.appendReviewLog(game, { correct: true, sameDay: true })[0].sameDay).toBe(true);
+    // Absent rather than false, because this array is synced and twenty
+    // thousand `false`s are twenty thousand wasted bytes.
+    expect("isNew" in G.appendReviewLog(game, { correct: true })[0]).toBe(false);
+  });
+
+  it("drops the oldest entries past the cap instead of growing without bound", () => {
+    let game = { ...G.emptyGame(), reviewLog: Array.from({ length: G.MAX_REVIEW_LOG }, (_, i) => ({ at: i, correct: true })) };
+    const log = G.appendReviewLog(game, { at: 999999, correct: false });
+    expect(log).toHaveLength(G.MAX_REVIEW_LOG);
+    expect(log[log.length - 1].at).toBe(999999);
+    expect(log[0].at).toBe(1); // the oldest went
+  });
+
+  it("survives a save file written before the log existed", () => {
+    expect(G.normalizeGame({ xp: 5 }).reviewLog).toEqual([]);
+    expect(G.normalizeGame({ reviewLog: "nonsense" }).reviewLog).toEqual([]);
+    expect(G.normalizeGame({ srs: { desiredRetention: 0.95 } }).srs.desiredRetention).toBe(0.95);
+    expect(G.normalizeGame({}).srs).toBeNull();
+  });
+});

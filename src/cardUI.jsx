@@ -7,6 +7,7 @@
 // gameUI.jsx keeps the gamification screens out of that file.
 // ---------------------------------------------------------------------------
 import * as imageStore from "./imageStore";
+import { RichText, isRich } from "./richText";
 
 // Re-exported rather than redefined: the distractor filter in drills.js has to
 // use the very same rule, or a "wrong" answer can grade as correct. See the
@@ -110,7 +111,12 @@ export function CardFace({ text, imageId, size }) {
   }
   return (
     <p style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: size || 21, color: "var(--text-strong)", margin: 0, lineHeight: 1.4 }}>
-      {text}
+      {/* Every card face goes through the renderer, so a formula or a code
+          snippet reads correctly wherever a card is shown — study, previews,
+          the test review — rather than only in the places wired up one by one.
+          isRich() keeps ordinary text on the plain path, which is almost all
+          text and would otherwise pay for a parse on every render. */}
+      {isRich(text) ? <RichText text={text} /> : text}
     </p>
   );
 }

@@ -80,6 +80,44 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
 
+    // Shared decks. The document id is the six-character code the owner reads
+    // out; `create` only ever fires on a document that does not exist, so two
+    // people generating the same code produce one winner and one
+    // PERMISSION_DENIED rather than one silently overwriting the other's deck.
+    // That is the same trick the username reservation uses, and it is what
+    // makes the retry loop in deckShare.publish correct.
+    //
+    // Readable by any signed-in user: a code is meant to be passed around, and
+    // guessing one is a 1-in-31^6 (~900 million) proposition. Not world-
+    // readable, so a code posted publicly still only reaches people with an
+    // account.
+    //
+    // byUid is pinned to the writer so a deck cannot be published under someone
+    // else's name, and only that person can replace or delete it. The card
+    // count and the payload size are bounded here as well as in the client:
+    // the client bound is a courtesy to the user, this one is the actual limit.
+    match /sharedDecks/{code} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.byUid == request.auth.uid
+                    && request.resource.data.keys().hasOnly([
+                         'name', 'description', 'cards', 'cardCount',
+                         'byUsername', 'byUid', 'createdAt', 'version', 'code'
+                       ])
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() <= 60
+                    && request.resource.data.cards is list
+                    && request.resource.data.cards.size() > 0
+                    && request.resource.data.cards.size() <= 2000
+                    && code.size() == 6;
+      // Replacing your own deck is allowed — it is how a correction reaches
+      // people who have not imported it yet. It cannot change hands.
+      allow update: if request.auth != null
+                    && resource.data.byUid == request.auth.uid
+                    && request.resource.data.byUid == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.byUid == request.auth.uid;
+    }
+
     // Public competition profile. Deliberately tiny: a self-chosen username, an
     // avatar emoji, a friend code and the scoreboard numbers.
     //

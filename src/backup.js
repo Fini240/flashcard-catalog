@@ -62,29 +62,64 @@ export function parseBackup(text) {
 export async function exportBackup(payload) {
   const json = JSON.stringify(payload, null, 2);
   const day = new Date().toISOString().slice(0, 10);
-  const fileName = `flashcard-catalog-backup-${day}.json`;
+  return deliver(json, `flashcard-catalog-backup-${day}.json`, "application/json");
+}
 
+// The delivery half of the above, split out so the CSV and .apkg exporters
+// (exporters.js) reach the share sheet and the download by the same path
+// rather than reimplementing it — including the two non-obvious fixes in the
+// web branch below.
+export async function deliver(text, fileName, mimeType = "application/json") {
   if (Capacitor.isNativePlatform()) {
     const result = await Filesystem.writeFile({
       path: fileName,
-      data: json,
+      data: text,
       directory: Directory.Cache,
       encoding: Encoding.UTF8,
     });
-    try {
-      await Share.share({
-        title: "Flashcard Catalog backup",
-        text: "Flashcard Catalog backup",
-        url: result.uri,
-        dialogTitle: "Save your backup",
-      });
-    } catch (e) {
-      // User dismissed the share sheet — the file still exists, that's fine.
-    }
+    await offerShare(result.uri);
     return { ok: true, uri: result.uri };
   }
+  return download(new Blob([text], { type: mimeType }), fileName);
+}
 
-  const blob = new Blob([json], { type: "application/json" });
+// Binary payloads (.apkg is a zip) can't go through the UTF-8 path above:
+// Filesystem.writeFile without an encoding expects base64, so the blob is
+// converted rather than corrupted.
+export async function deliverBlob(blob, fileName) {
+  if (Capacitor.isNativePlatform()) {
+    const base64 = await blobToBase64(blob);
+    const result = await Filesystem.writeFile({
+      path: fileName,
+      data: base64,
+      directory: Directory.Cache,
+    });
+    await offerShare(result.uri);
+    return { ok: true, uri: result.uri };
+  }
+  return download(blob, fileName);
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    // The data: URL carries a "data:...;base64," prefix that Filesystem would
+    // treat as part of the payload.
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(reader.error || new Error("Could not read the file"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function offerShare(uri) {
+  try {
+    await Share.share({ title: "Flashcard Catalog", url: uri, dialogTitle: "Save or send" });
+  } catch (e) {
+    // User dismissed the share sheet — the file still exists, that's fine.
+  }
+}
+
+function download(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

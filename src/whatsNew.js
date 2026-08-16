@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.1.2";
+export const APP_VERSION = "1.2.0";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,24 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.2.0",
+    date: "2026-08-16",
+    items: [
+      "Reviews are now scheduled by FSRS, which learns how *you* forget instead of moving every card along the same 1/3/7/14/30 ladder — the same schedule Anki switched to, and about 15% fewer reviews for the same recall. Your existing cards keep their place.",
+      "A Statistics screen: what's due over the next month, how much you actually recall, a year of study history, and a dial for how much you want to remember.",
+      "Cards you keep missing are set aside rather than asked forever, with a guess at what makes each one unanswerable.",
+      "Fill-in-the-blank cards you write yourself, and cards that hide part of a picture — for diagrams, anatomy and maps.",
+      "Tags, so you can pull together everything marked #exam across every subject.",
+      "Write notes and get cards out of them: any line with :: becomes a card, headings become folders.",
+      "Test yourself: a fixed set of mixed questions with a score at the end, and only the ones you got wrong touch your schedule.",
+      "Cards can be read aloud, in a language per side — so a vocabulary card finally has its pronunciation.",
+      "Share a folder with a six-character code, and add decks other people share with you.",
+      "Export to a real Anki deck or a spreadsheet, not just this app's own backup.",
+      "The tutor explains why an answer is right, what you confused it with, or gives a hint that doesn't give it away.",
+      "Formulas and code render properly on cards — $x^2$, \\alpha, fractions and roots.",
+    ],
+  },
   {
     version: "1.1.2",
     date: "2026-08-12",

@@ -40,7 +40,22 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/FlashcardCatalog.jsx` | ~130 KB — the UI and app state. Almost every feature change lands here. Sync no longer does: it moved to `useSyncEngine.js`. |
 | `src/useSyncEngine.js` | **The sync engine.** Local persistence, the debounced push, the realtime listeners, ownership (`ownerUidRef`) and the timestamp guards. Extracted so this logic is reviewable on its own — treat changes here with the same care as `firebaseSync.js`. |
 | `src/cardSync.js` | Per-card Firestore sync: `users/{uid}/cards/{cardId}`, tombstones, dirty-set batching, and the one-way migration off the parent doc's `cards` array. Merge helpers at the bottom are pure and unit-tested. |
-| `src/srs.js` | The spaced-repetition scheduler (Leitner boxes), extracted from the component so it's testable. **`isDue(card, now)` takes two arguments — never pass it straight to `Array.filter`**, which would supply the index as `now`. |
+| `src/srs.js` | The app's view of scheduling: `applyGrade`, `isDue`, settings, daily limits. The maths moved to `fsrs.js` in 1.2.0; this is the compatibility boundary that kept the migration small. **`isDue(card, now)` takes two arguments — never pass it straight to `Array.filter`**, which would supply the index as `now`. |
+| `src/fsrs.js` | **The scheduler.** FSRS-6: stability/difficulty per card, the forgetting curve, the grade→interval maths, migration from the old Leitner boxes, and a one-parameter optimiser fitted against the review log. Pure and heavily unit-tested — the invariant that `retrievability(S, S) === 0.9` is what makes "stability" and "interval" the same number. |
+| `src/leech.js` | Cards that keep failing: when to set one aside, and a guess at what makes it unanswerable (duplicate answer, both sides equal, answer too long). |
+| `src/stats.js` | Learning statistics — forecast, true retention, calibration, heatmap, maturity, daily load. Pure. **Uses calendar arithmetic, never `n * DAY_MS`** — see the hazard note below. |
+| `src/cloze.js` | `{{c1::…}}` parsing and expansion into one card per deletion. Preserves card identity across edits, so fixing one blank doesn't reset another's history. |
+| `src/occlusion.js` | Image occlusion: masks stored as fractions of the image, one card per mask, hide-all vs hide-one. Same identity preservation as cloze. |
+| `src/tags.js` | Tags — normalisation, hierarchical (`physics/optics`), filtering, rename/delete across the whole deck. |
+| `src/testMode.js` | The graded test: builds a mixed paper, grades it, and returns *only the failures* as scheduler updates. A measurement must not quietly rewrite what it measures. |
+| `src/noteToCards.js` | Notes → cards: `::`, `:::`, `Q:`/`A:`, dash lists, headings as folders, inline `#tags`. |
+| `src/tts.js` | Text to speech through the platform's own Web Speech API — no service, works offline. Language per card side, configured per subject. |
+| `src/tutor.js` | The AI *explaining* rather than generating: why an answer is right, what a wrong answer was confused with, or a hint. Cached; a hint containing the answer is treated as a failure. |
+| `src/exporters.js` | CSV and real Anki `.apkg` output (sql.js + jszip, both already dependencies). Includes a hand-written SHA-1 for Anki's field checksum. Round-trip tested by reading the package back. |
+| `src/deckShare.js` | Sharing a folder under a six-character code. Publishes a *copy*, never a subscription; strips every scheduling and personal field first. |
+| `src/richText.jsx` | Formulas and code on cards — a deliberate LaTeX *subset* rendered with Unicode and CSS rather than pulling in KaTeX (~280KB and font files, against an app that must work offline). |
+| `src/featureUI.jsx` | The 1.2.0 screens and controls (statistics, test runner, notes pane, occlusion editor, sharing dialogs, confidence bar, tutor panel). Kept out of `FlashcardCatalog.jsx`, which is large enough. |
+| `src/smoke.test.jsx` | **Renders the real app and every new screen against jsdom.** The pure-logic suites say nothing about whether the app still starts; this is what catches a bad import, a missing prop or a duplicate React key. It found the DST bug below. |
 | `src/backup.js` | JSON export/import of the whole catalog — the user-facing recovery path |
 | `src/report.js` | Error reporting: console + a 20-entry ring buffer behind the Settings "Copy diagnostics" button. Every catch that would otherwise swallow a failure calls `report()`. |
 | `src/*.test.js` | Vitest suites for the pure logic — SRS, gamification, per-card merge. `npm test`. |
@@ -56,7 +71,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `android/.../AnkiDroidPlugin.java` | The native half of that: queries `content://com.ichi2.anki.flashcards` |
 | `src/firebaseSync.js` | Auth + Firestore sync (contains the Firebase client config) |
 | `src/imageStore.js` | Local storage of card images (never uploaded) |
-| `src/gamification.js` | XP, levels, weekly ranks, streaks, quests, achievements, heatmap |
+| `src/gamification.js` | XP, levels, weekly ranks, streaks, quests, achievements, heatmap. Also owns `reviewLog` — one entry per answer, capped at `MAX_REVIEW_LOG`, and the only record of what actually happened. `stats.js` and the FSRS optimiser read it. |
 | `src/gameUI.jsx` | The gamification surface: status bar, today card, quests, streak/goal/friends sheets |
 | `src/social.js` | Friend codes, usernames, public `profiles/` docs, nudges, friends + global leaderboards |
 | `src/reminders.js` | Daily study reminder — local notifications, scheduled on-device |
@@ -207,6 +222,37 @@ Play Store compatibility problem).
   snapshot can arrive and change the answer.
 
 ## Known hazards
+
+- **Never do date arithmetic with `n * DAY_MS`.** A day is not 24 hours twice a
+  year: the day the clocks go back is 25 hours long and the day they go forward
+  is 23. `stats.js` originally stepped the heatmap back by `i * DAY_MS`, which
+  put two iterations inside the long day — a duplicated column, a missing day,
+  and duplicate React keys. It shipped as a *rendering* error caught by
+  `smoke.test.jsx`, not by any of the arithmetic tests, because every test used
+  a mid-year timestamp. Use `addDays`/`daysApart` in `stats.js`, which step
+  through `Date.setDate`, and pin a test to early November if you touch this.
+- **There is one definition of "which day is it", in `gamification.js`.**
+  `stats.js` re-exports `dayKey` rather than defining its own. The first draft
+  used `toISOString().slice(0,10)` — UTC — next to a local-midnight
+  `startOfDay`, which shifted the heatmap and streak by a day for every user
+  east of Greenwich, i.e. all of them, and made them disagree with the streak
+  the rest of the app already showed.
+- **There is one answer normaliser, `normalizeAnswer` in `drills.js`.**
+  `cardUI.jsx` re-exports it as `normalize`. When there were two — one that
+  stripped punctuation and one that didn't — a multiple-choice distractor
+  differing from the answer only in a full stop passed the "not the answer"
+  filter and was then graded correct, so both buttons turned green.
+- **A card form can produce many cards.** A cloze text yields one card per
+  deletion and an occluded image one per mask, so saving one form adds, updates
+  *and* deletes cards. `expandSaved` in `FlashcardCatalog.jsx` is the one place
+  that works this out. `cloze.expand`/`occlusion.expand` preserve the id and
+  scheduling of every card whose deletion or mask survived the edit — without
+  that, fixing a typo in the second blank silently resets the first blank's
+  months of review history.
+- **The review log records the state *before* the review.** `gradeCard` writes
+  the log entry from the card as it was, because that is what the prediction was
+  made from. Recording the post-review stability instead would make every
+  calibration figure in Statistics trivially self-confirming.
 
 - **To exercise the Cloud Function locally, mount it on Express.** Cloud
   Functions serves an `onRequest` handler through Express, and that is what

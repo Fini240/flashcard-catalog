@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
   FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search, Download, ClipboardList,
-  Zap, Flag
+  Zap, Flag, Volume2
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -30,7 +30,22 @@ import {
 import * as drillsLib from "./drills";
 import * as aiDrills from "./aiDrills";
 import { ClozeCard, TrueFalseCard, MatchCard } from "./drillUI";
-import { applyGrade, isLevelUp, isDue } from "./srs";
+import { applyGrade, isLevelUp, isDue, normalizeSettings, applyDailyLimits } from "./srs";
+import * as fsrs from "./fsrs";
+import * as leechLib from "./leech";
+import * as tagsLib from "./tags";
+import * as clozeLib from "./cloze";
+import * as occlusionLib from "./occlusion";
+import * as ttsLib from "./tts";
+import * as exporters from "./exporters";
+import * as deckShare from "./deckShare";
+import {
+  StatsScreen, TestRunner, NotesImport, ShareDeckModal, ImportDeckModal,
+  OcclusionEditor, OcclusionCard, TagField, TagFilter, SpeakButton,
+  SpeechSettings, ConfidenceBar, TutorPanel, ClozeEditor, LeechReview, Sheet,
+} from "./featureUI";
+import * as tutorLib from "./tutor";
+import * as testModeLib from "./testMode";
 import { report, diagnosticsText } from "./report";
 import { useSyncEngine } from "./useSyncEngine";
 import {
@@ -108,6 +123,48 @@ const shuffle = (arr) => {
 // study/session code below uses applyGrade/isLevelUp/isDue unqualified.
 
 // ---------- tree helpers (subjects/subcategories nest to any depth) ----------
+// One card form can produce many cards: a cloze text yields one per deletion,
+// an occluded image one per mask. This turns what the form saved into the set
+// of cards that should exist afterwards, plus the ones to delete.
+//
+// The identity-preserving behaviour is the important part and lives in
+// cloze.expand / occlusion.expand: a card whose deletion or mask survived the
+// edit keeps its id and its whole scheduling history, so fixing a typo in the
+// second blank doesn't reset the first blank's month of reviews.
+function expandSaved(cardData, form, existingCards) {
+  const siblings = (key, value) =>
+    existingCards.filter((c) => c[key] && c[key] === value && c.nodeId === cardData.nodeId);
+
+  if (cardData.clozeSource && clozeLib.hasCloze(cardData.clozeSource)) {
+    const prior = form.editingId
+      ? siblings("clozeSource", existingCards.find((c) => c.id === form.editingId)?.clozeSource)
+      : [];
+    const { clozeSource, ...base } = cardData;
+    return {
+      cards: clozeLib.expand(clozeSource, { existing: prior, base }),
+      remove: clozeLib.orphaned(clozeSource, prior),
+    };
+  }
+
+  if (cardData.occlusionMasks?.length && cardData.frontImageId) {
+    const prior = form.editingId
+      ? siblings("frontImageId", cardData.frontImageId).filter((c) => c.occlusionMaskId)
+      : [];
+    const { occlusionMasks, occlusionMode, ...base } = cardData;
+    return {
+      cards: occlusionLib.expand(cardData.frontImageId, occlusionMasks, {
+        mode: occlusionMode,
+        existing: prior,
+        base,
+      }),
+      remove: occlusionLib.orphaned(occlusionMasks, prior),
+    };
+  }
+
+  // An ordinary card. Editing keeps its id; a new one gets one from the caller.
+  return { cards: [form.editingId ? { id: form.editingId, ...cardData } : cardData], remove: [] };
+}
+
 function collectIds(node) {
   let ids = [node.id];
   (node.children || []).forEach(c => { ids = ids.concat(collectIds(c)); });
@@ -195,6 +252,11 @@ export default function FlashcardCatalog() {
   // Which folder the study screen should open on — set when Study is tapped
   // from inside a folder, so you land on that deck instead of "All subjects".
   const [studyNodeId, setStudyNodeId] = useState("all");
+  // 1.2.0 surfaces: the statistics screen, the graded test, the notes pane and
+  // the two deck-sharing dialogs. All are opened from the library or settings
+  // and none of them own app state, so a single "which extra is open" is enough.
+  const [extra, setExtra] = useState(null); // notes | share | addShared | leeches
+  const [testNodeId, setTestNodeId] = useState("all");
   const sessionQueueRef = useRef([]);
   const sessionDrillRef = useRef({ drill: null, content: {} }); // how this session asks
   const sessionOriginRef = useRef("study"); // where Exit/back leads from a session
@@ -229,7 +291,13 @@ export default function FlashcardCatalog() {
   useEffect(() => {
     if (view === "study") return pushBackHandler(() => setView("library"));
     if (view === "session") return pushBackHandler(() => setView(sessionOriginRef.current));
+    if (view === "stats" || view === "test") return pushBackHandler(() => setView("library"));
   }, [view]);
+
+  // The 1.2.0 sheets sit above the library, so back closes them first.
+  useEffect(() => {
+    if (extra) return pushBackHandler(() => setExtra(null));
+  }, [extra]);
 
   // A bottom sheet is the topmost thing on screen, so back closes it first.
   // The goal sheet is opened from the streak sheet, so back steps back to it
@@ -306,6 +374,132 @@ export default function FlashcardCatalog() {
     }
   };
 
+  // ---------- export to other apps ----------
+  // The JSON backup above is for moving between installs of *this* app. These
+  // two are for leaving it, which is a different job and the one the app could
+  // not do at all before 1.2.0. Both reuse backup.js's delivery path, so the
+  // Android share sheet and the web download behave exactly as they already do.
+  const folderPathOf = (card) => {
+    const trail = [];
+    const walk = (nodes, path) => {
+      for (const n of nodes || []) {
+        if (n.id === card.nodeId) {
+          trail.push(...path, n.name);
+          return true;
+        }
+        if (walk(n.children, [...path, n.name])) return true;
+      }
+      return false;
+    };
+    walk(currentDataRef.current.subjects, []);
+    return trail;
+  };
+
+  const exportCards = async (format, cards, name) => {
+    try {
+      const list = (cards || currentDataRef.current.cards).filter(c => !c.deletedAt);
+      if (!list.length) return "There are no cards to export.";
+      if (format === "csv") {
+        return await backup.deliver(
+          exporters.toCSV(list, { pathFor: (c) => folderPathOf(c).join(" / ") }),
+          exporters.suggestFilename(name || "flashcards", "csv"),
+          "text/csv"
+        );
+      }
+      const blob = await exporters.toAnkiPackage(list, { pathFor: folderPathOf });
+      return await backup.deliverBlob(blob, exporters.suggestFilename(name || "flashcards", "apkg"));
+    } catch (e) {
+      report("export.cards", e);
+      return `Export failed: ${e && e.message ? e.message : e}`;
+    }
+  };
+
+  // ---------- notes → cards ----------
+  // Drafts arrive with a `path` of heading names rather than node ids, because
+  // noteToCards can't know about the tree. Folders named in the notes are
+  // created if they don't exist and reused if they do, so pasting a second
+  // week of notes files itself alongside the first instead of building a
+  // parallel set of duplicate folders.
+  const addCardsFromNotes = (drafts) => {
+    let tree = currentDataRef.current.subjects;
+    const fresh = [];
+
+    const ensurePath = (path) => {
+      if (!path || !path.length) {
+        // No heading above these lines: file them under a general subject, made
+        // once and reused, rather than scattering them at the top level.
+        const existing = tree.find(n => n.name === "Notes");
+        if (existing) return existing.id;
+        const node = { id: uid(), name: "Notes", children: [] };
+        tree = [...tree, node];
+        return node.id;
+      }
+      let level = tree;
+      let parent = null;
+      let id = null;
+      for (const name of path) {
+        let node = level.find(n => n.name === name);
+        if (!node) {
+          node = { id: uid(), name, children: [] };
+          if (parent) parent.children = [...(parent.children || []), node];
+          else tree = [...tree, node];
+        }
+        parent = node;
+        level = node.children || (node.children = []);
+        id = node.id;
+      }
+      return id;
+    };
+
+    for (const draft of drafts) {
+      const nodeId = ensurePath(draft.path);
+      fresh.push({
+        id: uid(),
+        nodeId,
+        front: draft.front,
+        back: draft.back,
+        manualOptions: [],
+        ...(draft.clozeSource ? { clozeSource: draft.clozeSource, clozeIndex: draft.clozeIndex } : {}),
+        ...(draft.tags?.length ? { tags: draft.tags } : {}),
+      });
+    }
+
+    // One write each, after the whole tree is settled: writing per draft would
+    // make every card a separate render and a separate sync push.
+    setSubjects(tree);
+    setCards(cs => [...cs, ...fresh]);
+    setError(`Added ${fresh.length} card${fresh.length === 1 ? "" : "s"} from your notes.`);
+  };
+
+  // ---------- deck sharing ----------
+  const publishDeck = async (node) => {
+    const ids = new Set(collectIds(node));
+    const cards = currentDataRef.current.cards.filter(c => ids.has(c.nodeId) && !c.deletedAt);
+    return deckShare.publish(
+      { name: node.name },
+      cards,
+      { uid: googleUser?.uid, username: currentDataRef.current.game?.username }
+    );
+  };
+
+  const importSharedDeck = (deck) => {
+    // Filed under a new subject named after the deck, so an imported deck never
+    // scatters cards through folders the user built themselves.
+    const subject = { id: uid(), name: deck.name || "Shared deck", children: [] };
+    const { cards: fresh, duplicates } = deckShare.toCards(deck, subject.id, {
+      existing: currentDataRef.current.cards,
+      newId: uid,
+    });
+    setSubjects(s => [...s, subject]);
+    setCards(cs => [...cs, ...fresh]);
+    setExtra(null);
+    setError(
+      duplicates
+        ? `Added ${fresh.length} cards — ${duplicates} you already had were skipped.`
+        : `Added ${fresh.length} cards.`
+    );
+  };
+
   const importCatalog = async (file) => {
     try {
       const text = await file.text();
@@ -353,11 +547,46 @@ export default function FlashcardCatalog() {
     return drillsLib.buildQueue(drill, cards, content, currentDataRef.current.cards);
   };
 
-  // A card's first answer in a session moves it through the Leitner boxes;
-  // the updated cards flow through the normal debounced save + cloud sync.
-  const gradeCard = (cardId, correct) => {
-    setCards(cs => cs.map(c => (c.id === cardId ? applyGrade(c, correct) : c)));
+  // A card's first answer in a session reschedules it through FSRS; the updated
+  // cards flow through the normal debounced save + cloud sync.
+  //
+  // The answer is also written to the review log, and that has to happen here
+  // rather than in applyGrade: the log records the state the card was in
+  // *before* the review, because that is what the prediction was made from.
+  // Recording it afterwards would make every calibration check in Statistics
+  // trivially self-confirming.
+  const gradeCard = (cardId, correct, opts = {}) => {
+    const settings = normalizeSettings(currentDataRef.current.game?.srs);
+    const before = currentDataRef.current.cards.find(c => c.id === cardId);
+    setCards(cs => cs.map(c => (c.id === cardId ? applyGrade(c, correct, { ...opts, settings }) : c)));
+    if (!before) return;
+    const now = Date.now();
+    const last = before.fsrsLastReview || null;
+    setGame(g => ({
+      ...g,
+      reviewLog: G.appendReviewLog(g, {
+        at: now,
+        correct: typeof opts.confidence === "number"
+          ? fsrs.gradeFromConfidence(opts.confidence) !== fsrs.AGAIN
+          : !!correct,
+        stability: before.fsrsStability ?? null,
+        elapsedDays: last ? (now - last) / fsrs.DAY_MS : null,
+        isNew: !fsrs.hasMemoryState(before),
+        sameDay: last != null && now - last < 60 * 60 * 1000,
+        ms: opts.ms,
+      }),
+    }));
   };
+
+  // ---------- scheduler settings ----------
+  const srsSettings = normalizeSettings(game?.srs);
+  const setSrsSettings = (next) => setGame(g => ({ ...g, srs: normalizeSettings(next) }));
+
+  // ---------- leeches ----------
+  const unsuspendCard = (card) =>
+    setCards(cs => cs.map(c => (c.id === card.id ? leechLib.unsuspend(c) : c)));
+  const forgiveCard = (card) =>
+    setCards(cs => cs.map(c => (c.id === card.id ? leechLib.forgive(c) : c)));
 
   // ---------- gamification ----------
   // Everything a finished session is worth is computed in one place, from the
@@ -549,11 +778,20 @@ export default function FlashcardCatalog() {
   // asking the user a single question: due cards first, weakest cards next,
   // capped at the daily goal so a session always feels finishable.
   const quickStudy = () => {
-    const due = shuffle(cards.filter(c => isDue(c)));
+    // The daily limits are applied before the shuffle, not after: they serve
+    // reviews ahead of new cards (see srs.applyDailyLimits), and shuffling
+    // first would throw that ordering away. Shuffling afterwards keeps the
+    // selection while still varying the order within it.
+    const due = shuffle(applyDailyLimits(cards, srsSettings));
     let queue = due;
     if (queue.length === 0) {
       // Nothing due: practise the shakiest cards instead of a random grab bag.
-      queue = [...cards].sort((a, b) => (a.srsBox || 0) - (b.srsBox || 0)).slice(0, 30);
+      // Suspended leeches stay out — they are set aside precisely so they stop
+      // being offered, and "nothing due" is exactly when they would surface.
+      queue = [...cards]
+        .filter(c => !leechLib.isSuspended(c))
+        .sort((a, b) => (a.srsBox || 0) - (b.srsBox || 0))
+        .slice(0, 30);
       queue = shuffle(queue);
     }
     const remaining = Math.max(5, game.goalCards - G.todayStats(game).cards);
@@ -597,6 +835,13 @@ export default function FlashcardCatalog() {
           startReview={(queue) => startSession(queue, "library")}
           googleUser={googleUser}
           onOpenSettings={() => setSettingsOpen(true)}
+          extra={extra}
+          setExtra={setExtra}
+          srsSettings={srsSettings}
+          onUnsuspend={unsuspendCard}
+          onForgive={forgiveCard}
+          onPublishDeck={publishDeck}
+          onOpenTest={(nodeId) => { setTestNodeId(nodeId || "all"); setView("test"); }}
         />
       )}
       {sheet === "streak" && (
@@ -640,6 +885,9 @@ export default function FlashcardCatalog() {
           onSetListed={setListed}
           onExport={exportCatalog}
           onImport={importCatalog}
+          onExportCards={exportCards}
+          onOpenStats={() => { setSettingsOpen(false); setView("stats"); }}
+          onAddSharedDeck={() => { setSettingsOpen(false); setExtra("addShared"); }}
           diagInfo={{
             // uid, not email — this text is built to be pasted into a bug
             // report, and the uid is both the thing you'd look up in Firestore
@@ -664,9 +912,56 @@ export default function FlashcardCatalog() {
           initialQueue={sessionQueueRef.current}
           rebuildQueue={rebuildQueue}
           game={game}
+          subjects={subjects}
           onGrade={gradeCard}
           onFinish={finishSession}
           onExit={() => setView(sessionOriginRef.current)}
+        />
+      )}
+      {view === "stats" && (
+        <StatsScreen
+          cards={cards}
+          game={game}
+          settings={srsSettings}
+          onChangeSettings={setSrsSettings}
+          onBack={() => setView("library")}
+          onOpenLeeches={() => { setView("library"); setExtra("leeches"); }}
+        />
+      )}
+      {view === "test" && (
+        <TestRunner
+          cards={(() => {
+            const node = testNodeId === "all" ? null : findNode(subjects, testNodeId);
+            const ids = node ? new Set(collectIds(node)) : null;
+            return cards.filter(c => !c.deletedAt && (!ids || ids.has(c.nodeId)));
+          })()}
+          onExit={() => setView("library")}
+          onFinish={(result) => {
+            // Only the failures reach the scheduler — see testMode.js. A
+            // correct answer under exam conditions may have been a guess from
+            // four options, so it does not stretch the interval.
+            for (const u of testModeLib.scheduleUpdates(result)) gradeCard(u.cardId, false);
+            setView("library");
+          }}
+        />
+      )}
+      {/* Adding a shared deck creates a new subject, so it belongs here rather
+          than inside Library — it is the one extra that doesn't need a folder
+          to already be open. The others live in Library, which owns the card
+          form and the delete path they drive. */}
+      {extra === "addShared" && (
+        <ImportDeckModal
+          onClose={() => setExtra(null)}
+          onFetch={deckShare.fetchDeck}
+          onImport={importSharedDeck}
+        />
+      )}
+      {/* Notes create their own folders (see addCardsFromNotes), so unlike the
+          leech and share sheets this one needs no folder context from Library. */}
+      {extra === "notes" && (
+        <NotesImport
+          onClose={() => setExtra(null)}
+          onImport={(drafts) => { addCardsFromNotes(drafts); setExtra(null); }}
         />
       )}
       {/* Last, and on top of everything (z-index 80/70): the tour is the
@@ -844,7 +1139,11 @@ function IconBtn({ onClick, title, children, danger }) {
 
 
 // ---------- LIBRARY ----------
-function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onOpenSheet, onQuickStudy, goStudy, startReview, googleUser, onOpenSettings }) {
+function Library({
+  subjects, setSubjects, cards, setCards, game, nudgeCount, onOpenSheet, onQuickStudy,
+  goStudy, startReview, googleUser, onOpenSettings,
+  extra, setExtra, srsSettings, onUnsuspend, onForgive, onPublishDeck, onOpenTest,
+}) {
   const [path, setPath] = useState([]); // node ids from root subject down
   const [searchQuery, setSearchQuery] = useState("");
   const [addingSubject, setAddingSubject] = useState(false);
@@ -854,6 +1153,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
   const [cardForm, setCardForm] = useState(null); // {nodeId, editingId?}
   const [importOpen, setImportOpen] = useState(null); // null | { mode: "paste"|"file"|"photo" }
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [tagFilter, setTagFilter] = useState([]);
 
   // Hardware back button pops one folder level at a time, same as tapping
   // the parent breadcrumb. Only registered while actually inside a folder —
@@ -913,6 +1213,23 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
     }
     setCards(cards.filter(c => c.id !== id));
   };
+
+  // Rendered from both branches of this component (the subject grid and the
+  // inside-a-folder view), so it is built once here. It lives in Library rather
+  // than at the top level because every action on it — edit, delete — is one
+  // this component already owns.
+  const leechSheet = extra === "leeches" ? (
+    <LeechReview
+      cards={cards}
+      allCards={cards}
+      settings={srsSettings}
+      onClose={() => setExtra(null)}
+      onEdit={(c) => { setExtra(null); setCardForm({ nodeId: c.nodeId, editingId: c.id }); }}
+      onUnsuspend={onUnsuspend}
+      onForgive={onForgive}
+      onDelete={(c) => deleteCard(c.id)}
+    />
+  ) : null;
 
   // Accepts either raw `text` (parsed as "Front | Back" lines) or a pre-parsed
   // `cardPairs` array of {front, back} (from file/photo AI extraction).
@@ -1158,6 +1475,7 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
             onOpenSettings={onOpenSettings}
           />
         )}
+        {leechSheet}
       </div>
     );
   }
@@ -1173,6 +1491,10 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
   const folderCardIds = collectIds(currentNode);
   const folderCards = cards.filter(c => folderCardIds.includes(c.nodeId));
   const folderDue = folderCards.filter(c => isDue(c)).length;
+  // The tag filter narrows the list, not the folder: the counts above and the
+  // Study button still cover the whole folder, because filtering the view is
+  // not the same as choosing what to study.
+  const visibleCards = tagsLib.filterByTags(nodeCards, tagFilter);
 
   return (
     <div>
@@ -1208,6 +1530,18 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
                   >
                     <Plus size={15} /> Add card
                   </button>
+                  <button onClick={() => { setExtra("notes"); setAddMenuOpen(false); }} style={addMenuItemStyle}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  >
+                    <FileUp size={15} /> Write notes
+                  </button>
+                  <button onClick={() => { setExtra("speech"); setAddMenuOpen(false); }} style={addMenuItemStyle}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  >
+                    <Volume2 size={15} /> Read aloud…
+                  </button>
                   <div style={{ height: 1, background: "var(--card-border)", margin: "2px 0" }} />
                   <button onClick={() => { setImportOpen({ mode: "file" }); setAddMenuOpen(false); }} style={addMenuItemStyle}
                     onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
@@ -1236,7 +1570,13 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
           {folderCards.length} card{folderCards.length !== 1 ? "s" : ""}
           {folderDue > 0 && ` · ${folderDue} due`}
         </p>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <GhostButton onClick={() => onOpenTest(currentNode.id)} disabled={folderCards.length < 4}>
+            Test
+          </GhostButton>
+          <GhostButton onClick={() => setExtra("share")} disabled={folderCards.length === 0}>
+            Share
+          </GhostButton>
           <GhostButton onClick={() => setImportOpen({ mode: "paste" })}>
             <Upload size={16} /> Import
           </GhostButton>
@@ -1245,6 +1585,10 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
           </PrimaryButton>
         </div>
       </div>
+
+      {/* Tags cut across the tree, so the filter belongs with the card list
+          rather than the folder list. */}
+      <TagFilter cards={folderCards} selected={tagFilter} onChange={setTagFilter} />
 
       {currentChildren.length > 0 && (
         <div style={{ marginBottom: 20 }}>
@@ -1274,17 +1618,20 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
 
       <div style={{ margin: "4px 0 10px" }}>
         <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: "var(--on-shell-muted)", letterSpacing: 0.5, textTransform: "uppercase" }}>
-          Cards in this folder ({nodeCards.length})
+          Cards in this folder ({visibleCards.length}
+          {tagFilter.length > 0 && ` of ${nodeCards.length}`})
         </span>
       </div>
 
-      {nodeCards.length === 0 ? (
+      {visibleCards.length === 0 ? (
         <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>
-          No cards here yet. Add one, or drop into a subcategory.
+          {tagFilter.length > 0
+            ? "No cards here carry all of those tags."
+            : "No cards here yet. Add one, or drop into a subcategory."}
         </p>
       ) : (
         <div style={{ background: "var(--card-bg)", borderRadius: 10, padding: "4px 16px", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }}>
-          {nodeCards.map(c => (
+          {visibleCards.map(c => (
             <CardRow key={c.id} card={c}
               onDelete={() => deleteCard(c.id)}
               onEdit={() => setCardForm({ nodeId: currentNode.id, editingId: c.id })}
@@ -1298,15 +1645,49 @@ function Library({ subjects, setSubjects, cards, setCards, game, nudgeCount, onO
           trail={trail}
           form={cardForm}
           existingCard={cardForm.editingId ? cards.find(c => c.id === cardForm.editingId) : null}
+          tagSuggestions={tagsLib.tagCounts(cards)}
           onClose={() => setCardForm(null)}
           onSave={(cardData) => {
-            if (cardForm.editingId) {
-              setCards(cards.map(c => c.id === cardForm.editingId ? { ...c, ...cardData } : c));
-            } else {
-              setCards([...cards, { id: uid(), subjectId: rootSubjectId, ...cardData }]);
-            }
+            // A cloze source or a set of occlusion masks is one *input* that
+            // yields several cards, so saving one form can add, update and
+            // remove cards at once. expandSaved returns that whole set; an
+            // ordinary card comes back as a list of one and takes the same path.
+            const expanded = expandSaved(cardData, cardForm, cards);
+            setCards((cs) => {
+              const removed = new Set(expanded.remove.map((c) => c.id));
+              const updated = new Set(expanded.cards.filter((c) => c.id).map((c) => c.id));
+              return [
+                ...cs.filter((c) => !removed.has(c.id) && !updated.has(c.id)),
+                ...expanded.cards.map((c) => ({
+                  id: c.id || uid(),
+                  subjectId: rootSubjectId,
+                  ...c,
+                })),
+              ];
+            });
             setCardForm(null);
           }}
+        />
+      )}
+      {leechSheet}
+      {extra === "speech" && (
+        <Sheet title={`Read aloud — ${trail[0].name}`} onClose={() => setExtra(null)}>
+          {/* Configured per subject, not per card: a vocabulary subject is one
+              language on each side for all of its cards, and asking per card
+              would be a setting nobody would ever finish filling in. */}
+          <SpeechSettings
+            subject={trail[0]}
+            onChange={(speech) => setSubjects(mapTree(subjects, trail[0].id, (n) => ({ ...n, speech })))}
+          />
+        </Sheet>
+      )}
+      {extra === "share" && (
+        <ShareDeckModal
+          deckName={currentNode.name}
+          cards={cards.filter(c => folderCardIds.includes(c.nodeId))}
+          owner={{ uid: googleUser?.uid, username: game?.username }}
+          onClose={() => setExtra(null)}
+          onPublish={() => onPublishDeck(currentNode)}
         />
       )}
 
@@ -1456,6 +1837,12 @@ function EmptyState({ onAdd, onImport }) {
 // the answer mode never did.
 function CardRow({ card, onEdit, onDelete }) {
   const frontThumb = card.frontImageId ? imageStore.getImage(card.frontImageId) : null;
+  const tags = tagsLib.cardTags(card);
+  // A cloze card's stored `front` is already the rendered question with its
+  // blank in place, so the list shows the same thing the study screen will.
+  const title = card.frontImageId
+    ? (frontThumb ? (card.occlusionMaskId ? `Hidden area ${card.occlusionIndex || ""}`.trim() : "Picture card") : "Picture (not on this device)")
+    : card.front;
   return (
     <div style={{
       display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -1471,13 +1858,17 @@ function CardRow({ card, onEdit, onDelete }) {
         )}
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--text-strong)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {card.frontImageId ? (frontThumb ? "Picture card" : "Picture (not on this device)") : card.front}
+            {leechLib.isSuspended(card) && <span title="Set aside — you keep missing this one">⚠︎ </span>}
+            {title}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
             <MasteryPips card={card} showLabel />
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)" }}>
               {G.describeDue(card)}
             </span>
+            {tags.map((t) => (
+              <span key={t} style={{ fontSize: 10.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif" }}>#{t}</span>
+            ))}
           </div>
         </div>
       </div>
@@ -1489,7 +1880,7 @@ function CardRow({ card, onEdit, onDelete }) {
   );
 }
 
-function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
+function CardFormModal({ trail, form, existingCard, tagSuggestions, onClose, onSave }) {
   const [frontType, setFrontType] = useState(existingCard?.frontImageId ? "image" : "text");
   const [backType, setBackType] = useState(existingCard?.backImageId ? "image" : "text");
   const [front, setFront] = useState(existingCard?.front || "");
@@ -1498,6 +1889,16 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
   const [backImageId, setBackImageId] = useState(existingCard?.backImageId || null);
   const [manualOptions, setManualOptions] = useState(existingCard?.manualOptions?.join(", ") || "");
   const [imageError, setImageError] = useState("");
+  // Which of the three kinds of card this form is editing. Derived from the
+  // card being edited rather than defaulted, so opening an existing cloze card
+  // doesn't quietly offer to turn it into a basic one.
+  const [kind, setKind] = useState(
+    existingCard?.clozeSource ? "cloze" : existingCard?.occlusionMaskId ? "occlusion" : "basic"
+  );
+  const [clozeSource, setClozeSource] = useState(existingCard?.clozeSource || "");
+  const [masks, setMasks] = useState(existingCard?.occlusionMasks || []);
+  const [occlusionMode, setOcclusionMode] = useState(existingCard?.occlusionMode || occlusionLib.HIDE_ALL);
+  const [tags, setTags] = useState(tagsLib.cardTags(existingCard));
 
   useEffect(() => pushBackHandler(onClose), []);
 
@@ -1518,9 +1919,29 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
 
   const frontValid = frontType === "image" ? !!frontImageId : !!front.trim();
   const backValid = backType === "image" ? !!backImageId : !!back.trim();
+  // Each kind has its own idea of "complete": a cloze card needs at least one
+  // deletion (text alone makes no card), an occlusion card needs an image and
+  // at least one box.
+  const canSave =
+    kind === "cloze" ? clozeLib.hasCloze(clozeSource)
+    : kind === "occlusion" ? !!frontImageId && occlusionLib.normalizeMasks(masks).length > 0
+    : frontValid && backValid;
 
   const save = () => {
-    if (!frontValid || !backValid) return;
+    if (!canSave) return;
+    if (kind === "cloze") {
+      return onSave({ nodeId: form.nodeId, clozeSource: clozeSource.trim(), manualOptions: [], tags });
+    }
+    if (kind === "occlusion") {
+      return onSave({
+        nodeId: form.nodeId,
+        frontImageId,
+        occlusionMasks: occlusionLib.normalizeMasks(masks),
+        occlusionMode,
+        manualOptions: [],
+        tags,
+      });
+    }
     // Dropped back to text after starting from a picture (or vice versa) —
     // don't leave the old picture orphaned in device storage.
     if (frontType === "text" && existingCard?.frontImageId && existingCard.frontImageId !== frontImageId) {
@@ -1538,6 +1959,7 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
       manualOptions: backType === "text" && manualOptions.trim()
         ? manualOptions.split(",").map(s => s.trim()).filter(Boolean)
         : [],
+      tags,
     });
   };
 
@@ -1560,6 +1982,60 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
           {trail.map(n => n.name).join(" / ")}
         </p>
 
+        {/* Only offered for a new card. Changing an existing card's kind would
+            mean rebuilding the set of cards it produced and throwing away their
+            scheduling, which is never what an edit is meant to do. */}
+        {!existingCard && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {[["basic", "Basic"], ["cloze", "Fill in the blank"], ["occlusion", "Hide on image"]].map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setKind(id)}
+                style={{
+                  flex: 1, padding: "8px 4px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: kind === id ? "var(--accent)" : "var(--input-bg)",
+                  color: kind === id ? "var(--shell-bg)" : "var(--text-secondary)",
+                  fontFamily: "Inter, sans-serif", fontSize: 12.5, fontWeight: 500,
+                  WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {kind === "cloze" && (
+          <>
+            <ClozeEditor value={clozeSource} onChange={setClozeSource} />
+            <div style={{ height: 12 }} />
+          </>
+        )}
+
+        {kind === "occlusion" && (
+          <>
+            <Label>Picture</Label>
+            <ImagePicker
+              imageId={frontImageId}
+              label="the diagram"
+              onPick={(file) => pickImage(file, frontImageId, setFrontImageId)}
+              onRemove={() => { removeImage(frontImageId, setFrontImageId); setMasks([]); }}
+            />
+            {frontImageId && (
+              <OcclusionEditor
+                imageId={frontImageId}
+                masks={masks}
+                mode={occlusionMode}
+                onChange={setMasks}
+                onChangeMode={setOcclusionMode}
+              />
+            )}
+            <div style={{ height: 12 }} />
+          </>
+        )}
+
+        {kind === "basic" && (
+        <>
         <Label>Front (question / prompt)</Label>
         <TypeToggle value={frontType} onChange={setFrontType} />
         {frontType === "text" ? (
@@ -1605,9 +2081,13 @@ function CardFormModal({ trail, form, existingCard, onClose, onSave }) {
             </p>
           </>
         )}
+        </>
+        )}
+
+        <TagField value={tags} onChange={setTags} suggestions={tagSuggestions || []} />
 
         <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-          <PrimaryButton onClick={save} style={{ flex: 1 }} disabled={!frontValid || !backValid}>
+          <PrimaryButton onClick={save} style={{ flex: 1 }} disabled={!canSave}>
             <Check size={16} /> Save card
           </PrimaryButton>
           <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>Cancel</GhostButton>
@@ -2309,7 +2789,7 @@ function Switch({ checked, onChange }) {
 // the two disclosures a user is entitled to see at the moment they act on
 // them — that Google's free tier may train on what you import, and that an
 // API key never leaves the device.
-function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetListed, onExport, onImport, onReplayWalkthrough, diagInfo }) {
+function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetListed, onExport, onImport, onExportCards, onOpenStats, onAddSharedDeck, onReplayWalkthrough, diagInfo }) {
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [reminderNote, setReminderNote] = useState("");
@@ -2466,11 +2946,45 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           />
         </div>
         {backupNote && (
-          <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 18px" }}>
+          <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 10px" }}>
             {backupNote}
           </p>
         )}
-        {!backupNote && <div style={{ marginBottom: 18 }} />}
+
+        {/* The backup above moves a catalog between installs of this app. These
+            two move it *out*, which is a different promise and the one the app
+            could not keep before 1.2.0. */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+          <GhostButton
+            onClick={async () => setBackupNote((await onExportCards("apkg")) || "Anki deck saved.")}
+            style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}
+          >
+            Export to Anki
+          </GhostButton>
+          <GhostButton
+            onClick={async () => setBackupNote((await onExportCards("csv")) || "CSV saved.")}
+            style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}
+          >
+            Export CSV
+          </GhostButton>
+        </div>
+        <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 18px", lineHeight: 1.45 }}>
+          The Anki package keeps your folders and your review schedule. CSV opens in a spreadsheet but
+          carries only the text. Pictures stay on this device either way.
+        </p>
+
+        <p style={{
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
+          textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
+        }}>Study</p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+          <GhostButton onClick={onOpenStats} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
+            Statistics
+          </GhostButton>
+          <GhostButton onClick={onAddSharedDeck} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
+            Add shared deck
+          </GhostButton>
+        </div>
 
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
@@ -2973,7 +3487,7 @@ const selectStyle = {
 };
 
 // ---------- SESSION ----------
-function Session({ initialQueue, rebuildQueue, game, onGrade, onFinish, onExit }) {
+function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish, onExit }) {
   const [queue, setQueue] = useState(initialQueue);
   const [index, setIndex] = useState(0);
   const [missed, setMissed] = useState([]);
@@ -2992,19 +3506,26 @@ function Session({ initialQueue, rebuildQueue, game, onGrade, onFinish, onExit }
   // One step can cover several cards — matching pairs grades a whole group at
   // once — so everything downstream works from a list of verdicts rather than
   // a single boolean.
-  const gradeAll = (verdicts) => {
+  // How long the current card has been on screen, so the review log can carry
+  // a duration. Reset per step rather than per answer: a matching group is one
+  // stretch of attention covering several cards.
+  const shownAt = useRef(Date.now());
+  useEffect(() => { shownAt.current = Date.now(); }, [index]);
+
+  const gradeAll = (verdicts, opts = {}) => {
     let anyWrong = false;
+    const ms = Date.now() - shownAt.current;
     verdicts.forEach(({ card, correct }) => {
       const firstTime = !gradedIds.current.has(card.id);
       if (onGrade && firstTime) {
         gradedIds.current.add(card.id);
-        onGrade(card.id, correct);
+        onGrade(card.id, correct, { ...opts, ms });
       }
       answerLog.current.push({
         correct,
         // A card climbing past its personal-best box is the only thing that
         // pays the "strengthened" bonus.
-        levelUp: firstTime && isLevelUp(card, correct),
+        levelUp: firstTime && isLevelUp(card, correct, opts),
         repeat: !firstTime,
       });
       if (correct) setCorrectCount(n => n + 1);
@@ -3023,7 +3544,8 @@ function Session({ initialQueue, rebuildQueue, game, onGrade, onFinish, onExit }
   };
 
   // What the single-card exercises call: this step's one card, right or wrong.
-  const handleResult = (wasCorrect) => gradeAll([{ card: current.cards[0], correct: wasCorrect }]);
+  // `opts` carries a confidence rating when the exercise collected one.
+  const handleResult = (wasCorrect, opts) => gradeAll([{ card: current.cards[0], correct: wasCorrect }], opts);
 
   // What matching calls: a verdict per card in the group.
   const handleGroupResult = (results) => {
@@ -3118,6 +3640,7 @@ function Session({ initialQueue, rebuildQueue, game, onGrade, onFinish, onExit }
       <Exercise
         key={current.key}
         step={current}
+        subject={subjectOf(subjects, current.cards[0])}
         onResult={handleResult}
         onGroupResult={handleGroupResult}
       />
@@ -3135,8 +3658,26 @@ function ProgressBar({ value }) {
 
 
 
-function FlipCard({ card, onResult }) {
+function FlipCard({ card, onResult, subject }) {
   const [flipped, setFlipped] = useState(false);
+  const [tutorMode, setTutorMode] = useState(null);
+  const frontSpeech = ttsLib.speechFor(card, subject, "front");
+  const backSpeech = ttsLib.speechFor(card, subject, "back");
+  // The flip drill can't check an answer — the user is the only one who knows
+  // whether they knew it. A 1-5 self-rating is strictly more information than
+  // "got it / missed it" and is what FSRS actually wants, so it replaces the
+  // pair of buttons once the answer is showing.
+  const useConfidence = flipped;
+
+  // Reading the answer aloud the moment it appears is what makes this useful
+  // for vocabulary; doing it for the question too would talk over the user
+  // while they are still thinking.
+  useEffect(() => {
+    if (flipped && backSpeech) {
+      ttsLib.speak(backSpeech.text, backSpeech).catch(() => {});
+    }
+  }, [flipped, card.id]);
+  useEffect(() => () => ttsLib.stop(), []);
   // Both faces are stretched to the taller one (the answer side, which carries
   // the buttons), so the text and its caption are centred as a pair rather than
   // pinned top and bottom — otherwise the question side reads as half empty.
@@ -3155,7 +3696,9 @@ function FlipCard({ card, onResult }) {
           <div className="fc-flip-face" aria-hidden={flipped}>
             <CardShell fill tabLabel="Flip">
               <div style={body}>
-                <CardFace text={card.front} imageId={card.frontImageId} />
+                {occlusionLib.isOcclusionCard(card)
+                  ? <OcclusionCard card={card} revealed={false} />
+                  : <CardFace text={card.front} imageId={card.frontImageId} />}
                 <p style={caption}>Tap the card to reveal the answer</p>
               </div>
             </CardShell>
@@ -3163,32 +3706,58 @@ function FlipCard({ card, onResult }) {
           <div className="fc-flip-face fc-flip-face-back" aria-hidden={!flipped}>
             <CardShell fill tabLabel="Answer" tabColor="var(--success)">
               <div style={body}>
-                <CardFace text={card.back} imageId={card.backImageId} />
+                {occlusionLib.isOcclusionCard(card)
+                  ? <OcclusionCard card={card} revealed={true} />
+                  : <CardFace text={card.back} imageId={card.backImageId} />}
                 <p style={caption}>That's the answer</p>
               </div>
             </CardShell>
           </div>
         </div>
       </div>
+
+      {/* Speech and the tutor sit between the card and the grading buttons, so
+          neither is reachable by a stray tap aimed at "Got it". */}
+      {(frontSpeech || backSpeech || tutorLib.isAvailable()) && (
+        <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "center", marginTop: 10 }}>
+          {frontSpeech && <SpeakButton {...frontSpeech} />}
+          {backSpeech && flipped && <SpeakButton {...backSpeech} />}
+          {tutorLib.isAvailable() && (
+            <GhostButton onClick={() => setTutorMode(flipped ? "explain" : "hint")} style={{ fontSize: 12.5, padding: "5px 10px" }}>
+              {flipped ? "Explain" : "Hint"}
+            </GhostButton>
+          )}
+        </div>
+      )}
+      {tutorMode && (
+        <TutorPanel card={card} subject={subject?.name} mode={tutorMode} onClose={() => setTutorMode(null)} />
+      )}
+
       {/* Deliberately outside the card: these stay put while it turns, so you
           can grade a card you already know without revealing it first. */}
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
-        <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
-      </div>
+      {useConfidence ? (
+        <div style={{ marginTop: 16 }}>
+          <ConfidenceBar onRate={(confidence) => onResult(confidence >= 3, { confidence })} />
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
+          <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
+        </div>
+      )}
     </>
   );
 }
 
 // One step in, one exercise out. Everything a step needs was worked out when
 // the queue was built, so nothing here has to know about drills or the model.
-function Exercise({ step, onResult, onGroupResult }) {
+function Exercise({ step, subject, onResult, onGroupResult }) {
   const card = step.cards[0];
   switch (step.type) {
     case drillsLib.EXERCISES.MCQ:
       return <McqCard card={card} options={step.payload.options} onResult={onResult} />;
     case drillsLib.EXERCISES.WRITE:
-      return <WriteCard card={card} onResult={onResult} />;
+      return <WriteCard card={card} subject={subject} onResult={onResult} />;
     case drillsLib.EXERCISES.CLOZE:
       return <ClozeCard card={card} payload={step.payload} onResult={onResult} />;
     case drillsLib.EXERCISES.TRUEFALSE:
@@ -3196,8 +3765,24 @@ function Exercise({ step, onResult, onGroupResult }) {
     case drillsLib.EXERCISES.MATCH:
       return <MatchCard payload={step.payload} onResult={onGroupResult} />;
     default:
-      return <FlipCard card={card} onResult={onResult} />;
+      return <FlipCard card={card} subject={subject} onResult={onResult} />;
   }
+}
+
+// Which subject a card belongs to — needed for its speech languages, and as
+// context for the tutor ("Paris" means something different in a French
+// vocabulary deck than in a geography one).
+function subjectOf(subjects, card) {
+  if (!card) return null;
+  const walk = (nodes, root) => {
+    for (const n of nodes || []) {
+      if (n.id === card.nodeId) return root || n;
+      const hit = walk(n.children, root || n);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  return walk(subjects, null);
 }
 
 // The options are built by the drill now — from the wrong answers you wrote,
@@ -3238,10 +3823,12 @@ function McqCard({ card, options, onResult }) {
   );
 }
 
-function WriteCard({ card, onResult }) {
+function WriteCard({ card, subject, onResult }) {
   const [value, setValue] = useState("");
   const [checked, setChecked] = useState(false);
+  const [tutorOpen, setTutorOpen] = useState(false);
   const isCorrect = normalize(value) === normalize(card.back);
+  const backSpeech = ttsLib.speechFor(card, subject, "back");
 
   return (
     <CardShell tabLabel="Write answer" tabColor="#7B4B94">
@@ -3257,6 +3844,22 @@ function WriteCard({ card, onResult }) {
         }}>
           {isCorrect ? "Correct!" : <>Not quite — the answer was <strong>{card.back}</strong></>}
         </div>
+      )}
+      {/* A wrong typed answer is where the tutor earns its keep: the user has
+          just named the exact thing they confused this with, which is the one
+          piece of context an explanation can act on. */}
+      {checked && (backSpeech || (!isCorrect && tutorLib.isAvailable())) && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+          {backSpeech && <SpeakButton {...backSpeech} />}
+          {!isCorrect && tutorLib.isAvailable() && !tutorOpen && (
+            <GhostButton onClick={() => setTutorOpen(true)} style={{ fontSize: 12.5, padding: "5px 10px" }}>
+              Why is that wrong?
+            </GhostButton>
+          )}
+        </div>
+      )}
+      {tutorOpen && (
+        <TutorPanel card={card} given={value} subject={subject?.name} mode="why" onClose={() => setTutorOpen(false)} />
       )}
       {checked ? (
         <PrimaryButton onClick={() => onResult(isCorrect)} style={{ width: "100%" }}>Continue</PrimaryButton>
