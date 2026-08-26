@@ -42,7 +42,7 @@ import * as deckShare from "./deckShare";
 import {
   StatsScreen, TestRunner, NotesImport, ShareDeckModal, ImportDeckModal,
   OcclusionEditor, OcclusionCard, TagField, TagFilter, SpeakButton,
-  SpeechSettings, ConfidenceBar, TutorPanel, ClozeEditor, LeechReview, Sheet,
+  SpeechSettings, TutorPanel, ClozeEditor, LeechReview, Sheet,
 } from "./featureUI";
 import * as tutorLib from "./tutor";
 import * as testModeLib from "./testMode";
@@ -3663,11 +3663,9 @@ function FlipCard({ card, onResult, subject }) {
   const [tutorMode, setTutorMode] = useState(null);
   const frontSpeech = ttsLib.speechFor(card, subject, "front");
   const backSpeech = ttsLib.speechFor(card, subject, "back");
-  // The flip drill can't check an answer — the user is the only one who knows
-  // whether they knew it. A 1-5 self-rating is strictly more information than
-  // "got it / missed it" and is what FSRS actually wants, so it replaces the
-  // pair of buttons once the answer is showing.
-  const useConfidence = flipped;
+  // The flip drill grades itself with one binary call, before and after the
+  // reveal alike. A 1-5 self-rating would tell FSRS more, but it turned a
+  // one-tap drill into a five-way decision on every card, so it is gone.
 
   // Reading the answer aloud the moment it appears is what makes this useful
   // for vocabulary; doing it for the question too would talk over the user
@@ -3735,16 +3733,10 @@ function FlipCard({ card, onResult, subject }) {
 
       {/* Deliberately outside the card: these stay put while it turns, so you
           can grade a card you already know without revealing it first. */}
-      {useConfidence ? (
-        <div style={{ marginTop: 16 }}>
-          <ConfidenceBar onRate={(confidence) => onResult(confidence >= 3, { confidence })} />
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-          <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
-          <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
-        </div>
-      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
+        <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
+      </div>
     </>
   );
 }
