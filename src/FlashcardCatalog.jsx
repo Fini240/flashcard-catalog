@@ -2296,13 +2296,39 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
     if (!categoryName.trim() && subcategory) setCategoryName(subcategory);
   };
 
-  // Last resort once the text is already off the photo: split it into cards
-  // locally if it's a vocabulary list, otherwise hand the text to the paste
-  // box so the reading isn't wasted just because Claude was unreachable.
+  // Last resort once the text is already off the photo: let the device make
+  // what cards it can of it (`ocr.salvageCards`), and otherwise hand the text
+  // to the paste box so the reading isn't wasted just because the AI was
+  // unreachable.
+  // `NO_KEY` means the free allowance declined *and* the user has no key of
+  // their own — but only the first half is usually the interesting one, and
+  // the old message reported the second. Someone signed in and entitled to
+  // ten free imports a day was told "no API key set", which is both untrue
+  // as a diagnosis and unactionable as advice.
+  const noKeyReason = () => {
+    const F = aiImport.FREE_UNAVAILABLE;
+    const failure = aiImport.getFreeFailure();
+    if (!googleUser) return "you're signed out and no API key is set, so nothing was sent.";
+    switch (failure) {
+      case F.QUOTA:
+        return "today's free imports are used up — add your own key in Settings, or try again tomorrow.";
+      case F.UNREACHABLE:
+        return "the free AI service couldn't be reached.";
+      case F.SIGNED_OUT:
+        return "your sign-in couldn't be confirmed, so the free allowance didn't apply. Signing out and back in usually fixes it.";
+      case F.NOT_CONFIGURED:
+      case F.PROVIDER_NOT_ALLOWED:
+      case F.REJECTED:
+        return "the free AI service turned the request down — Settings \u2192 Copy diagnostics has the detail.";
+      default:
+        return "no API key set, so nothing was sent.";
+    }
+  };
+
   const keepTextLocally = (ocrText, reason) => {
-    const guessed = ocr.guessCardPairs(ocrText);
-    if (guessed.length > 0) {
-      setPendingCards(guessed);
+    const salvaged = ocr.salvageCards(ocrText);
+    if (salvaged.length > 0) {
+      setPendingCards(salvaged);
       setResult(`Read on your device — ${reason} Check these before importing.`);
     } else {
       setImportMode("paste");
@@ -2340,11 +2366,11 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             }
             keepTextLocally(ocrText, `${aiLabel} didn't find clear cards in it.`);
           } catch (e) {
-            if (e.message === "NO_KEY") keepTextLocally(ocrText, "no API key set, so nothing was sent.");
+            if (e.message === "NO_KEY") keepTextLocally(ocrText, noKeyReason());
             else keepTextLocally(ocrText, `${aiLabel} couldn't be reached.`);
           }
         } else {
-          keepTextLocally(ocrText, "no API key set, so nothing was sent.");
+          keepTextLocally(ocrText, noKeyReason());
         }
         return;
       }

@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { TextRecognition } from "@capacitor-mlkit/text-recognition";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import { fileToBase64 } from "./fileImport";
+import * as noteToCards from "./noteToCards";
 
 // ML Kit's text recognition runs natively with a model bundled into the APK,
 // so it only exists in the Android build. The hosted web app has no equivalent
@@ -63,4 +64,54 @@ export function guessCardPairs(text) {
     if (explainsPage && pairs.length > best.length) best = pairs;
   }
   return best;
+}
+
+// Lines that only the notes syntax can claim. `::`, a `Q:`/`A:` pair and a
+// cloze marker are deliberate marks — nobody writes them by accident — whereas
+// every separator `guessCardPairs` looks for is punctuation that merely
+// happens to look like a column break.
+const NOTES_MARKERS = [
+  /::/,
+  /^\s*(?:Q|A|Question|Answer)\s*[:.]\s+\S/i,
+];
+
+const hasNotesSyntax = (text) =>
+  String(text || "").split(/\r?\n/).some((line) => NOTES_MARKERS.some((re) => re.test(line)));
+
+const notesCards = (text) =>
+  noteToCards
+    .toCards(String(text || "")).cards
+    .filter((c) => c.front && c.back)
+    .map((c) => ({ front: String(c.front), back: String(c.back) }));
+
+// Everything the device can make of a page on its own, with no key, no
+// network and no model.
+//
+// Two parsers, and the order between them matters more than it looks.
+// `guessCardPairs` asks "is this a two-column list?" and needs one separator
+// to explain most of the lines, which is what stops a page of prose becoming
+// nonsense cards. What it cannot read is the notes syntax the app already
+// understands everywhere else — `::`, `:::`, `Q:`/`A:`, dash lists, headings
+// — and that is most of what a photographed page of *notes* looks like.
+// Without a second pass a correctly-read page could yield zero cards, which
+// left the reading useless the moment the AI path was unavailable.
+//
+// The notes reading goes first whenever the page carries a mark only it can
+// explain, because on that page the column reader isn't silent — it's wrong.
+// `": "` is one of its separators, so `Mitochondrium :: erzeugt ATP` becomes a
+// front of `Mitochondrium :`, and `Q: …` / `A: …` become two cards fronted
+// literally `Q` and `A`. Four such lines out of six clear the 60% guard, so
+// the bad reading looks confident.
+//
+// Folders and tags from the notes syntax are dropped deliberately: the photo
+// import puts everything in the one subject/category its sheet is asking
+// about, and the importer reads nothing but `front`/`back`.
+export function salvageCards(text) {
+  const notes = notesCards(text);
+  if (notes.length > 0 && hasNotesSyntax(text)) return notes;
+
+  const guessed = guessCardPairs(text);
+  if (guessed.length > 0) return guessed;
+
+  return notes;
 }

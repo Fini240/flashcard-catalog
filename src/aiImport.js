@@ -1,6 +1,7 @@
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
+import { report } from "./report";
 
 const PROVIDER_STORAGE = "ai-provider";
 const FUNCTION_URL = "https://us-central1-centering-timer-502020-h0.cloudfunctions.net/generateFlashcards";
@@ -149,14 +150,41 @@ export function getQuotaState() {
   return lastQuotaState;
 }
 
+// Why the free path last declined, so the caller can say something truer than
+// "no API key set". Every `available: false` below sets this *and* calls
+// `report()`: this path used to fail completely silently, which left a phone
+// that couldn't reach the function indistinguishable from one that had simply
+// never been given a key — the user saw "no API key set" either way and had
+// nothing to send back but a screenshot.
+export const FREE_UNAVAILABLE = {
+  SIGNED_OUT: "SIGNED_OUT",
+  UNREACHABLE: "UNREACHABLE",
+  QUOTA: "QUOTA",
+  NOT_CONFIGURED: "NOT_CONFIGURED",
+  PROVIDER_NOT_ALLOWED: "PROVIDER_NOT_ALLOWED",
+  REJECTED: "REJECTED",
+};
+
+let lastFreeFailure = null;
+
+export function getFreeFailure() {
+  return lastFreeFailure;
+}
+
+function freeUnavailable(reason, err) {
+  lastFreeFailure = reason;
+  report(`aiImport.free.${reason}`, err instanceof Error ? err : new Error(String(err ?? reason)));
+  return { available: false };
+}
+
 async function tryFreeFunction(payload) {
   let token;
   try {
     ({ token } = await FirebaseAuthentication.getIdToken());
   } catch (e) {
-    return { available: false };
+    return freeUnavailable(FREE_UNAVAILABLE.SIGNED_OUT, e);
   }
-  if (!token) return { available: false };
+  if (!token) return freeUnavailable(FREE_UNAVAILABLE.SIGNED_OUT, "getIdToken returned no token");
 
   let res;
   try {
@@ -167,7 +195,7 @@ async function tryFreeFunction(payload) {
     });
   } catch (e) {
     // Network failure, CORS block, or the function isn't deployed yet.
-    return { available: false };
+    return freeUnavailable(FREE_UNAVAILABLE.UNREACHABLE, e);
   }
 
   if (res.status === 429) {
@@ -180,12 +208,22 @@ async function tryFreeFunction(payload) {
       dailyLimit: data.dailyLimit ?? null,
       shared: data.error === "SHARED_QUOTA_EXCEEDED",
     };
-    return { available: false };
+    return freeUnavailable(FREE_UNAVAILABLE.QUOTA, data.error || "quota exhausted");
   }
-  if (!res.ok) return { available: false };
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    // The function names its own refusals; keep them rather than flattening
+    // every non-200 into one indistinguishable failure.
+    const reason =
+      data.error === "NOT_CONFIGURED" ? FREE_UNAVAILABLE.NOT_CONFIGURED
+      : data.error === "PROVIDER_NOT_ALLOWED" ? FREE_UNAVAILABLE.PROVIDER_NOT_ALLOWED
+      : FREE_UNAVAILABLE.REJECTED;
+    return freeUnavailable(reason, `HTTP ${res.status} ${data.error || ""}`.trim());
+  }
 
   const data = await res.json().catch(() => ({}));
   lastQuotaState = { exhausted: false, remaining: data.remaining ?? null, dailyLimit: null };
+  lastFreeFailure = null;
   return { available: true, ...normalizeCards(data) };
 }
 

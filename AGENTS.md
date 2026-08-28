@@ -425,6 +425,25 @@ Play Store compatibility problem).
   gitignored and **must never be committed**. Losing them means never being
   able to update the listing.
 
+- **An import that can't reach the AI must still produce cards, and the two
+  offline parsers are not interchangeable.** `ocr.salvageCards` is the whole
+  offline path: `guessCardPairs` reads a two-column page, `noteToCards` reads
+  the `::` / `Q:` / dash-list syntax. The notes parser is asked **first
+  whenever the page carries a mark only it can explain**, because on such a
+  page the column reader is not silent, it is confidently wrong — `": "` is
+  one of its separators, so `Mitochondrium :: erzeugt ATP` yields a front of
+  `Mitochondrium :` and `Q: …` / `A: …` yield two cards fronted literally `Q`
+  and `A`, four bad rows out of six being more than enough to clear its 60%
+  "explains the page" guard. Don't reorder them. Covered by `ocr.test.js`.
+
+- **The free AI path may not fail silently.** Every `available: false` in
+  `tryFreeFunction` sets a `FREE_UNAVAILABLE` reason and calls `report()`. It
+  did neither until 1.2.2, and the cost was a whole class of bug that could
+  not be investigated at all: the UI's only message was "no API key set", so a
+  signed-in user entitled to the free allowance was told the one thing that
+  was both untrue and unactionable, and nothing reached the diagnostics
+  buffer. If you add another early return there, give it a reason too.
+
 ## Open items
 - [ ] **The direct AnkiDroid import has never run against a real AnkiDroid.**
       The plugin compiles and is confirmed present in the packaged APK, and the
@@ -442,8 +461,17 @@ Play Store compatibility problem).
       a signed-in user, which is correct. Note the redeploy is not optional: a
       new secret version only reaches the function on deploy, and the CLI says
       so explicitly ("1 functions are using stale version of secret").
-      **Still unverified end to end:** no successful AI import has actually run
-      yet. Everything past the key check — `verifyIdToken`, the `DAILY_LIMIT`
+      **Still unverified end to end, and it failed on the phone on 2026-08-28.**
+      The user photographed a page: on-device OCR read it, the free path
+      declined, and the import ended with raw text and no cards. Root cause is
+      *still unknown* — because `tryFreeFunction` returned a bare
+      `{ available: false }` on every failure path without reporting anything,
+      so a phone that couldn't reach the function was indistinguishable from
+      one that had never been given a key, and both said "no API key set".
+      Fixed in 1.2.2: every decline now sets a reason and calls `report()`, so
+      **the next failed import can be diagnosed from Settings → Copy
+      diagnostics** — ask for that output rather than guessing again. No
+      successful AI import has actually run yet. Everything past the key check — `verifyIdToken`, the `DAILY_LIMIT`
       Firestore transaction, the `ALLOWED_PROVIDERS` check (deployed
       2026-08-11, unreachable until now) — has never executed in production,
       and this is also the first real exercise of `firebase-admin` v14. Watch
@@ -495,8 +523,9 @@ Play Store compatibility problem).
       Play Developer account ($25 + identity verification), and a personal
       account needs a **12-tester / 14-day closed test** before production.
       Full checklist in `PLAY_STORE.md`.
-- [x] The GitHub `latest` APK asset matches `main` as of 2026-08-10 (the
-      gamification release, `d571924`).
+- [x] The GitHub `latest` APK asset matches `main` as of 2026-08-28 (`1.2.2`).
+      Judged the way the note at the top of this file says to — sha256 of the
+      release asset against the local APK, not the release's published date.
 - [ ] **The friends/leaderboard feature has never run against two real
       accounts.** Rules and leaderboard maths are covered by tests, but adding
       a friend by code, nudging, and seeing a friend's weekly XP have only been
