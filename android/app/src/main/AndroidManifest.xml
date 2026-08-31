@@ -24,6 +24,30 @@
 
         </activity>
 
+        <!--
+          The home-screen widget. exported="false" is what the platform
+          documents for widget providers: the system server is exempt from the
+          export check, and nothing else has any business poking this.
+
+          The clock actions matter because they move the day boundary
+          underfoot — without them a timezone change leaves yesterday's numbers
+          on screen until the next half-hourly tick.
+        -->
+        <receiver
+            android:name=".StreakWidgetProvider"
+            android:label="@string/widget_label"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_streak_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

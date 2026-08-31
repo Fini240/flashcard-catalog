@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home-screen widget. Kept out of strings.xml because that file is
+     Capacitor's and gets rewritten by `npx cap sync`. -->
+<resources>
+    <string name="widget_label">Streak</string>
+    <string name="widget_description">Your streak and today\'s goal, watched over by a mascot.</string>
+    <string name="widget_day_streak">day streak</string>
+
+    <!-- Spoken as one sentence: read out view by view, four fragments and an
+         unlabelled drawing say nothing useful. -->
+    <string name="widget_a11y_todo">%1$d day streak. %2$d of %3$d cards done today.</string>
+    <string name="widget_a11y_done">%1$d day streak. Today\'s goal is done: %2$d of %3$d cards.</string>
+
+    <!-- The app's own shell palette (src/index.css), used as-is rather than
+         following the launcher's light/dark: the widget should read as a piece
+         of this app sitting on the home screen, and one fixed pairing is one
+         set of contrast ratios to get right instead of two. -->
+    <color name="widget_bg">#16233F</color>
+    <color name="widget_streak">#F2C572</color>
+    <color name="widget_muted">#8CA0C2</color>
+    <color name="widget_track">#3A4A68</color>
+    <color name="widget_progress">#F2874E</color>
+
+    <dimen name="widget_corner_radius">20dp</dimen>
+</resources>

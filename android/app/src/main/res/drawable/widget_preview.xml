@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The picture in the widget picker on Android 11 and below. Newer versions
+     use previewLayout instead and render the real thing. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/widget_background" />
+    <item
+        android:drawable="@drawable/mascot_owl_happy"
+        android:gravity="center"
+        android:width="64dp"
+        android:height="64dp" />
+</layer-list>

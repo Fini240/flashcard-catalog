@@ -11,8 +11,10 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         // Local plugins aren't auto-discovered the way installed ones are, so
-        // this registration is what makes the AnkiDroid bridge exist at all.
+        // these registrations are what make the AnkiDroid and widget bridges
+        // exist at all.
         registerPlugin(AnkiDroidPlugin.class);
+        registerPlugin(StreakWidgetPlugin.class);
         super.onCreate(savedInstanceState);
 
         // For apps targeting SDK 33 and up, the WebView reports

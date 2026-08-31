@@ -75,6 +75,10 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/gameUI.jsx` | The gamification surface: status bar, today card, quests, streak/goal/friends sheets |
 | `src/social.js` | Friend codes, usernames, public `profiles/` docs, nudges, friends + global leaderboards |
 | `src/reminders.js` | Daily study reminder — local notifications, scheduled on-device |
+| `src/widget.js` | **The home-screen widget's brain.** The mascot catalogue, the mood ladder, and the snapshot handed to the native side. The widget itself decides nothing — read the header before changing either half. |
+| `src/mascotArt.js` | Generated. The mascot drawings as SVG, for the picker in Settings. |
+| `scripts/mascots.mjs` | Generates that file *and* the 30 `res/drawable/mascot_*.xml` VectorDrawables from one description. Run `node scripts/mascots.mjs` after touching it; the output is committed. |
+| `android/.../StreakWidget*.java` | The native half: a Capacitor plugin that stores the snapshot, and an AppWidgetProvider that draws it. |
 | `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore` |
 | `firestore.indexes.json` | Composite index behind the global board. Deployed by the same command. |
 | `src/whatsNew.js` | `APP_VERSION`, the walkthrough copy and the release notes, plus the pure decision of which (if either) a launch owes the user. Unit-tested. |
@@ -444,7 +448,46 @@ Play Store compatibility problem).
   was both untrue and unactionable, and nothing reached the diagnostics
   buffer. If you add another early return there, give it a reason too.
 
+## The widget, in one paragraph
+
+A home-screen widget cannot see the app's state. It is drawn by the launcher's
+process, usually with this app's process dead, and everything the app knows
+lives in the WebView's `localStorage` — so the widget gets a snapshot in
+`SharedPreferences` and nothing else. The trap is then obvious in hindsight:
+anything the widget has to *decide* is either a second copy of the rules in
+Java or a stale answer. So `src/widget.js` precomputes the mascot's whole day
+as a schedule (`0:sleepy,600:neutral,840:waiting`), plus a second schedule for
+the day after midnight, and `WidgetState.java` only looks up which entry covers
+the current minute. **Put policy in widget.js and lookups in Java, never the
+other way round.**
+
+Three things redraw it: the app pushing after a session or a settings change,
+the system's 30-minute `updatePeriodMillis` (which is what walks the mood up
+its ladder with the app closed, and what picks up the new day after midnight),
+and clock/timezone changes. There is no background job and nothing to schedule.
+
+Two things to know before editing:
+
+- **The mascot art is generated.** Editing a `mascot_*.xml` by hand is wasted
+  work — `scripts/mascots.mjs` deletes the whole `mascot_*` namespace and
+  rewrites it. Change the spec there and re-run it.
+- **`WidgetState.drawableFor` resolves art by name**, which is safe only
+  because R8 and resource shrinking are off (see `minifyEnabled` in
+  `app/build.gradle`). Turning either on strips every mascot drawable, because
+  nothing references them from code.
+
 ## Open items
+- [ ] **The widget has never been placed on a real home screen** (added
+      1.2.3). It compiles, and the APK carries the receiver, the layout and all
+      30 mascot drawables — but no one has watched a launcher inflate it. The
+      parts that can only fail on a device: whether `RemoteViews` accepts the
+      VectorDrawable in `setImageViewResource` (it should on API 24+, but this
+      is the classic place a widget renders blank), whether the 2x2 cell is
+      actually tall enough for mascot + streak + bar + count, and whether the
+      mood advances with the app closed — which needs leaving it overnight,
+      since `updatePeriodMillis` has a 30-minute floor. Check the midnight
+      rollover too: the `nextDay` schedule is the one piece of this that is a
+      prediction rather than a fact.
 - [ ] **The direct AnkiDroid import has never run against a real AnkiDroid.**
       The plugin compiles and is confirmed present in the packaged APK, and the
       permission and `<queries>` entries are in the merged manifest — but no one

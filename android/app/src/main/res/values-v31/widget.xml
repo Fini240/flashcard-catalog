@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12 gave widgets a system corner radius and clips them to it.
+         Matching it stops the card's own corners showing inside the clip as a
+         faint double outline. -->
+    <dimen name="widget_corner_radius">@android:dimen/system_app_widget_background_radius</dimen>
+</resources>

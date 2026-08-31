@@ -22,6 +22,7 @@ import { pushBackHandler, consumeBack } from "./backHandler";
 import * as G from "./gamification";
 import * as social from "./social";
 import * as reminders from "./reminders";
+import * as widget from "./widget";
 import * as backup from "./backup";
 import {
   THEME_CHOICES, DARK_QUERY, getStoredTheme, setStoredTheme,
@@ -589,6 +590,15 @@ export default function FlashcardCatalog() {
     setCards(cs => cs.map(c => (c.id === card.id ? leechLib.forgive(c) : c)));
 
   // ---------- gamification ----------
+  // Best-effort by design: a widget that failed to redraw is not worth
+  // interrupting a study session over, but it is worth being able to see
+  // afterwards in Settings -> Copy diagnostics.
+  const syncWidget = (g) => {
+    widget.sync(g).then(res => {
+      if (res.reason === "error") report("widget.sync", res.error);
+    });
+  };
+
   // Everything a finished session is worth is computed in one place, from the
   // answer log the Session screen hands back. The award object it returns is
   // what the reward screen renders — no second source of truth.
@@ -599,6 +609,8 @@ export default function FlashcardCatalog() {
     // Today is done, so today's reminder should stop being pending.
     reminders.sync(nextGame, nextGame.reminder, currentDataRef.current.cards)
       .catch((e) => report("reminders.syncAfterSession", e));
+    // …and the mascot on the home screen owes the user a reaction.
+    syncWidget(nextGame);
     return award;
   };
 
@@ -765,13 +777,29 @@ export default function FlashcardCatalog() {
   useEffect(() => {
     if (!loaded) return;
     const g = currentDataRef.current.game;
+    syncWidget(g);
     if (!g.reminder || !g.reminder.enabled) return;
     reminders.sync(g, g.reminder, currentDataRef.current.cards)
       .catch((e) => report("reminders.sync", e));
   }, [loaded]);
+  // Both of these read the current game off the ref rather than using the
+  // functional setGame form, for the same reason setReminder above does: the
+  // widget push is a side effect, and React invokes an updater more than once
+  // in development. Computing `next` first keeps the effect on one path.
   const setGoal = (cardsPerDay) => {
-    setGame(g => ({ ...g, goalCards: cardsPerDay }));
+    const next = { ...currentDataRef.current.game, goalCards: cardsPerDay };
+    setGame(next);
+    syncWidget(next); // the bar the widget draws just moved
     setSheet("streak");
+  };
+
+  // Which animal the widget draws. Stored on the game rather than beside the
+  // theme, so the choice follows the account to a new phone the way the streak
+  // does — it is part of who the user is here, not of this install.
+  const setMascot = (id) => {
+    const next = { ...currentDataRef.current.game, mascot: id };
+    setGame(next);
+    syncWidget(next);
   };
 
   // "Study now" — the one-tap path. Builds the best queue it can without
@@ -882,6 +910,7 @@ export default function FlashcardCatalog() {
           }}
           game={game}
           onSetReminder={setReminder}
+          onSetMascot={setMascot}
           onSetListed={setListed}
           onExport={exportCatalog}
           onImport={importCatalog}
@@ -2815,8 +2844,9 @@ function Switch({ checked, onChange }) {
 // the two disclosures a user is entitled to see at the moment they act on
 // them — that Google's free tier may train on what you import, and that an
 // API key never leaves the device.
-function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetListed, onExport, onImport, onExportCards, onOpenStats, onAddSharedDeck, onReplayWalkthrough, diagInfo }) {
+function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetMascot, onSetListed, onExport, onImport, onExportCards, onOpenStats, onAddSharedDeck, onReplayWalkthrough, diagInfo }) {
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
+  const mascotMood = widget.moodNow(game);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [reminderNote, setReminderNote] = useState("");
   const [backupNote, setBackupNote] = useState("");
@@ -2937,6 +2967,47 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
             Daily reminders need the installed Android app — the web version can't
             schedule notifications.
           </p>
+        )}
+
+        {/* The mascot only exists on the home screen, so the picker follows
+            the widget's own availability rather than being offered in a web
+            app that has nowhere to put it. */}
+        {widget.isSupported() && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
+                Widget mascot
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 7, marginBottom: 8 }}>
+              {widget.MASCOTS.map((m) => {
+                const selected = widget.normalizeMascot(game.mascot) === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => onSetMascot(m.id)}
+                    aria-label={m.name}
+                    aria-pressed={selected}
+                    title={m.name}
+                    style={{
+                      flex: 1, padding: 5, cursor: "pointer", lineHeight: 0,
+                      background: selected ? "var(--input-bg)" : "transparent",
+                      border: `1.5px solid ${selected ? "var(--brand)" : "var(--card-border)"}`,
+                      borderRadius: 12,
+                    }}
+                    /* Generated art from scripts/mascots.mjs — build-time
+                       constants from this repo, never anything a user typed. */
+                    dangerouslySetInnerHTML={{ __html: widget.mascotArt(m.id, mascotMood) }}
+                  />
+                );
+              })}
+            </div>
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 18px", lineHeight: 1.45 }}>
+              Shown here in the mood it's in right now. Long-press your home
+              screen → Widgets → Flashcard Catalog to add it.
+            </p>
+          </>
         )}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>

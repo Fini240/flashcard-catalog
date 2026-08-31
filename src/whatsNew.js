@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.2.2";
+export const APP_VERSION = "1.2.3";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,14 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.2.3",
+    date: "2026-08-31",
+    items: [
+      "A home-screen widget: your streak, how much of today's goal is left, and an animal that keeps an eye on both. Long-press your home screen \u2192 Widgets to add it.",
+      "Pick which animal \u2014 owl, cat, fox, bunny or panda \u2014 in Settings. It's asleep in the morning, watchful by the afternoon, worried by the evening if your streak is on the line, and delighted the moment you finish.",
+    ],
+  },
   {
     version: "1.2.2",
     date: "2026-08-28",

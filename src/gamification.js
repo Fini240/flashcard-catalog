@@ -86,6 +86,10 @@ export function emptyGame() {
     quests: [], // [{ id, progress, claimed }]
     perfectSessions: 0,
     profileEmoji: "🦉",
+    // Which animal the home-screen widget draws. Null means "never chosen" —
+    // widget.js turns that into the default rather than storing one here, so
+    // this file needn't know the catalogue and the import stays one-way.
+    mascot: null,
     friends: [], // uids the user follows
     username: null, // self-chosen, and the only name ever published
     usernamePrompted: false, // has the "you're on the board as …" note been shown
@@ -146,6 +150,10 @@ export function normalizeGame(raw) {
     quests: Array.isArray(raw.quests) ? raw.quests : [],
     goalCards: Number(raw.goalCards) > 0 ? Number(raw.goalCards) : DEFAULT_GOAL_CARDS,
     username: typeof raw.username === "string" && raw.username ? raw.username : null,
+    // Validated against the catalogue in widget.normalizeMascot, not here: a
+    // save written by a newer build naming an animal this one hasn't got must
+    // survive a round trip rather than be quietly reset.
+    mascot: typeof raw.mascot === "string" ? raw.mascot : null,
     usernamePrompted: !!raw.usernamePrompted,
     // Absent means "not opted out" — save files written before the global
     // board existed must not read as a silent opt-out.
