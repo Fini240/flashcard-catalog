@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Card background for the "neutral" mood. Resolved by name in WidgetState. -->
+<!-- Card background for the "neutral" mood. Resolved by name in WidgetState.
+     A vivid mid-tone gradient so white text stays legible — the point of the
+     mood is the colour, not a dark card. Brightened to read like Duolingo's
+     streak widget while keeping each mood's hue family. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <gradient
-        android:startColor="#16233F"
-        android:endColor="#203056"
+        android:startColor="#4C8BD9"
+        android:endColor="#316BB0"
         android:angle="315" />
     <corners android:radius="@dimen/widget_corner_radius" />
 </shape>

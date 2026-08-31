@@ -34,12 +34,16 @@
          vertically centred and clear of the rounded corners: below Android 12
          the background shape does not clip its children, so art reaching a
          corner would square off over the rounding. -->
+    <!-- Contained, like Duolingo: the art sits inside the card and the rounded
+         corner clips it, rather than a negative margin cutting through the
+         face. The generated art is trimmed to a 4% margin, so at 150dp the
+         head is ~138dp wide and just kisses the edge. -->
     <ImageView
         android:id="@+id/widget_mascot"
-        android:layout_width="170dp"
-        android:layout_height="170dp"
+        android:layout_width="150dp"
+        android:layout_height="150dp"
         android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="-48dp"
+        android:layout_marginEnd="-6dp"
         android:scaleType="fitCenter"
         android:importantForAccessibility="no" />
 
@@ -112,45 +116,50 @@
                 android:orientation="horizontal">
                 <TextView
                     android:id="@+id/widget_day0_label"
-                    android:layout_width="20dp"
+                    android:layout_width="24dp"
                     android:layout_height="wrap_content"
                     android:gravity="center_horizontal"
-                android:layout_marginEnd="9dp"
+                    android:maxLines="1"
+                android:layout_marginEnd="10dp"
                     android:textColor="@color/widget_on_dark_faint"
                     android:textSize="11sp"
                     android:includeFontPadding="false" />
                 <TextView
                     android:id="@+id/widget_day1_label"
-                    android:layout_width="20dp"
+                    android:layout_width="24dp"
                     android:layout_height="wrap_content"
                     android:gravity="center_horizontal"
-                android:layout_marginEnd="9dp"
+                    android:maxLines="1"
+                android:layout_marginEnd="10dp"
                     android:textColor="@color/widget_on_dark_faint"
                     android:textSize="11sp"
                     android:includeFontPadding="false" />
                 <TextView
                     android:id="@+id/widget_day2_label"
-                    android:layout_width="20dp"
+                    android:layout_width="24dp"
                     android:layout_height="wrap_content"
                     android:gravity="center_horizontal"
-                android:layout_marginEnd="9dp"
+                    android:maxLines="1"
+                android:layout_marginEnd="10dp"
                     android:textColor="@color/widget_on_dark_faint"
                     android:textSize="11sp"
                     android:includeFontPadding="false" />
                 <TextView
                     android:id="@+id/widget_day3_label"
-                    android:layout_width="20dp"
+                    android:layout_width="24dp"
                     android:layout_height="wrap_content"
                     android:gravity="center_horizontal"
-                android:layout_marginEnd="9dp"
+                    android:maxLines="1"
+                android:layout_marginEnd="10dp"
                     android:textColor="@color/widget_on_dark_faint"
                     android:textSize="11sp"
                     android:includeFontPadding="false" />
                 <TextView
                     android:id="@+id/widget_day4_label"
-                    android:layout_width="20dp"
+                    android:layout_width="24dp"
                     android:layout_height="wrap_content"
                     android:gravity="center_horizontal"
+                    android:maxLines="1"
                     android:textColor="@color/widget_on_dark_faint"
                     android:textSize="11sp"
                     android:includeFontPadding="false" />
@@ -164,52 +173,52 @@
                 android:layout_marginTop="3dp">
                 <ImageView
                     android:id="@+id/widget_day0_dot"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:importantForAccessibility="no" />
                 <ImageView
                     android:id="@+id/widget_day0_link"
-                    android:layout_width="9dp"
-                    android:layout_height="15dp"
+                    android:layout_width="10dp"
+                    android:layout_height="16dp"
                     android:background="@color/widget_day_met"
                     android:importantForAccessibility="no" />
                 <ImageView
                     android:id="@+id/widget_day1_dot"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:importantForAccessibility="no" />
                 <ImageView
                     android:id="@+id/widget_day1_link"
-                    android:layout_width="9dp"
-                    android:layout_height="15dp"
+                    android:layout_width="10dp"
+                    android:layout_height="16dp"
                     android:background="@color/widget_day_met"
                     android:importantForAccessibility="no" />
                 <ImageView
                     android:id="@+id/widget_day2_dot"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:importantForAccessibility="no" />
                 <ImageView
                     android:id="@+id/widget_day2_link"
-                    android:layout_width="9dp"
-                    android:layout_height="15dp"
+                    android:layout_width="10dp"
+                    android:layout_height="16dp"
                     android:background="@color/widget_day_met"
                     android:importantForAccessibility="no" />
                 <ImageView
                     android:id="@+id/widget_day3_dot"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:importantForAccessibility="no" />
                 <ImageView
                     android:id="@+id/widget_day3_link"
-                    android:layout_width="9dp"
-                    android:layout_height="15dp"
+                    android:layout_width="10dp"
+                    android:layout_height="16dp"
                     android:background="@color/widget_day_met"
                     android:importantForAccessibility="no" />
                 <ImageView
                     android:id="@+id/widget_day4_dot"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:importantForAccessibility="no" />
             </LinearLayout>
         </LinearLayout>

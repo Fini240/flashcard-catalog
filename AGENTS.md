@@ -452,23 +452,19 @@ Play Store compatibility problem).
 
 Laid out after Duolingo's streak widget, which the user asked for by
 screenshot: a 4x2 card whose **whole background is tinted by the mood**
-(`widget_bg_<mood>.xml`), the streak and a one-line message down the left, a
-five-day strip of ticks under them, and the mascot large on the right,
-**running off the edge**. The bleed is the point — art scaled to fit inside
-its box reads as an icon, art too big for the widget reads as a character
-standing behind the numbers. It is a negative end margin plus the parent's own
-clipping, so nothing about it changes with the cell size. Keep the mascot clear
-of the rounded corners: below Android 12 the background shape does not clip its
-children.
+(`widget_bg_<mood>.xml` — a vivid mid-tone gradient per mood, kept bright so
+the white-on-colour text still reads), the streak and a one-line message down
+the left, a five-day strip of ticks under them, and the mascot **contained** on
+the right, its edge resting against the card's rounding.
 
-**Sizing that bleed has a trap:** the margin is spent on the art's own
-transparent padding before it reaches the animal. The first attempt (118dp box,
--26dp margin) against art that was 21% padding a side cropped nothing at all,
-and a device screenshot showed the head's right edge landing exactly on the
-card edge. The generated art is trimmed to a 4% margin, so a box of *W* and a
-margin of *M* cut `M - 0.04W` off a head that is 0.92W wide. Current values:
-170dp and -48dp, about a quarter of the head. **Re-derive both if the art's
-padding changes** — that is what caught this out the first time.
+**The mascot is contained, not bleeding.** The first versions ran the art off
+the edge (a negative end margin) so it read as a character standing behind the
+numbers, but next to Duolingo's on a real home screen it looked like a head cut
+clean through, so it was reined in. The generated art is trimmed to a 4%
+margin, so a 150dp box with a -6dp end margin leaves the ~138dp-wide head just
+kissing the edge, clipped by the corner rounding rather than sliced. Re-derive
+both if the art's padding ever changes. Keep the art clear of the rounded
+corners: below Android 12 the background shape does not clip its children.
 
 A home-screen widget cannot see the app's state. It is drawn by the launcher's
 process, usually with this app's process dead, and everything the app knows
