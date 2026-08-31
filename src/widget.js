@@ -106,6 +106,69 @@ export function moodSchedule({ done = 0, goal = G.DEFAULT_GOAL_CARDS, streak = 0
   return out;
 }
 
+// ---------- the message line ----------
+// The sentence under the streak, per mood. Kept here rather than in Java for
+// the same reason the mood ladder is: it is copy, it will be rewritten a
+// dozen times, and every rewrite should be one file and one test away.
+//
+// Short on purpose — the widget gives this line about half its width, and an
+// ellipsised sentence says less than a blunt one.
+export function messageFor(mood, { done = 0, goal = G.DEFAULT_GOAL_CARDS, streak = 0 } = {}) {
+  const left = Math.max(0, goal - done);
+  if (mood === HAPPY) return "All done for today";
+  if (mood === "waiting") return `${left} to go today`;
+  if (mood === "worried") {
+    return streak > 0 ? `${left} left to keep your streak` : `${left} to go today`;
+  }
+  if (mood === "sad") {
+    return streak > 0 ? `Don't lose ${streak} days tonight` : `${left} to go today`;
+  }
+  return `${done} of ${goal} today`; // sleepy, neutral
+}
+
+// Every message the day can produce, as {mood: line}. The whole set goes over
+// because the mood advances with the app closed — sending only the current
+// line would freeze the sentence at whatever it said this morning.
+export function messagesFor(args) {
+  const out = {};
+  for (const mood of [...MOODS, HAPPY]) out[mood] = messageFor(mood, args);
+  return out;
+}
+
+// ---------- the day strip ----------
+// The last few days, oldest first, as the widget's row of ticks. A rolling
+// window ending today rather than a calendar week: the point is "have I kept
+// this up", and on a Monday a calendar week is one box and six blanks.
+export const DAY_WINDOW = 5;
+
+export const DAY_NONE = 0;
+export const DAY_MET = 1;
+export const DAY_FROZEN = 2;
+
+export function dayWindow(game, endKey, size = DAY_WINDOW) {
+  const out = [];
+  for (let i = size - 1; i >= 0; i--) {
+    const key = G.addDays(endKey, -i);
+    const h = game.history[key];
+    const goal = game.goalCards || G.DEFAULT_GOAL_CARDS;
+    // Same test reminders.js uses: `goalMet` is set when a session records it,
+    // but a day whose count already covers the goal is met either way.
+    const met = !!(h && (h.goalMet || h.cards >= goal));
+    // A frozen day is not a day the user studied, and drawing it as one would
+    // be a lie the streak itself doesn't tell — it gets its own mark.
+    const frozen = Array.isArray(game.frozenDays) && game.frozenDays.includes(key);
+    out.push({ key, state: met ? DAY_MET : frozen ? DAY_FROZEN : DAY_NONE });
+  }
+  return out;
+}
+
+// `2026-08-27:1,2026-08-28:0`. The day keys travel rather than weekday names
+// so the native side can label them in the phone's own locale — the app is in
+// English, but "Do Fr Sa" is what a German phone should say.
+export function encodeDays(days) {
+  return days.map(d => `${d.key}:${d.state}`).join(",");
+}
+
 // `120:neutral,600:waiting` — one flat string rather than nested JSON,
 // because it crosses the Capacitor bridge and then lives in SharedPreferences,
 // and neither is a good place to discover a parser bug.
@@ -134,6 +197,8 @@ export function snapshot(game, now = new Date()) {
   const streak = game.streak || 0;
   const done = Math.min(stats.cards, goal);
 
+  const tomorrow = G.addDays(day, 1);
+
   return {
     day,
     streak,
@@ -142,9 +207,14 @@ export function snapshot(game, now = new Date()) {
     mascot: normalizeMascot(game.mascot),
     // Today, as it actually stands.
     today: encodeSchedule(moodSchedule({ done: stats.cards, goal, streak })),
+    messages: JSON.stringify(messagesFor({ done: stats.cards, goal, streak })),
+    days: encodeDays(dayWindow(game, day)),
     // And the day after midnight, which the app will almost certainly not be
-    // open to see: nothing done, streak carried over.
+    // open to see: nothing done, streak carried over, the strip rolled on by
+    // one so today's tick keeps whatever it earned.
     nextDay: encodeSchedule(moodSchedule({ done: 0, goal, streak })),
+    nextDayMessages: JSON.stringify(messagesFor({ done: 0, goal, streak })),
+    nextDays: encodeDays(dayWindow(game, tomorrow)),
   };
 }
 

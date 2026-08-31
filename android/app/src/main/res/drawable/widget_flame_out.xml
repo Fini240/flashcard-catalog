@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The same flame, gone cold: the day is still open. Duolingo greys its
+     flame for exactly this, and it reads faster than any number. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:pathData="M12,23 C7.6,23 4,19.4 4,15 C4,10 8,6.5 10,1 C10,5.2 13,6.2 14,8.8 C15,7.2 15.4,5.6 15.4,4 C18.6,7 20,11 20,15 C20,19.4 16.4,23 12,23 Z" android:fillColor="@color/widget_on_dark_faint" />
+</vector>

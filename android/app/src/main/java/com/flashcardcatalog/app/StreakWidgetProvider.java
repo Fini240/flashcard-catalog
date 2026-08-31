@@ -7,10 +7,10 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.view.View;
 import android.widget.RemoteViews;
 
 import java.util.Calendar;
-import java.util.Locale;
 
 /**
  * The home-screen widget: the streak, today's progress towards the daily goal,
@@ -58,37 +58,81 @@ public class StreakWidgetProvider extends AppWidgetProvider {
         }
     }
 
+    /** The five day-strip columns, in the order the layout draws them. */
+    private static final int[] DAY_LABELS = {
+        R.id.widget_day0_label, R.id.widget_day1_label, R.id.widget_day2_label,
+        R.id.widget_day3_label, R.id.widget_day4_label,
+    };
+    private static final int[] DAY_DOTS = {
+        R.id.widget_day0_dot, R.id.widget_day1_dot, R.id.widget_day2_dot,
+        R.id.widget_day3_dot, R.id.widget_day4_dot,
+    };
+
     private static void render(Context context, AppWidgetManager manager, int appWidgetId) {
         SharedPreferences p = WidgetState.prefs(context);
         Calendar now = Calendar.getInstance();
         boolean stale = WidgetState.isStale(p, now);
 
         int streak = p.getInt(WidgetState.KEY_STREAK, 0);
-        int goal = Math.max(1, p.getInt(WidgetState.KEY_GOAL, 20));
-        int done = Math.min(WidgetState.done(p, stale), goal);
         String mascot = p.getString(WidgetState.KEY_MASCOT, WidgetState.DEFAULT_MASCOT);
         String mood = WidgetState.mood(p, now, stale);
+        String message = WidgetState.message(p, mood, stale);
+        boolean done = WidgetState.HAPPY.equals(mood);
 
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_streak);
+
+        // The mood is carried by the card colour and the face together. Either
+        // alone is legible; both is what makes it readable without focusing.
+        views.setInt(R.id.widget_root, "setBackgroundResource",
+            WidgetState.backgroundFor(context, mood));
         views.setImageViewResource(R.id.widget_mascot, WidgetState.drawableFor(context, mascot, mood));
-        views.setTextViewText(R.id.widget_streak, String.valueOf(streak));
-        views.setTextViewText(R.id.widget_streak_label, context.getString(R.string.widget_day_streak));
-        views.setProgressBar(R.id.widget_progress, goal, done, false);
-        views.setTextViewText(R.id.widget_goal,
-            String.format(Locale.getDefault(), "%d / %d", done, goal));
+        views.setImageViewResource(R.id.widget_flame,
+            done ? R.drawable.widget_flame_lit : R.drawable.widget_flame_out);
+
+        String headline = context.getString(
+            streak == 1 ? R.string.widget_day_streak_n : R.string.widget_days_streak_n, streak);
+        views.setTextViewText(R.id.widget_streak, headline);
+        views.setTextViewText(R.id.widget_message, message);
+
+        renderDays(views, WidgetState.days(p, stale));
 
         // The whole widget is one target — a home screen is a place for one
         // tap, not for hunting a small button.
         views.setOnClickPendingIntent(R.id.widget_root, launchApp(context));
 
-        // Screen readers get the sentence a sighted user assembles from four
-        // separate views, mood included: without it the mascot is announced as
-        // an unlabelled image and the point of the widget is lost.
-        views.setContentDescription(R.id.widget_root, context.getString(
-            done >= goal ? R.string.widget_a11y_done : R.string.widget_a11y_todo,
-            streak, done, goal));
+        // Screen readers get the sentence a sighted user assembles from the
+        // headline, the message and a drawing. Without it the mascot is
+        // announced as an unlabelled image and the point of the widget is lost.
+        views.setContentDescription(R.id.widget_root,
+            context.getString(R.string.widget_a11y, headline, message));
 
         manager.updateAppWidget(appWidgetId, views);
+    }
+
+    /**
+     * Fills the strip, hiding any column the snapshot didn't supply. Hiding
+     * rather than leaving blank matters on a fresh install, where there is no
+     * snapshot at all: five unlabelled empty circles look like a bug, and an
+     * absent strip looks like a widget waiting for its first session.
+     */
+    private static void renderDays(RemoteViews views, WidgetState.Day[] days) {
+        for (int i = 0; i < DAY_DOTS.length; i++) {
+            if (i >= days.length) {
+                views.setViewVisibility(DAY_LABELS[i], View.GONE);
+                views.setViewVisibility(DAY_DOTS[i], View.GONE);
+                continue;
+            }
+            views.setViewVisibility(DAY_LABELS[i], View.VISIBLE);
+            views.setViewVisibility(DAY_DOTS[i], View.VISIBLE);
+            views.setTextViewText(DAY_LABELS[i], days[i].label);
+            views.setImageViewResource(DAY_DOTS[i], dotFor(days[i].state));
+        }
+    }
+
+    private static int dotFor(int state) {
+        if (state == WidgetState.DAY_MET) return R.drawable.widget_day_done;
+        if (state == WidgetState.DAY_FROZEN) return R.drawable.widget_day_frozen;
+        return R.drawable.widget_day_todo;
     }
 
     private static PendingIntent launchApp(Context context) {

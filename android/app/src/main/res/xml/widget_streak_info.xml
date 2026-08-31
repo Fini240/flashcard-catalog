@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 4x2, the shape the layout is drawn for: the mascot needs width beside the
+     text, not above it. Still resizable, and the mascot is designed to be cut
+     off, so a narrower cell simply shows less of it. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="110dp"
+    android:minWidth="250dp"
     android:minHeight="110dp"
-    android:minResizeWidth="110dp"
+    android:minResizeWidth="180dp"
     android:minResizeHeight="110dp"
-    android:targetCellWidth="2"
+    android:targetCellWidth="4"
     android:targetCellHeight="2"
-    android:maxResizeWidth="250dp"
-    android:maxResizeHeight="250dp"
+    android:maxResizeWidth="400dp"
+    android:maxResizeHeight="200dp"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:initialLayout="@layout/widget_streak"

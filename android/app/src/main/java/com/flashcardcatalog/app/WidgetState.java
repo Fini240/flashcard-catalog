@@ -3,6 +3,9 @@ package com.flashcardcatalog.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import org.json.JSONObject;
+
+import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Locale;
 
@@ -36,11 +39,22 @@ final class WidgetState {
     static final String KEY_MASCOT = "mascot";
     static final String KEY_TODAY = "today";
     static final String KEY_NEXT_DAY = "nextDay";
+    static final String KEY_MESSAGES = "messages";
+    static final String KEY_NEXT_MESSAGES = "nextDayMessages";
+    static final String KEY_DAYS = "days";
+    static final String KEY_NEXT_DAYS = "nextDays";
+
+    /** Marks in the day strip; mirrors DAY_* in src/widget.js. */
+    static final int DAY_NONE = 0;
+    static final int DAY_MET = 1;
+    static final int DAY_FROZEN = 2;
 
     /** Mirrors DEFAULT_MASCOT in src/widget.js. */
     static final String DEFAULT_MASCOT = "owl";
     /** Mirrors MOODS[0] there — what an empty or unparseable schedule means. */
     private static final String DEFAULT_MOOD = "sleepy";
+    /** Mirrors HAPPY there: the goal is met, and the flame is alight. */
+    static final String HAPPY = "happy";
 
     private WidgetState() {}
 
@@ -48,8 +62,9 @@ final class WidgetState {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    static void write(Context context, String day, int streak, int done, int goal,
-                      String mascot, String today, String nextDay) {
+    static void write(Context context, String day, int streak, int done, int goal, String mascot,
+                      String today, String nextDay, String messages, String nextMessages,
+                      String days, String nextDays) {
         prefs(context)
             .edit()
             .putString(KEY_DAY, day)
@@ -59,6 +74,10 @@ final class WidgetState {
             .putString(KEY_MASCOT, mascot)
             .putString(KEY_TODAY, today)
             .putString(KEY_NEXT_DAY, nextDay)
+            .putString(KEY_MESSAGES, messages)
+            .putString(KEY_NEXT_MESSAGES, nextMessages)
+            .putString(KEY_DAYS, days)
+            .putString(KEY_NEXT_DAYS, nextDays)
             .apply();
     }
 
@@ -119,6 +138,84 @@ final class WidgetState {
             mood = part.substring(colon + 1);
         }
         return mood;
+    }
+
+    /**
+     * The line under the streak. Every mood's message is sent, not just the
+     * current one, because the mood advances with the app closed — picking one
+     * here would freeze the sentence at whatever it said this morning.
+     */
+    static String message(SharedPreferences p, String mood, boolean stale) {
+        String json = p.getString(stale ? KEY_NEXT_MESSAGES : KEY_MESSAGES, "");
+        if (json == null || json.isEmpty()) return "";
+        try {
+            return new JSONObject(json).optString(mood, "");
+        } catch (Exception e) {
+            // Bad JSON must not take down the launcher's process. A widget with
+            // no message line still shows the streak, the strip and the mascot.
+            return "";
+        }
+    }
+
+    /** One entry of the day strip: a short weekday label and a state mark. */
+    static final class Day {
+        final String label;
+        final int state;
+        Day(String label, int state) {
+            this.label = label;
+            this.state = state;
+        }
+    }
+
+    /**
+     * Parses {@code 2026-08-27:1,2026-08-28:0} into labelled days.
+     *
+     * <p>Day *keys* travel rather than weekday names so the label can be
+     * formatted here, in the phone's own locale: the app is in English, but a
+     * German phone should read "Do Fr Sa".
+     */
+    static Day[] days(SharedPreferences p, boolean stale) {
+        String encoded = p.getString(stale ? KEY_NEXT_DAYS : KEY_DAYS, "");
+        if (encoded == null || encoded.isEmpty()) return new Day[0];
+        String[] parts = encoded.split(",");
+        Day[] out = new Day[parts.length];
+        SimpleDateFormat label = new SimpleDateFormat("EEE", Locale.getDefault());
+        int n = 0;
+        for (String part : parts) {
+            int colon = part.lastIndexOf(':');
+            if (colon <= 0 || colon == part.length() - 1) continue;
+            int state;
+            try {
+                state = Integer.parseInt(part.substring(colon + 1));
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            out[n++] = new Day(labelFor(part.substring(0, colon), label), state);
+        }
+        if (n == out.length) return out;
+        Day[] trimmed = new Day[n];
+        System.arraycopy(out, 0, trimmed, 0, n);
+        return trimmed;
+    }
+
+    private static String labelFor(String dayKey, SimpleDateFormat format) {
+        String[] ymd = dayKey.split("-");
+        if (ymd.length != 3) return "";
+        try {
+            Calendar c = Calendar.getInstance();
+            c.clear();
+            c.set(Integer.parseInt(ymd[0]), Integer.parseInt(ymd[1]) - 1, Integer.parseInt(ymd[2]));
+            return format.format(c.getTime());
+        } catch (NumberFormatException e) {
+            return "";
+        }
+    }
+
+    /** The card's background, which carries the mood as much as the face does. */
+    static int backgroundFor(Context context, String mood) {
+        int id = context.getResources().getIdentifier(
+            "widget_bg_" + mood, "drawable", context.getPackageName());
+        return id != 0 ? id : R.drawable.widget_bg_neutral;
     }
 
     /**

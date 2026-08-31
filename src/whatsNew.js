@@ -64,8 +64,8 @@ export const RELEASES = [
     version: "1.2.3",
     date: "2026-08-31",
     items: [
-      "A home-screen widget: your streak, how much of today's goal is left, and an animal that keeps an eye on both. Long-press your home screen \u2192 Widgets to add it.",
-      "Pick which animal \u2014 owl, cat, fox, bunny or panda \u2014 in Settings. It's asleep in the morning, watchful by the afternoon, worried by the evening if your streak is on the line, and delighted the moment you finish.",
+      "A home-screen widget: your streak, what's left of today's goal, the last five days at a glance, and an animal watching over all of it. Long-press your home screen \u2192 Widgets to add it.",
+      "Pick which animal \u2014 owl, cat, fox, bunny or panda \u2014 in Settings. It's asleep in the morning, watchful by the afternoon, worried by the evening if your streak is on the line, and delighted the moment you finish. The whole widget changes colour with it, so you can read the day off it without looking properly.",
     ],
   },
   {

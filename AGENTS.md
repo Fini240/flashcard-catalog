@@ -450,16 +450,30 @@ Play Store compatibility problem).
 
 ## The widget, in one paragraph
 
+Laid out after Duolingo's streak widget, which the user asked for by
+screenshot: a 4x2 card whose **whole background is tinted by the mood**
+(`widget_bg_<mood>.xml`), the streak and a one-line message down the left, a
+five-day strip of ticks under them, and the mascot large on the right,
+**running off the edge**. The bleed is the point — art scaled to fit inside
+its box reads as an icon, art too big for the widget reads as a character
+standing behind the numbers. It is a negative end margin plus the parent's own
+clipping, so nothing about it changes with the cell size. Keep the mascot clear
+of the rounded corners: below Android 12 the background shape does not clip its
+children.
+
 A home-screen widget cannot see the app's state. It is drawn by the launcher's
 process, usually with this app's process dead, and everything the app knows
 lives in the WebView's `localStorage` — so the widget gets a snapshot in
 `SharedPreferences` and nothing else. The trap is then obvious in hindsight:
 anything the widget has to *decide* is either a second copy of the rules in
 Java or a stale answer. So `src/widget.js` precomputes the mascot's whole day
-as a schedule (`0:sleepy,600:neutral,840:waiting`), plus a second schedule for
-the day after midnight, and `WidgetState.java` only looks up which entry covers
-the current minute. **Put policy in widget.js and lookups in Java, never the
-other way round.**
+as a schedule (`0:sleepy,600:neutral,840:waiting`), and sends *every* mood's
+message line rather than the current one — both, plus the day strip, in a
+second copy for the day after midnight. `WidgetState.java` only looks up which
+entry covers the current minute. **Put policy in widget.js and lookups in Java,
+never the other way round.** The one thing Java does compute is the weekday
+labels, from the day keys, so a German phone reads "Do Fr Sa" even though the
+app is in English.
 
 Three things redraw it: the app pushing after a session or a settings change,
 the system's 30-minute `updatePeriodMillis` (which is what walks the mood up
@@ -471,6 +485,10 @@ Two things to know before editing:
 - **The mascot art is generated.** Editing a `mascot_*.xml` by hand is wasted
   work — `scripts/mascots.mjs` deletes the whole `mascot_*` namespace and
   rewrites it. Change the spec there and re-run it.
+- **The day strip is five hand-written columns** in the layout, not a loop:
+  `RemoteViews` inflates a fixed view tree, so there is nowhere to generate
+  them. `DAY_LABELS`/`DAY_DOTS` in the provider are the bridge, and a column
+  the snapshot didn't supply is hidden rather than left blank.
 - **`WidgetState.drawableFor` resolves art by name**, which is safe only
   because R8 and resource shrinking are off (see `minifyEnabled` in
   `app/build.gradle`). Turning either on strips every mascot drawable, because

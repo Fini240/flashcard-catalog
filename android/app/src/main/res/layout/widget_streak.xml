@@ -1,68 +1,137 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- RemoteViews: only the handful of views a launcher is allowed to inflate
-     appear here (LinearLayout, ImageView, TextView, ProgressBar). Sized to
-     stay legible in the smallest cell the provider advertises, 2x2. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  The Duolingo shape: everything readable stacked down the left, the mascot
+  large on the right and running off the edge.
+
+  The bleed is the whole trick. A mascot scaled to fit inside its box reads as
+  an icon; one that is too big for the widget and gets cut off reads as a
+  character standing behind the numbers. It is done with a negative end margin
+  and the parent's own clipping — no scaling maths, nothing that changes with
+  the cell size.
+
+  RemoteViews will only inflate a handful of view types, which is why the day
+  strip is five hand-written columns rather than anything generated.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:background="@drawable/widget_background"
-    android:padding="10dp">
+    android:background="@drawable/widget_bg_neutral">
 
+    <!-- Drawn first so the text sits over it where the two overlap. Kept
+         vertically centred and clear of the rounded corners: below Android 12
+         the background shape does not clip its children, so art reaching a
+         corner would square off over the rounding. -->
     <ImageView
         android:id="@+id/widget_mascot"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:minHeight="40dp"
-        android:adjustViewBounds="true"
+        android:layout_width="118dp"
+        android:layout_height="118dp"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="-26dp"
         android:scaleType="fitCenter"
         android:importantForAccessibility="no" />
 
     <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:baselineAligned="false"
-        android:gravity="bottom"
-        android:layout_marginTop="4dp">
-
-        <TextView
-            android:id="@+id/widget_streak"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@color/widget_streak"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:includeFontPadding="false" />
-
-        <TextView
-            android:id="@+id/widget_streak_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:layout_marginBottom="2dp"
-            android:textColor="@color/widget_muted"
-            android:textSize="11sp"
-            android:includeFontPadding="false" />
-    </LinearLayout>
-
-    <ProgressBar
-        android:id="@+id/widget_progress"
-        style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="6dp"
-        android:layout_marginTop="7dp"
-        android:progressDrawable="@drawable/widget_progress" />
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_vertical"
+        android:paddingStart="14dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
 
-    <TextView
-        android:id="@+id/widget_goal"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textColor="@color/widget_muted"
-        android:textSize="11sp"
-        android:includeFontPadding="false" />
-</LinearLayout>
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/widget_flame"
+                android:layout_width="21dp"
+                android:layout_height="21dp"
+                android:layout_marginEnd="5dp"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:id="@+id/widget_streak"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/widget_on_dark"
+                android:textSize="26sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_message"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:textColor="@color/widget_on_dark_muted"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:includeFontPadding="false" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="11dp">
+
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
+                <TextView android:id="@+id/widget_day0_label" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="10sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day0_dot" android:layout_width="18dp"
+                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
+                <TextView android:id="@+id/widget_day1_label" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="10sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day1_dot" android:layout_width="18dp"
+                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
+                <TextView android:id="@+id/widget_day2_label" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="10sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day2_dot" android:layout_width="18dp"
+                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
+                <TextView android:id="@+id/widget_day3_label" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="10sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day3_dot" android:layout_width="18dp"
+                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical" android:gravity="center_horizontal">
+                <TextView android:id="@+id/widget_day4_label" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="10sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day4_dot" android:layout_width="18dp"
+                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

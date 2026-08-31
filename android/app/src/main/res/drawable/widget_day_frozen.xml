@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A day a streak freeze covered. Marked apart from a studied day on
+     purpose: the streak survived it, but nobody studied. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="18dp"
+    android:height="18dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:pathData="M12,3 a9,9 0 1,0 0,18 a9,9 0 1,0 0,-18 Z" android:fillColor="@color/widget_frozen" />
+    <path android:pathData="M12,7.6 L12,16.4 M8.2,9.8 L15.8,14.2 M15.8,9.8 L8.2,14.2"
+        android:strokeColor="#16233F" android:strokeWidth="1.8" android:strokeLineCap="round" />
+</vector>

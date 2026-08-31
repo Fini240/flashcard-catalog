@@ -27,7 +27,11 @@ public class StreakWidgetPlugin extends Plugin {
             call.getInt("goal", 20),
             call.getString("mascot", WidgetState.DEFAULT_MASCOT),
             call.getString("today", ""),
-            call.getString("nextDay", "")
+            call.getString("nextDay", ""),
+            call.getString("messages", ""),
+            call.getString("nextDayMessages", ""),
+            call.getString("days", ""),
+            call.getString("nextDays", "")
         );
         // Writing without redrawing would leave the old picture up until the
         // system's next half-hourly tick, which is the difference between
