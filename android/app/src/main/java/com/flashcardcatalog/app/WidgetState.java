@@ -223,7 +223,7 @@ final class WidgetState {
      *
      * <p>Resolving by name rather than a thirty-arm switch is safe here only
      * because the drawables are generated as a complete grid by
-     * scripts/mascots.mjs, and because neither R8 nor resource shrinking runs
+     * scripts/mascot_sheets.py, and because neither R8 nor resource shrinking runs
      * on this app (see minifyEnabled in app/build.gradle) — a shrinker would
      * see no code reference to any of them and strip the lot. If shrinking is
      * ever turned on, these need a keep rule or a real switch.

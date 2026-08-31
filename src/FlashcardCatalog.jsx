@@ -2996,10 +2996,15 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
                       border: `1.5px solid ${selected ? "var(--brand)" : "var(--card-border)"}`,
                       borderRadius: 12,
                     }}
-                    /* Generated art from scripts/mascots.mjs — build-time
-                       constants from this repo, never anything a user typed. */
-                    dangerouslySetInnerHTML={{ __html: widget.mascotArt(m.id, mascotMood) }}
-                  />
+                  >
+                    {/* Shown in the mood the widget is in right now, so the
+                        choice is between the faces you will actually see. */}
+                    <img
+                      src={widget.mascotArt(m.id, mascotMood)}
+                      alt=""
+                      style={{ width: "100%", height: "auto", display: "block" }}
+                    />
+                  </button>
                 );
               })}
             </div>

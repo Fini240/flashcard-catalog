@@ -76,8 +76,8 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/social.js` | Friend codes, usernames, public `profiles/` docs, nudges, friends + global leaderboards |
 | `src/reminders.js` | Daily study reminder — local notifications, scheduled on-device |
 | `src/widget.js` | **The home-screen widget's brain.** The mascot catalogue, the mood ladder, and the snapshot handed to the native side. The widget itself decides nothing — read the header before changing either half. |
-| `src/mascotArt.js` | Generated. The mascot drawings as SVG, for the picker in Settings. |
-| `scripts/mascots.mjs` | Generates that file *and* the 30 `res/drawable/mascot_*.xml` VectorDrawables from one description. Run `node scripts/mascots.mjs` after touching it; the output is committed. |
+| `public/mascots/*.png` | The mascot art for the picker in Settings. Referenced by URL, not imported, so it stays out of the JS bundle. |
+| `scripts/mascot_sheets.py` | Cuts a generated expression sheet into the 30 mascot images — `res/drawable-nodpi/` for the widget and `public/mascots/` for the picker. Run by hand when the art changes; the output is committed. |
 | `android/.../StreakWidget*.java` | The native half: a Capacitor plugin that stores the snapshot, and an AppWidgetProvider that draws it. |
 | `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore` |
 | `firestore.indexes.json` | Composite index behind the global board. Deployed by the same command. |
@@ -461,14 +461,14 @@ clipping, so nothing about it changes with the cell size. Keep the mascot clear
 of the rounded corners: below Android 12 the background shape does not clip its
 children.
 
-**Sizing that bleed has a trap.** The art carries ~21% of its viewport as
-transparent padding on each side, so the first attempt (118dp box, -26dp
-margin) cropped nothing — the margin was spent entirely on empty space, and a
-device screenshot showed the head's right edge landing exactly on the card
-edge. The box has to be large enough that the *head* reaches the margin. The
-head is 57% of the viewport width, so at a box of *W* the head is 0.57W and a
-margin of *M* cuts `M - 0.215W` off it. Current values: 190dp and -68dp, which
-takes about a quarter of the head.
+**Sizing that bleed has a trap:** the margin is spent on the art's own
+transparent padding before it reaches the animal. The first attempt (118dp box,
+-26dp margin) against art that was 21% padding a side cropped nothing at all,
+and a device screenshot showed the head's right edge landing exactly on the
+card edge. The generated art is trimmed to a 4% margin, so a box of *W* and a
+margin of *M* cut `M - 0.04W` off a head that is 0.92W wide. Current values:
+170dp and -48dp, about a quarter of the head. **Re-derive both if the art's
+padding changes** — that is what caught this out the first time.
 
 A home-screen widget cannot see the app's state. It is drawn by the launcher's
 process, usually with this app's process dead, and everything the app knows
@@ -491,9 +491,17 @@ and clock/timezone changes. There is no background job and nothing to schedule.
 
 Two things to know before editing:
 
-- **The mascot art is generated.** Editing a `mascot_*.xml` by hand is wasted
-  work — `scripts/mascots.mjs` deletes the whole `mascot_*` namespace and
-  rewrites it. Change the spec there and re-run it.
+- **The mascot art is generated image art, cut from expression sheets.** Five
+  sheets (one per animal, six moods in a 3x2 grid) were generated through the
+  Higgsfield MCP tools and cut up by `scripts/mascot_sheets.py`. It is not part
+  of any build — it runs by hand, and both output directories are committed.
+  Three things in that script exist because of specific failures, and its
+  header explains each: the background needs a flood fill rather than a
+  threshold (the eyes' sclera is the same white), the fill is seeded per cell
+  (a separator line walls some cells off from the sheet border), and
+  `CELL_ORDER` remaps two sheets whose moods came out in the wrong cells.
+  Everything is palette-quantised — flat art loses nothing, and it takes the
+  set from 12.6MB to under 900KB.
 - **The day strip is five hand-written columns** in the layout, not a loop:
   `RemoteViews` inflates a fixed view tree, so there is nowhere to generate
   them. `DAY_LABELS`/`DAY_DOTS` in the provider are the bridge, and a column

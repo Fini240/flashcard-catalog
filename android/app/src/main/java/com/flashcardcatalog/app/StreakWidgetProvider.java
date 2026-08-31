@@ -67,6 +67,11 @@ public class StreakWidgetProvider extends AppWidgetProvider {
         R.id.widget_day0_dot, R.id.widget_day1_dot, R.id.widget_day2_dot,
         R.id.widget_day3_dot, R.id.widget_day4_dot,
     };
+    /** The joins *between* the marks — one fewer than there are days. */
+    private static final int[] DAY_LINKS = {
+        R.id.widget_day0_link, R.id.widget_day1_link,
+        R.id.widget_day2_link, R.id.widget_day3_link,
+    };
 
     private static void render(Context context, AppWidgetManager manager, int appWidgetId) {
         SharedPreferences p = WidgetState.prefs(context);
@@ -117,15 +122,23 @@ public class StreakWidgetProvider extends AppWidgetProvider {
      */
     private static void renderDays(RemoteViews views, WidgetState.Day[] days) {
         for (int i = 0; i < DAY_DOTS.length; i++) {
-            if (i >= days.length) {
-                views.setViewVisibility(DAY_LABELS[i], View.GONE);
-                views.setViewVisibility(DAY_DOTS[i], View.GONE);
-                continue;
-            }
-            views.setViewVisibility(DAY_LABELS[i], View.VISIBLE);
-            views.setViewVisibility(DAY_DOTS[i], View.VISIBLE);
+            boolean present = i < days.length;
+            views.setViewVisibility(DAY_LABELS[i], present ? View.VISIBLE : View.GONE);
+            views.setViewVisibility(DAY_DOTS[i], present ? View.VISIBLE : View.GONE);
+            if (!present) continue;
             views.setTextViewText(DAY_LABELS[i], days[i].label);
             views.setImageViewResource(DAY_DOTS[i], dotFor(days[i].state));
+        }
+        for (int i = 0; i < DAY_LINKS.length; i++) {
+            // Only two *studied* days join up. A freeze keeps the streak alive
+            // but is not part of the run, and drawing it into the capsule
+            // would claim the user was there when they weren't.
+            boolean join = i + 1 < days.length
+                && days[i].state == WidgetState.DAY_MET
+                && days[i + 1].state == WidgetState.DAY_MET;
+            // INVISIBLE, not GONE: the join occupies the gap between two marks,
+            // so removing it from the layout would slide the whole strip left.
+            views.setViewVisibility(DAY_LINKS[i], join ? View.VISIBLE : View.INVISIBLE);
         }
     }
 

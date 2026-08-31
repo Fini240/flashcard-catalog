@@ -9,12 +9,13 @@
   and the parent's own clipping — no scaling maths, nothing that changes with
   the cell size.
 
-  Sizing the bleed is less obvious than it looks. The art carries about 21% of
-  its own viewport as transparent padding on each side, so the first attempt
-  (118dp box, -26dp margin) cropped nothing at all — the margin was spent
-  entirely on empty space and the mascot simply sat near the edge. The box has
-  to be big enough that the *head* reaches the margin: at 190dp the head is
-  ~109dp across, and -68dp cuts about a quarter off it.
+  Sizing the bleed is less obvious than it looks, because the margin is spent
+  on the art's transparent padding before it reaches the animal. The first
+  attempt (118dp box, -26dp margin) against art that was 21% padding a side
+  cropped nothing at all — the mascot simply sat flush to the edge. With the
+  generated art, trimmed to a 4% margin, a box of W and a margin of M cut
+  `M - 0.04W` off a head that is 0.92W wide: 170dp and -48dp take about a
+  quarter. Re-derive both numbers if the art's padding ever changes.
 
   The box is also deliberately taller than a 4x2 cell. On a short cell it
   overflows top and bottom and gets clipped, which is the look; on a tall one
@@ -35,10 +36,10 @@
          corner would square off over the rounding. -->
     <ImageView
         android:id="@+id/widget_mascot"
-        android:layout_width="190dp"
-        android:layout_height="190dp"
+        android:layout_width="170dp"
+        android:layout_height="170dp"
         android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="-68dp"
+        android:layout_marginEnd="-48dp"
         android:scaleType="fitCenter"
         android:importantForAccessibility="no" />
 
@@ -88,59 +89,127 @@
             android:ellipsize="end"
             android:includeFontPadding="false" />
 
+        <!--
+          The day strip, as two aligned rows rather than five columns: the
+          labels need to sit above the marks, but the marks need to be able to
+          *join up*. Two consecutive met days are drawn as one capsule the way
+          Duolingo does it, which is what makes a run read as a streak instead
+          of five separate ticks — and that join is a 9dp block filling the gap
+          between two circles, so it has to live in the same row as them.
+
+          Label widths match the mark widths (20dp) and both use the same 9dp
+          gap, so the two rows line up without any measuring.
+        -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
+            android:orientation="vertical"
             android:layout_marginTop="13dp">
 
-            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
-                <TextView android:id="@+id/widget_day0_label" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="11sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day0_dot" android:layout_width="20dp"
-                    android:layout_height="20dp" android:layout_marginTop="3dp"
-                    android:importantForAccessibility="no" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:id="@+id/widget_day0_label"
+                    android:layout_width="20dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                android:layout_marginEnd="9dp"
+                    android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="11sp"
+                    android:includeFontPadding="false" />
+                <TextView
+                    android:id="@+id/widget_day1_label"
+                    android:layout_width="20dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                android:layout_marginEnd="9dp"
+                    android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="11sp"
+                    android:includeFontPadding="false" />
+                <TextView
+                    android:id="@+id/widget_day2_label"
+                    android:layout_width="20dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                android:layout_marginEnd="9dp"
+                    android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="11sp"
+                    android:includeFontPadding="false" />
+                <TextView
+                    android:id="@+id/widget_day3_label"
+                    android:layout_width="20dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                android:layout_marginEnd="9dp"
+                    android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="11sp"
+                    android:includeFontPadding="false" />
+                <TextView
+                    android:id="@+id/widget_day4_label"
+                    android:layout_width="20dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                    android:textColor="@color/widget_on_dark_faint"
+                    android:textSize="11sp"
+                    android:includeFontPadding="false" />
             </LinearLayout>
 
-            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
-                <TextView android:id="@+id/widget_day1_label" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="11sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day1_dot" android:layout_width="20dp"
-                    android:layout_height="20dp" android:layout_marginTop="3dp"
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="3dp">
+                <ImageView
+                    android:id="@+id/widget_day0_dot"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:importantForAccessibility="no" />
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
-                <TextView android:id="@+id/widget_day2_label" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="11sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day2_dot" android:layout_width="20dp"
-                    android:layout_height="20dp" android:layout_marginTop="3dp"
+                <ImageView
+                    android:id="@+id/widget_day0_link"
+                    android:layout_width="9dp"
+                    android:layout_height="15dp"
+                    android:background="@color/widget_day_met"
                     android:importantForAccessibility="no" />
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
-                <TextView android:id="@+id/widget_day3_label" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="11sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day3_dot" android:layout_width="20dp"
-                    android:layout_height="20dp" android:layout_marginTop="3dp"
+                <ImageView
+                    android:id="@+id/widget_day1_dot"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:importantForAccessibility="no" />
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:orientation="vertical" android:gravity="center_horizontal">
-                <TextView android:id="@+id/widget_day4_label" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="11sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day4_dot" android:layout_width="20dp"
-                    android:layout_height="20dp" android:layout_marginTop="3dp"
+                <ImageView
+                    android:id="@+id/widget_day1_link"
+                    android:layout_width="9dp"
+                    android:layout_height="15dp"
+                    android:background="@color/widget_day_met"
+                    android:importantForAccessibility="no" />
+                <ImageView
+                    android:id="@+id/widget_day2_dot"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:importantForAccessibility="no" />
+                <ImageView
+                    android:id="@+id/widget_day2_link"
+                    android:layout_width="9dp"
+                    android:layout_height="15dp"
+                    android:background="@color/widget_day_met"
+                    android:importantForAccessibility="no" />
+                <ImageView
+                    android:id="@+id/widget_day3_dot"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:importantForAccessibility="no" />
+                <ImageView
+                    android:id="@+id/widget_day3_link"
+                    android:layout_width="9dp"
+                    android:layout_height="15dp"
+                    android:background="@color/widget_day_met"
+                    android:importantForAccessibility="no" />
+                <ImageView
+                    android:id="@+id/widget_day4_dot"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:importantForAccessibility="no" />
             </LinearLayout>
         </LinearLayout>

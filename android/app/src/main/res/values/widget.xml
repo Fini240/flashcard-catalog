@@ -20,7 +20,10 @@
     <color name="widget_on_dark_muted">#B8FFFFFF</color>
     <color name="widget_on_dark_faint">#8AFFFFFF</color>
     <color name="widget_streak">#F2C572</color>
-    <color name="widget_frozen">#8CC4E8</color>
+    <color name="widget_frozen">#6FB7E8</color>
+    <!-- The app's accent-warm token: the colour a streak is already drawn
+         in everywhere else in the app. -->
+    <color name="widget_day_met">#F2874E</color>
 
     <dimen name="widget_corner_radius">20dp</dimen>
 </resources>

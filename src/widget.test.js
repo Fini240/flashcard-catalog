@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { readdirSync } from "node:fs";
 import * as W from "./widget";
 import * as G from "./gamification";
 
@@ -29,22 +30,26 @@ describe("mascots", () => {
     expect(W.MOODS).not.toContain(W.HAPPY);
   });
 
-  // The native side resolves art by name (WidgetState.drawableFor), so a
-  // missing pair is not a build error there — it is an empty square on
-  // someone's home screen, and five blank boxes in the picker here.
-  it("every mascot has art for every mood, including happy", () => {
+  // The art is looked up by name on both sides — by URL here, and by resource
+  // name in WidgetState.drawableFor. A missing pair is not a build error
+  // either place: it is a broken image in the picker and an empty square on
+  // someone's home screen. This asserts the whole grid is named.
+  it("names art for every mascot in every mood, including happy", () => {
+    const files = readdirSync(new URL("../public/mascots", import.meta.url));
     for (const m of W.MASCOTS) {
       for (const mood of [...W.MOODS, W.HAPPY]) {
-        const art = W.mascotArt(m.id, mood);
-        expect(art, `${m.id}:${mood}`).toMatch(/^<svg /);
-        expect(art, `${m.id}:${mood}`).toContain("</svg>");
+        const url = W.mascotArt(m.id, mood);
+        expect(url, `${m.id}:${mood}`).toBe(`/mascots/${m.id}-${mood}.png`);
+        // …and the file behind that URL actually exists.
+        expect(files, `${m.id}:${mood}`).toContain(`${m.id}-${mood}.png`);
       }
     }
   });
 
-  it("draws something for an unknown animal or mood rather than nothing", () => {
-    expect(W.mascotArt("dragon", "happy")).toBe(W.mascotArt(W.DEFAULT_MASCOT, "happy"));
-    expect(W.mascotArt("fox", "furious")).toMatch(/^<svg /);
+  it("points at something real for an unknown animal or mood", () => {
+    expect(W.mascotArt("dragon", "happy")).toBe(`/mascots/${W.DEFAULT_MASCOT}-happy.png`);
+    // An unknown mood would 404, so it falls back rather than being passed on.
+    expect(W.mascotArt("fox", "furious")).toBe("/mascots/fox-neutral.png");
   });
 });
 
