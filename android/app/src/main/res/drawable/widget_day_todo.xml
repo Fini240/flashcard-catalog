@@ -5,5 +5,5 @@
     android:height="18dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <path android:pathData="M12,3 a9,9 0 1,0 0,18 a9,9 0 1,0 0,-18 Z" android:fillColor="@color/widget_on_dark_faint" android:fillAlpha="0.35" />
+    <path android:pathData="M12,3 a9,9 0 1,0 0,18 a9,9 0 1,0 0,-18 Z" android:fillColor="@color/widget_on_dark_faint" android:fillAlpha="0.42" />
 </vector>

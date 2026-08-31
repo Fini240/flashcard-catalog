@@ -461,6 +461,15 @@ clipping, so nothing about it changes with the cell size. Keep the mascot clear
 of the rounded corners: below Android 12 the background shape does not clip its
 children.
 
+**Sizing that bleed has a trap.** The art carries ~21% of its viewport as
+transparent padding on each side, so the first attempt (118dp box, -26dp
+margin) cropped nothing — the margin was spent entirely on empty space, and a
+device screenshot showed the head's right edge landing exactly on the card
+edge. The box has to be large enough that the *head* reaches the margin. The
+head is 57% of the viewport width, so at a box of *W* the head is 0.57W and a
+margin of *M* cuts `M - 0.215W` off it. Current values: 190dp and -68dp, which
+takes about a quarter of the head.
+
 A home-screen widget cannot see the app's state. It is drawn by the launcher's
 process, usually with this app's process dead, and everything the app knows
 lives in the WebView's `localStorage` — so the widget gets a snapshot in

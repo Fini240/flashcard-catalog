@@ -9,6 +9,17 @@
   and the parent's own clipping — no scaling maths, nothing that changes with
   the cell size.
 
+  Sizing the bleed is less obvious than it looks. The art carries about 21% of
+  its own viewport as transparent padding on each side, so the first attempt
+  (118dp box, -26dp margin) cropped nothing at all — the margin was spent
+  entirely on empty space and the mascot simply sat near the edge. The box has
+  to be big enough that the *head* reaches the margin: at 190dp the head is
+  ~109dp across, and -68dp cuts about a quarter off it.
+
+  The box is also deliberately taller than a 4x2 cell. On a short cell it
+  overflows top and bottom and gets clipped, which is the look; on a tall one
+  it fills space that otherwise reads as an unfinished card.
+
   RemoteViews will only inflate a handful of view types, which is why the day
   strip is five hand-written columns rather than anything generated.
 -->
@@ -24,10 +35,10 @@
          corner would square off over the rounding. -->
     <ImageView
         android:id="@+id/widget_mascot"
-        android:layout_width="118dp"
-        android:layout_height="118dp"
+        android:layout_width="190dp"
+        android:layout_height="190dp"
         android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="-26dp"
+        android:layout_marginEnd="-68dp"
         android:scaleType="fitCenter"
         android:importantForAccessibility="no" />
 
@@ -50,8 +61,8 @@
 
             <ImageView
                 android:id="@+id/widget_flame"
-                android:layout_width="21dp"
-                android:layout_height="21dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
                 android:layout_marginEnd="5dp"
                 android:importantForAccessibility="no" />
 
@@ -60,7 +71,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/widget_on_dark"
-                android:textSize="26sp"
+                android:textSize="30sp"
                 android:textStyle="bold"
                 android:maxLines="1"
                 android:includeFontPadding="false" />
@@ -72,7 +83,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="5dp"
             android:textColor="@color/widget_on_dark_muted"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:maxLines="1"
             android:ellipsize="end"
             android:includeFontPadding="false" />
@@ -81,15 +92,15 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="11dp">
+            android:layout_marginTop="13dp">
 
             <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
                 <TextView android:id="@+id/widget_day0_label" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="10sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day0_dot" android:layout_width="18dp"
-                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:textSize="11sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day0_dot" android:layout_width="20dp"
+                    android:layout_height="20dp" android:layout_marginTop="3dp"
                     android:importantForAccessibility="no" />
             </LinearLayout>
 
@@ -97,9 +108,9 @@
                 android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
                 <TextView android:id="@+id/widget_day1_label" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="10sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day1_dot" android:layout_width="18dp"
-                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:textSize="11sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day1_dot" android:layout_width="20dp"
+                    android:layout_height="20dp" android:layout_marginTop="3dp"
                     android:importantForAccessibility="no" />
             </LinearLayout>
 
@@ -107,9 +118,9 @@
                 android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
                 <TextView android:id="@+id/widget_day2_label" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="10sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day2_dot" android:layout_width="18dp"
-                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:textSize="11sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day2_dot" android:layout_width="20dp"
+                    android:layout_height="20dp" android:layout_marginTop="3dp"
                     android:importantForAccessibility="no" />
             </LinearLayout>
 
@@ -117,9 +128,9 @@
                 android:orientation="vertical" android:gravity="center_horizontal" android:layout_marginEnd="9dp">
                 <TextView android:id="@+id/widget_day3_label" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="10sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day3_dot" android:layout_width="18dp"
-                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:textSize="11sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day3_dot" android:layout_width="20dp"
+                    android:layout_height="20dp" android:layout_marginTop="3dp"
                     android:importantForAccessibility="no" />
             </LinearLayout>
 
@@ -127,9 +138,9 @@
                 android:orientation="vertical" android:gravity="center_horizontal">
                 <TextView android:id="@+id/widget_day4_label" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="10sp" android:includeFontPadding="false" />
-                <ImageView android:id="@+id/widget_day4_dot" android:layout_width="18dp"
-                    android:layout_height="18dp" android:layout_marginTop="3dp"
+                    android:textSize="11sp" android:includeFontPadding="false" />
+                <ImageView android:id="@+id/widget_day4_dot" android:layout_width="20dp"
+                    android:layout_height="20dp" android:layout_marginTop="3dp"
                     android:importantForAccessibility="no" />
             </LinearLayout>
         </LinearLayout>

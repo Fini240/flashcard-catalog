@@ -42,8 +42,8 @@ const EYE_L = 43;
 const EYE_R = 65;
 const MUZZLE = { cx: 54, cy: 77, rx: 14, ry: 10 };
 const DARK = "#2E2E33";
-// One warm gold for every animal's "you did it" sparkles: tinting them per
-// animal put a black sparkle on the fox, which reads as a smudge.
+// One warm gold for the "you did it" sparkle: tinting it per animal put a
+// black one on the fox, which reads as a smudge.
 const SPARKLE = "#F5B942";
 
 const ellipse = (cx, cy, rx, ry) =>
@@ -246,8 +246,9 @@ const MOODS = {
     ...closedUp(a),
     ...blush(a),
     ...mouthFill(a, "M44,75 q10,13 20,0 Z"),
-    sparkle(14, 25, 6.5, SPARKLE),
-    sparkle(95, 19, 5, SPARKLE),
+    // (20,22) is the one spot just outside every animal's left ear — checked
+    // against all five, since the ears are the part that differs most.
+    sparkle(20, 22, 6.5, SPARKLE),
   ],
 };
 
