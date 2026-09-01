@@ -26,15 +26,27 @@ export function PrimaryButton({ onClick, children, style, disabled }) {
   );
 }
 
-export function GhostButton({ onClick, children, style }) {
-  return (
-    <button onClick={onClick} style={{
-      background: "transparent", color: "#EDE6D3", border: "1px solid rgba(255,255,255,0.18)",
-      borderRadius: 10, padding: "13px 20px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: 15.5,
-      display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
-      WebkitTapHighlightColor: "transparent", ...style,
-    }}>{children}</button>
-  );
+// Given an href it is a real link rather than a button that navigates: the
+// download it is used for wants the browser's own handling — the long-press
+// menu, "save link as", and a middle click that doesn't leave the app.
+export function GhostButton({ onClick, children, style, href, download, ...rest }) {
+  const look = {
+    background: "transparent", color: "#EDE6D3", border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 10, padding: "13px 20px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: 15.5,
+    display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
+    WebkitTapHighlightColor: "transparent",
+  };
+  if (href) {
+    // inline-flex so a link shrink-wraps to its label the way the <button>
+    // does; a block-level flex container would stretch across the column and
+    // sit oddly next to its neighbours.
+    return (
+      <a href={href} download={download} rel="noopener" onClick={onClick}
+        style={{ ...look, display: "inline-flex", textDecoration: "none", boxSizing: "border-box", ...style }}
+        {...rest}>{children}</a>
+    );
+  }
+  return <button onClick={onClick} style={{ ...look, ...style }} {...rest}>{children}</button>;
 }
 
 export function TextField({ value, onChange, placeholder, area, style, ...rest }) {

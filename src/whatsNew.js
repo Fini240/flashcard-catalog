@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.2.4";
+export const APP_VERSION = "1.2.5";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,13 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.2.5",
+    date: "2026-09-01",
+    items: [
+      "The web version can hand you the Android app: Settings \u2192 Android app downloads the newest build directly, instead of sending you off to find it. A sideloaded app doesn't update itself, so that button is where the next version comes from too.",
+    ],
+  },
   {
     version: "1.2.4",
     date: "2026-09-01",

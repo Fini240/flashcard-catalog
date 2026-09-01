@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
   FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search, Download, ClipboardList,
-  Zap, Flag, Volume2
+  Zap, Flag, Volume2, Smartphone
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -13,6 +13,7 @@ import { extractTextFromFile, fileToBase64, isTextFile } from "./fileImport";
 import * as ocr from "./ocr";
 import * as ankiImport from "./ankiImport";
 import * as ankiDroid from "./ankiDroid";
+import * as appDownload from "./appDownload";
 import * as imageStore from "./imageStore";
 import {
   normalize, PrimaryButton, GhostButton, TextField, Label,
@@ -3160,6 +3161,32 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
         </p>
 
         <div style={{ height: 1, background: "var(--card-border)", margin: "18px 0" }} />
+
+        {/* The web version keeps telling you what needs the installed app —
+            reminders, the widget, sharing to AnkiDroid — and until now said
+            nothing about where to get it. */}
+        {appDownload.isOffered() && (
+          <>
+            <p style={{
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
+              textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
+            }}>Android app</p>
+            <GhostButton
+              href={appDownload.APK_URL}
+              download={appDownload.APK_FILENAME}
+              style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}
+            >
+              <Smartphone size={16} /> Download the Android app
+            </GhostButton>
+            <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "8px 0 18px", lineHeight: 1.45 }}>
+              Always the newest build — {APP_VERSION} as this page was published.
+              It installs from the file rather than from Play, so Android will
+              ask once whether your browser may install apps; there is no
+              automatic update, so come back here for the next one.
+            </p>
+          </>
+        )}
+
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",

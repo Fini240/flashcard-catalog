@@ -35,6 +35,7 @@ measures.
 
 - **Android APK** (latest stable):
   <https://github.com/Fini240/flashcard-catalog/releases/download/latest/flashcard-catalog.apk>
+  — or from the web app itself: Settings → Android app.
 - **Web app**: <https://flashcard-catalog.web.app>
 
 ## Built with

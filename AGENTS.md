@@ -85,6 +85,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/whatsNew.js` | `APP_VERSION`, the walkthrough copy and the release notes, plus the pure decision of which (if either) a launch owes the user. Unit-tested. |
 | `src/onboarding.jsx` | How those two look: the first-run walkthrough and the update note. |
 | `src/backHandler.js` | Android hardware/gesture back button → in-app navigation |
+| `src/appDownload.js` | The one link to the installed Android app — the rolling `latest` release asset, offered in Settings on the web only. |
 | `src/theme.js` | Light/dark choice — automatic (device), light or dark. Holds the migration off the old boolean switch; unit-tested. |
 | `functions/index.js` | Cloud Function `generateFlashcards`; `DAILY_LIMIT` (per user) and `GLOBAL_DAILY_LIMIT` (whole project) live here |
 | `scripts/screenshots.mjs` | Regenerates Play Store screenshots via puppeteer-core |
