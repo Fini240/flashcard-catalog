@@ -23,3 +23,52 @@ export const APK_FILENAME = "flashcard-catalog.apk";
 export function isOffered() {
   return !Capacitor.isNativePlatform();
 }
+
+// ---------- the banner ----------
+// Tucked in Settings, the download was findable and nothing more: the people
+// who most need the installed app are exactly the ones who never open
+// Settings. So the library screen offers it once, up front, and remembers
+// being turned down.
+
+export const BANNER_KEY = "flashcard-catalog-apk-banner-dismissed";
+
+// The decision, apart from the three facts it needs, so it can be tested
+// without a browser to have them in.
+export function shouldOfferBanner({ native, apple, dismissed }) {
+  if (native) return false;    // it is a link to the app you are already in
+  if (apple) return false;     // an APK cannot be installed there at all, and
+                               // an offer you can't take is just noise
+  return !dismissed;
+}
+
+// iPhones and iPads say so; an iPad in "request desktop site" mode claims to
+// be a Mac, and is the only Mac with a touchscreen.
+export function looksApple(ua = "", touchPoints = 0) {
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  return /Macintosh/i.test(ua) && touchPoints > 1;
+}
+
+export function bannerDismissed() {
+  try {
+    return localStorage.getItem(BANNER_KEY) === "1";
+  } catch (e) {
+    return false;
+  }
+}
+
+export function dismissBanner() {
+  try {
+    localStorage.setItem(BANNER_KEY, "1");
+  } catch (e) {
+    /* a blocked store costs the memory of being dismissed, not the dismissal */
+  }
+}
+
+export function isBannerOffered() {
+  const nav = typeof navigator === "undefined" ? {} : navigator;
+  return shouldOfferBanner({
+    native: Capacitor.isNativePlatform(),
+    apple: looksApple(nav.userAgent || "", nav.maxTouchPoints || 0),
+    dismissed: bannerDismissed(),
+  });
+}

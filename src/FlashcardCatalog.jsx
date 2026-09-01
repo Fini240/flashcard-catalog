@@ -240,6 +240,8 @@ export default function FlashcardCatalog() {
   const [view, setView] = useState("library"); // library | study | session
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Asked once, on the library screen, and only where an APK is any use.
+  const [apkBanner, setApkBanner] = useState(appDownload.isBannerOffered);
   const [theme, setTheme] = useState(getStoredTheme);
   const systemDark = useSystemDark();
   const darkMode = resolveDarkMode(theme, systemDark);
@@ -852,6 +854,9 @@ export default function FlashcardCatalog() {
       {error && (
         <div style={bannerStyle}>{error}</div>
       )}
+      {view === "library" && apkBanner && (
+        <AppDownloadBanner onDismiss={() => { appDownload.dismissBanner(); setApkBanner(false); }} />
+      )}
       {view === "library" && (
         <Library
           subjects={subjects} setSubjects={setSubjects}
@@ -1002,6 +1007,67 @@ export default function FlashcardCatalog() {
         <WhatsNew releases={intro.releases} onClose={dismissIntro} />
       )}
     </Shell>
+  );
+}
+
+// The one thing the web version cannot do for you: be the app. Offered on the
+// library screen rather than only in Settings, because the features that need
+// installing — reminders, the widget, AnkiDroid — are exactly the ones you
+// never go looking for. One offer, one dismissal, no second asking.
+function AppDownloadBanner({ onDismiss }) {
+  return (
+    <div style={{
+      position: "relative", margin: "12px 16px 8px", padding: "13px 14px",
+      display: "flex", alignItems: "center", gap: 12,
+      background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 14,
+    }}>
+      <span style={{
+        flexShrink: 0, width: 38, height: 38, borderRadius: 11,
+        background: "var(--input-bg)", display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <Smartphone size={19} color="var(--accent)" />
+      </span>
+      {/* No right padding for the dismiss cross: it sits above the button,
+          not above the words. */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{
+          margin: 0, fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600,
+          color: "var(--text-strong)",
+        }}>Get the Android app</p>
+        <p style={{
+          margin: "2px 0 0", fontFamily: "Inter, sans-serif", fontSize: 12,
+          color: "var(--text-muted)", lineHeight: 1.35,
+        }}>Reminders, the widget, and offline cards.</p>
+      </div>
+      <a
+        href={appDownload.APK_URL}
+        download={appDownload.APK_FILENAME}
+        rel="noopener"
+        style={{
+          flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6,
+          background: "var(--accent)", color: "var(--shell-bg)", textDecoration: "none",
+          border: "none", borderRadius: 10, padding: "11px 13px", minHeight: 42,
+          fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5,
+          WebkitTapHighlightColor: "transparent",
+        }}
+      >
+        <Download size={15} /> Install
+      </a>
+      {/* Small and unlabelled-looking on purpose: dismissing is available, but
+          it should not be the thing your eye lands on first. */}
+      <button
+        onClick={onDismiss}
+        aria-label="Not now"
+        style={{
+          position: "absolute", top: 4, right: 4, width: 26, height: 26,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "transparent", border: "none", borderRadius: 8, padding: 0,
+          color: "var(--text-faint)", WebkitTapHighlightColor: "transparent",
+        }}
+      >
+        <X size={13} />
+      </button>
+    </div>
   );
 }
 
@@ -3171,12 +3237,15 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
               fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
               textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
             }}>Android app</p>
+            {/* The one filled button in Settings. Everything else here is a
+                setting; this is the thing the web version most wants you to
+                do, and it reads as a ghost among ghosts otherwise. */}
             <GhostButton
               href={appDownload.APK_URL}
               download={appDownload.APK_FILENAME}
-              style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}
+              style={{ background: "var(--accent)", color: "var(--shell-bg)", border: "none", fontWeight: 600 }}
             >
-              <Smartphone size={16} /> Download the Android app
+              <Download size={16} /> Download the Android app
             </GhostButton>
             <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "8px 0 18px", lineHeight: 1.45 }}>
               Always the newest build — {APP_VERSION} as this page was published.
