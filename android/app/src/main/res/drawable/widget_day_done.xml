@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- A day the goal was met. Filled in the app's own streak orange, so a run of
-     them reads as one warm bar across the widget. -->
+     them reads as one warm bar across the widget.
+
+     The circle fills its viewport edge to edge. That is not cosmetic: the join
+     between two met days (widget_streak.xml) is a block the height of this
+     box, so any inset here would leave the block sticking out of the capsule
+     top and bottom. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="20dp" android:height="20dp"
+    android:width="26dp" android:height="26dp"
     android:viewportWidth="24" android:viewportHeight="24">
-    <path android:pathData="M12,3 a9,9 0 1,0 0,18 a9,9 0 1,0 0,-18 Z"
+    <path android:pathData="M12,0 a12,12 0 1,0 0,24 a12,12 0 1,0 0,-24 Z"
         android:fillColor="@color/widget_day_met" />
-    <path android:pathData="M8,12.2 L10.8,15 L16,9.6" android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.3" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M6.6,12.4 L10.4,16.2 L17.4,8.6" android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.6" android:strokeLineCap="round" android:strokeLineJoin="round" />
 </vector>

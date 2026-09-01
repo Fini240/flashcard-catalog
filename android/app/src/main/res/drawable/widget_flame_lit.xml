@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The streak flame, alight: today's goal is met. -->
+<!-- The streak flame, alight: today's goal is met. Two tongues rather than
+     one — a single flat silhouette at this size reads as a leaf. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="20dp"
-    android:height="20dp"
+    android:width="24dp"
+    android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path android:pathData="M12,23 C7.6,23 4,19.4 4,15 C4,10 8,6.5 10,1 C10,5.2 13,6.2 14,8.8 C15,7.2 15.4,5.6 15.4,4 C18.6,7 20,11 20,15 C20,19.4 16.4,23 12,23 Z" android:fillColor="@color/widget_streak" />
+    <path android:pathData="M12,21.4 C9.6,21.4 7.6,19.4 7.6,17 C7.6,14.4 9.8,12.6 11,9.6 C11.4,12 13.2,13 14,14.6 C14.8,13.6 15.1,12.7 15.2,11.7 C16.1,13.3 16.4,15.3 16.4,17 C16.4,19.4 14.4,21.4 12,21.4 Z" android:fillColor="@color/widget_streak_core" />
 </vector>

@@ -78,6 +78,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/widget.js` | **The home-screen widget's brain.** The mascot catalogue, the mood ladder, and the snapshot handed to the native side. The widget itself decides nothing — read the header before changing either half. |
 | `public/mascots/*.png` | The mascot art for the picker in Settings. Referenced by URL, not imported, so it stays out of the JS bundle. |
 | `scripts/mascot_sheets.py` | Cuts a generated expression sheet into the 30 mascot images — `res/drawable-nodpi/` for the widget and `public/mascots/` for the picker. Run by hand when the art changes; the output is committed. |
+| `scripts/widget_mockup.mjs` | Draws the widget card as a PNG at a real cell's size, because there is no phone or emulator here to see it on. A CSS copy of `widget_streak.xml` — **change the two together or not at all.** |
 | `android/.../StreakWidget*.java` | The native half: a Capacitor plugin that stores the snapshot, and an AppWidgetProvider that draws it. |
 | `firestore.rules` | Security rules. **Deploy after editing** — `firebase deploy --only firestore` |
 | `firestore.indexes.json` | Composite index behind the global board. Deployed by the same command. |
@@ -452,19 +453,45 @@ Play Store compatibility problem).
 
 Laid out after Duolingo's streak widget, which the user asked for by
 screenshot: a 4x2 card whose **whole background is tinted by the mood**
-(`widget_bg_<mood>.xml` — a vivid mid-tone gradient per mood, kept bright so
-the white-on-colour text still reads), the streak and a one-line message down
-the left, a five-day strip of ticks under them, and the mascot **contained** on
-the right, its edge resting against the card's rounding.
+(`widget_bg_<mood>.xml`), the streak and a one-line message down the left, a
+five-day strip of marks under them, and the mascot beside them on the right.
 
-**The mascot is contained, not bleeding.** The first versions ran the art off
-the edge (a negative end margin) so it read as a character standing behind the
-numbers, but next to Duolingo's on a real home screen it looked like a head cut
-clean through, so it was reined in. The generated art is trimmed to a 4%
-margin, so a 150dp box with a -6dp end margin leaves the ~138dp-wide head just
-kissing the edge, clipped by the corner rounding rather than sliced. Re-derive
-both if the art's padding ever changes. Keep the art clear of the rounded
-corners: below Android 12 the background shape does not clip its children.
+**The proportions are measured, not guessed.** The third pass was drawn
+against a screenshot of Duolingo's widget sitting on the user's own home
+screen directly above this one, where a 4x2 cell is 324x153dp: headline 26sp,
+message 14sp, day labels 12.5sp, day marks 26dp, about 10dp of air above the
+headline and below the marks. That type ramp is much flatter than a phone
+screen's, and deliberately — the card is read at arm's length and in passing.
+If you change one of those numbers, change it against a screenshot, not by
+eye — `node scripts/widget_mockup.mjs` draws the card at exactly that size for
+the comparison.
+
+**The mascot is a sibling column, not a layer behind the text.** It has been
+all three ways now: bleeding off the edge (a negative margin, so it read as a
+character standing behind the numbers), contained but overlapping, and finally
+beside. On a real home screen next to Duolingo's, anything that ran past the
+edge read as a head sliced in half. Its 96dp box is about 30% of a 4x2 cell,
+which is where Duolingo's sits; the art is trimmed to a 4% margin, so the head
+inside it is ~88dp. Keep the art clear of the rounded corners: below Android
+12 the background shape does not clip its children.
+
+**Dark to bright, left to right.** Each mood background is a three-stop
+horizontal gradient (`angle="0"`) from a deep shade behind the text to a
+bright one behind the mascot, with the middle stop holding a colour only 30%
+of the way along — which is what keeps white text over the first half of the
+card near 4.5:1 while the far end still lifts. A flat mid-tone was tried
+first and looked dead next to Duolingo's.
+
+**A run of met days is one capsule, and that dictates the strip's structure.**
+The join cannot be a block drawn *between* two circles: a circle is at its
+narrowest exactly where the block would meet it, so a full-height block
+sprouts corners at both ends. So the four joins are their own row, inset half
+a mark (13dp) and 33dp long — centre to centre — sitting *under* the row of
+marks in a `FrameLayout`. Which is also why `widget_day_done.xml` draws a
+circle that fills its viewport edge to edge: any inset there and the capsule
+grows shoulders. An unmet day is a dark well (`widget_day_todo`, black at 18%)
+rather than a pale disc, because darker-than-the-card is the one thing that
+reads on all six moods.
 
 A home-screen widget cannot see the app's state. It is drawn by the launcher's
 process, usually with this app's process dead, and everything the app knows

@@ -3,14 +3,15 @@
      Deliberately a different *shape*, not just a different colour: colour
      alone would separate these two only for people who can see the
      difference, and the distinction matters — the streak survived the day,
-     but nobody studied. The round part shares its centre with
-     widget_day_done so the two line up in a row. -->
+     but nobody studied. The round part shares its centre line with
+     widget_day_done so the two sit level in a row; it gives up a little
+     radius to the tail, which is what makes the pin read as a pin. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="20dp" android:height="20dp"
+    android:width="26dp" android:height="26dp"
     android:viewportWidth="24" android:viewportHeight="24">
-    <path android:pathData="M6.6,16.6 L12,23.4 L17.4,16.6 Z" android:fillColor="@color/widget_frozen" />
-    <path android:pathData="M12,3 a9,9 0 1,0 0,18 a9,9 0 1,0 0,-18 Z"
+    <path android:pathData="M7.2,17.4 L12,24 L16.8,17.4 Z" android:fillColor="@color/widget_frozen" />
+    <path android:pathData="M12,0.4 a11,11 0 1,0 0,22 a11,11 0 1,0 0,-22 Z"
         android:fillColor="@color/widget_frozen" />
-    <path android:pathData="M8,12.2 L10.8,15 L16,9.6" android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.3" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M6.9,11.7 L10.4,15.2 L16.9,8.2" android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
 </vector>

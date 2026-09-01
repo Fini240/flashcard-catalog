@@ -9,6 +9,19 @@
     <string name="widget_day_streak_n">%1$d day</string>
     <string name="widget_days_streak_n">%1$d days</string>
 
+    <!-- What the widget picker shows before there is a snapshot to draw. The
+         provider overwrites every one of these on the first render, so they
+         cost nothing; without them the picker offers an empty coloured card.
+         Deliberately a *partial* week — a picker preview of five met days
+         says the widget only has one state. -->
+    <string name="widget_preview_streak">5 days</string>
+    <string name="widget_preview_message">2 to go today</string>
+    <string name="widget_preview_day1">Fri</string>
+    <string name="widget_preview_day2">Sat</string>
+    <string name="widget_preview_day3">Sun</string>
+    <string name="widget_preview_day4">Mon</string>
+    <string name="widget_preview_day5">Tue</string>
+
     <!-- Spoken as one sentence: read out view by view, a headline, a message,
          five ticks and an unlabelled drawing say nothing useful. -->
     <string name="widget_a11y">%1$s. %2$s.</string>
@@ -17,10 +30,15 @@
          is white at three opacities rather than three fixed colours — one
          set of contrast ratios that holds on navy, amber and maroon alike. -->
     <color name="widget_on_dark">#FFFFFFFF</color>
-    <color name="widget_on_dark_muted">#C4FFFFFF</color>
-    <color name="widget_on_dark_faint">#B0FFFFFF</color>
+    <color name="widget_on_dark_muted">#D9FFFFFF</color>
+    <color name="widget_on_dark_faint">#C9FFFFFF</color>
     <color name="widget_streak">#F2C572</color>
+    <color name="widget_streak_core">#FFE6B0</color>
     <color name="widget_frozen">#6FB7E8</color>
+    <!-- A day with nothing on it. Black rather than white, because a day that
+         hasn't happened should sit *below* the card, not glow on top of it —
+         and a shadow works on all six moods where a tint does not. -->
+    <color name="widget_day_todo">#2E000000</color>
     <!-- The app's accent-warm token: the colour a streak is already drawn
          in everywhere else in the app. -->
     <color name="widget_day_met">#F2874E</color>

@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Card background for the "neutral" mood. Resolved by name in WidgetState.
-     A vivid mid-tone gradient so white text stays legible — the point of the
-     mood is the colour, not a dark card. Brightened to read like Duolingo's
-     streak widget while keeping each mood's hue family. -->
+<!-- Card background for the "neutral" mood — the day has started, nothing done yet. Resolved by name in
+     WidgetState.
+
+     Left to right, dark to bright, after Duolingo's: the text lives on the
+     left, so that end carries the contrast, and the bright end is behind the
+     mascot where nothing has to be read. The middle stop sits halfway
+     across but holds a colour only 30% of the way to the bright end, so the
+     first half of the card — all of the text — stays within reach of white at
+     4.5:1 while the far end still lifts. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <gradient
-        android:startColor="#4C8BD9"
-        android:endColor="#316BB0"
-        android:angle="315" />
+        android:startColor="#2160AE"
+        android:centerColor="#3C76BF"
+        android:endColor="#7AABE8"
+        android:angle="0" />
     <corners android:radius="@dimen/widget_corner_radius" />
 </shape>

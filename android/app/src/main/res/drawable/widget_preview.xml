@@ -6,6 +6,7 @@
     <item
         android:drawable="@drawable/mascot_owl_happy"
         android:gravity="end|center_vertical"
+        android:right="10dp"
         android:width="96dp"
         android:height="96dp" />
 </layer-list>

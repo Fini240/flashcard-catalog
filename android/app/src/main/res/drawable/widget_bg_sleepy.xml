@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Card background for the "sleepy" mood. Resolved by name in WidgetState.
-     A vivid mid-tone gradient so white text stays legible — the point of the
-     mood is the colour, not a dark card. Brightened to read like Duolingo's
-     streak widget while keeping each mood's hue family. -->
+<!-- Card background for the "sleepy" mood — before the day has really begun. Resolved by name in
+     WidgetState.
+
+     Left to right, dark to bright, after Duolingo's: the text lives on the
+     left, so that end carries the contrast, and the bright end is behind the
+     mascot where nothing has to be read. The middle stop sits halfway
+     across but holds a colour only 30% of the way to the bright end, so the
+     first half of the card — all of the text — stays within reach of white at
+     4.5:1 while the far end still lifts. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <gradient
-        android:startColor="#5A6FB3"
-        android:endColor="#45559A"
-        android:angle="315" />
+        android:startColor="#38487E"
+        android:centerColor="#4E5F95"
+        android:endColor="#8192C9"
+        android:angle="0" />
     <corners android:radius="@dimen/widget_corner_radius" />
 </shape>
