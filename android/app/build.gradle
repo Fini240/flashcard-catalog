@@ -23,7 +23,7 @@ android {
         // of the same version after a rejection.
         // versionName must stay in step with APP_VERSION in src/whatsNew.js —
         // that is what decides whether a user is shown the update note.
-        versionCode 11
+        versionCode 12
         versionName "1.2.6"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

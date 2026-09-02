@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
   FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search, Download, ClipboardList,
-  Zap, Flag, Volume2, Smartphone
+  Zap, Flag, Volume2
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -1017,18 +1017,16 @@ export default function FlashcardCatalog() {
 function AppDownloadBanner({ onDismiss }) {
   return (
     <div style={{
-      position: "relative", margin: "12px 16px 8px", padding: "13px 14px",
-      display: "flex", alignItems: "center", gap: 12,
+      // The right padding is wider than the left to leave the top-right
+      // corner to the dismiss cross: at 14dp the Install button reached under
+      // it, and a cross drawn over a gold button is both ugly and unreadable.
+      position: "relative", margin: "12px 16px 8px", padding: "13px 34px 13px 14px",
+      display: "flex", alignItems: "center", gap: 10,
       background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 14,
     }}>
-      <span style={{
-        flexShrink: 0, width: 38, height: 38, borderRadius: 11,
-        background: "var(--input-bg)", display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        <Smartphone size={19} color="var(--accent)" />
-      </span>
-      {/* No right padding for the dismiss cross: it sits above the button,
-          not above the words. */}
+      {/* No icon. There was a phone glyph here, and on a 360dp screen the
+          42dp it cost was the difference between a two-line card and a
+          four-line one — the gold button already says "app" loudly enough. */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{
           margin: 0, fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600,
@@ -1037,7 +1035,7 @@ function AppDownloadBanner({ onDismiss }) {
         <p style={{
           margin: "2px 0 0", fontFamily: "Inter, sans-serif", fontSize: 12,
           color: "var(--text-muted)", lineHeight: 1.35,
-        }}>Reminders, the widget, and offline cards.</p>
+        }}>Reminders, the widget, offline cards.</p>
       </div>
       <a
         href={appDownload.APK_URL}
@@ -1053,13 +1051,14 @@ function AppDownloadBanner({ onDismiss }) {
       >
         <Download size={15} /> Install
       </a>
-      {/* Small and unlabelled-looking on purpose: dismissing is available, but
-          it should not be the thing your eye lands on first. */}
+      {/* Small and quiet on purpose: dismissing is available, but it should
+          not be the thing your eye lands on first. Its 28dp box is the touch
+          target — the glyph inside it is 13dp. */}
       <button
         onClick={onDismiss}
         aria-label="Not now"
         style={{
-          position: "absolute", top: 4, right: 4, width: 26, height: 26,
+          position: "absolute", top: 3, right: 3, width: 28, height: 28,
           display: "flex", alignItems: "center", justifyContent: "center",
           background: "transparent", border: "none", borderRadius: 8, padding: 0,
           color: "var(--text-faint)", WebkitTapHighlightColor: "transparent",
