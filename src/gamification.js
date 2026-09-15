@@ -108,15 +108,31 @@ export function emptyGame() {
   };
 }
 
-// A year of enthusiastic study is roughly this many answers. Past it the oldest
-// are dropped: the log exists to describe how the user learns *now*, and a
-// review from two years ago neither predicts that nor fits into a phone's
-// storage quota alongside the cards.
-export const MAX_REVIEW_LOG = 20000;
+// Past this the oldest answers are dropped: the log exists to describe how the
+// user learns *now*, and a review from two years ago neither predicts that nor
+// fits into a phone's storage quota alongside the cards.
+//
+// The number is a budget, not a taste. This array rides the parent document,
+// and a Firestore document is hard-capped at 1 MiB — an entry costs ~88 chars
+// of JSON and ~80 bytes once Firestore has encoded it, so the old cap of
+// 20,000 was about 1.4 MB: every parent-doc write a heavy user made would have
+// been rejected outright, taking the subject tree and the whole game with it,
+// and nothing about that failure would have named the review log. 6,000 lands
+// near 480 KB encoded, leaving half the document for the subject tree — which
+// is the margin you want under a limit that fails the whole write rather than
+// truncating. It is also 2.5 MB less localStorage, where the same array
+// competes with the cards for a fixed per-origin budget.
+//
+// Four months of daily study rather than a year, then, and that is the trade:
+// the optimiser is fitted on hundreds of reviews, not thousands, and a log
+// nobody can sync is worth less than a shorter one that always arrives.
+// So: if you raise this, do the multiplication first. storageBudget.test.js
+// holds the sum.
+export const MAX_REVIEW_LOG = 6000;
 
 // Records one answer. Kept deliberately small — five short fields — because
-// this array is synced, and a fat entry multiplied by twenty thousand is a
-// slow sync and a full quota.
+// this array is synced, and a fat entry multiplied by MAX_REVIEW_LOG is a slow
+// sync, a full quota, and eventually a document Firestore refuses outright.
 export function appendReviewLog(game, entry) {
   const log = Array.isArray(game?.reviewLog) ? game.reviewLog : [];
   const next = [

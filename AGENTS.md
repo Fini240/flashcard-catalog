@@ -349,6 +349,44 @@ Play Store compatibility problem).
   was at any past instant: `GET …/documents/users/{uid}?readTime=2026-08-12T09:00:00Z`.
   This is the recovery path for anything sync destroys — check the history
   before concluding data is gone, and before writing anything else over it.
+- **The other way cards vanish is that they were never written.** Everything
+  the app knows — subjects, cards, tombstones, the review log — goes into
+  localStorage under one key, and localStorage is a fixed per-origin budget
+  (~5.2M characters in Chromium, measured over keys *and* values) shared with
+  every card picture, which `imageStore` writes as base64 JPEGs of ~160k
+  characters each. Past the budget `setItem` throws, the payload is not
+  written at all, and the app carries on with a perfectly correct catalog in
+  memory that is gone at the next launch. A signed-in account survives it
+  because the cards are already in Firestore; a signed-out one has no second
+  copy, and "works offline with no account" is the headline promise. Measured:
+  437 chars a card, 88 a review-log entry.
+  Three things now stand against it, and none of them is a real fix:
+  `storage.set` **reports** the failure (it used to `return false` and say
+  nothing, so the single most likely cause of a "my cards vanish" report left
+  no trace in Copy diagnostics at all); `shedForQuota` retries the write
+  without the review log, then without the tombstones, so the catalog is the
+  last thing sacrificed; and `diagnosticsText` prints the store's size and how
+  much of it is pictures. **The actual fix is to move card images out of
+  localStorage into IndexedDB** — they are far the largest thing in the
+  budget, and they are the only thing in it that doesn't need to be there.
+  Until that lands, a user with a few dozen photographed cards is on borrowed
+  space. `storageBudget.test.js` holds the arithmetic.
+- **`game` rides the parent document, and a Firestore document is capped at
+  1 MiB.** `MAX_REVIEW_LOG` was 20,000 entries ≈ 1.4 MB, so every parent-doc
+  write by a user who got that far would have been rejected outright — taking
+  the subject tree and the whole game with it, with nothing in the error naming
+  the review log. It is 6,000 now (~480 KB encoded). If you raise it, or add a
+  field to a log entry, do the multiplication first.
+- **The `[cards]` effect runs in legacy mode at every launch**, before the
+  account's mode is known, with `cards` holding live cards only. Its
+  "drop what left the state" branch therefore used to delete the tombstone map
+  the instant it was loaded from storage — and the emptied map was written
+  straight back — so a deletion made offline was undone by the next restart,
+  every time, which is exactly what persisting tombstones was for. It now
+  spares anything carrying `deletedAt`. The flip side: a bogus tombstone is
+  permanent now, so **nothing may let `cards` state transiently drop a card
+  while per-card mode is on** — `applyLocalEdits` reads that as a deletion and
+  propagates it to every device.
 - **Cross-device sync has bitten this app three times.** Local data once
   overwrote a freshly signed-in account's cards; cards vanished from a
   logged-in account (~90 lost); and on 2026-08-11 a phone was wiped by the
@@ -536,6 +574,14 @@ Two things to know before editing:
   nothing references them from code.
 
 ## Open items
+- [ ] **Card images still live in localStorage** (added 1.2.7), where they
+      compete with the catalog for one fixed per-origin budget and are by far
+      the biggest thing in it. 1.2.7 only stops the catalog being the part
+      that gets dropped when the budget runs out. Moving them to IndexedDB is
+      the fix: `imageStore` gains an async `getImage`, the five synchronous
+      call sites (`cardUI.jsx`, `featureUI.jsx` x2, `FlashcardCatalog.jsx` x2)
+      become a hook, and the existing `fc-img-` keys are copied over and
+      deleted on first run — which is what actually gives the space back.
 - [ ] **The widget has never been placed on a real home screen** (added
       1.2.3). It compiles, and the APK carries the receiver, the layout and all
       30 mascot drawables — but no one has watched a launcher inflate it. The

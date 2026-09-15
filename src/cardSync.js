@@ -116,8 +116,17 @@ export function applyLocalEdits(map, cards, { now = Date.now(), perCardMode = fa
       if (!inState.has(id) && !out[id].deletedAt) out[id] = { ...out[id], deletedAt: now };
     }
   } else {
+    // Legacy mode drops what left the state — a deletion rides the whole-doc
+    // push, and pre-migration "gone from state" can't be told from "not loaded
+    // yet". Tombstones are the exception, and they have to be: this branch
+    // runs once at every launch, before the account's mode is known, with
+    // `cards` holding live cards only. Purging them here erased the tombstone
+    // map the moment it was loaded from storage — and then wrote the emptied
+    // map back — so a deletion made offline was undone by the next restart,
+    // which is exactly what persisting tombstones was for. They cost nothing
+    // in legacy mode: liveCards() keeps them out of the pushed array.
     for (const id of Object.keys(out)) {
-      if (!inState.has(id)) delete out[id];
+      if (!inState.has(id) && !out[id].deletedAt) delete out[id];
     }
   }
   return out;

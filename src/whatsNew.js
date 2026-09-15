@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.2.6";
+export const APP_VERSION = "1.2.7";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,15 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.2.7",
+    date: "2026-09-15",
+    items: [
+      "Cards could go missing on a device with a full store. Everything the app knows is saved in one place with a fixed size limit, shared with your card pictures \u2014 and when it filled up the save quietly failed, so the day's work was still on screen but gone at the next launch. The cards are now the last thing to be given up: your study history is trimmed first, and if even that isn't enough the app says so plainly instead of carrying on as if nothing happened.",
+      "Deleting a card while offline no longer undoes itself when you reopen the app.",
+      "Statistics keep the last 6,000 answers rather than 20,000. A longer log than that no longer fit in the document it syncs inside, which stopped a heavy user's folders and streak from syncing at all.",
+    ],
+  },
   {
     version: "1.2.6",
     date: "2026-09-01",

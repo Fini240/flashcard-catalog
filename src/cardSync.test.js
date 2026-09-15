@@ -237,6 +237,22 @@ describe("applyLocalEdits — studying a card must survive a reload", () => {
     expect(after.c2).toBeUndefined();
   });
 
+  it("keeps tombstones through legacy mode, which every launch passes through", () => {
+    // The map is rebuilt from storage at launch as live cards + the saved
+    // tombstones, and this effect then runs before the account's mode is
+    // known — i.e. in legacy mode, with `cards` holding live cards only. When
+    // it purged everything absent from state it took the tombstones with it,
+    // and the emptied map was written straight back to storage: a deletion
+    // made offline was undone by the next restart, every time.
+    const before = {
+      ...toCardMap([card("c1", 100)]),
+      gone: { ...card("gone", 100), deletedAt: 200 },
+    };
+    const after = applyLocalEdits(before, [card("c1", 100)], { now: 500, perCardMode: false });
+    expect(after.gone.deletedAt).toBe(200);
+    expect(liveCards(after).map((c) => c.id)).toEqual(["c1"]);
+  });
+
   it("stamps a card that has never been stamped", () => {
     const after = applyLocalEdits({}, [{ id: "new", front: "f", back: "b" }], { now: 500 });
     expect(after.new.updatedAt).toBe(500);

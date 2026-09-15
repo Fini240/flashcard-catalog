@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as firebaseSync from "./firebaseSync";
 import * as G from "./gamification";
-import { report } from "./report";
+import { report, storageUsage } from "./report";
 import * as cardSync from "./cardSync";
 import * as guards from "./syncGuards";
 
@@ -41,15 +41,57 @@ export const storage = {
       return { value: null };
     }
   },
-  async set(key, value) {
+  // `silent` is for the retry attempts below: the first failure already
+  // carries the full size and the state of the store, and four copies of it
+  // per save would crowd everything else out of a 20-entry ring buffer.
+  async set(key, value, { silent = false } = {}) {
     try {
       window.localStorage.setItem(key, value);
       return true;
     } catch (e) {
+      // Never swallow this. A failed local write is the one error in the app
+      // that destroys data silently: the catalog is still on screen, still
+      // correct, and gone at the next launch. Reporting it is what turns "my
+      // cards keep vanishing" into something Copy diagnostics can answer.
+      if (!silent) {
+        let used = "unknown";
+        try { used = storageUsage(); } catch (e2) { /* the store is what failed */ }
+        report("storage.set", new Error(
+          `${e && e.name ? e.name : "write failed"} writing ${value.length} chars to ${key} — ${used}`
+        ));
+      }
       return false;
     }
   },
 };
+
+// What to drop, in order, when the payload will not fit.
+//
+// localStorage is a fixed per-origin budget (~5.2M characters in Chromium,
+// shared with every card picture), and the whole payload goes in under one
+// key: if it doesn't fit, *nothing* is written and everything since the last
+// successful save is lost at the next launch. A signed-in account survives
+// that — the cards are already in Firestore — but the app's headline promise
+// is that it works with no account at all, and for those users localStorage is
+// the only copy there is.
+//
+// So the catalog stops being the thing that gets sacrificed. The review log is
+// the biggest single item in the payload (88 chars an entry, up to
+// MAX_REVIEW_LOG of them) and it is measurement, not content: losing its tail
+// costs some statistics and some optimiser accuracy. Tombstones go next —
+// worth keeping, but a resurrected deletion is a smaller loss than a card that
+// was never written. Subjects and cards are never shed.
+export const SHED_LEVELS = 4;
+export function shedForQuota(payload, level) {
+  if (level <= 0) return payload;
+  const log = (payload.game && payload.game.reviewLog) || [];
+  const keep = level === 1 ? 2000 : level === 2 ? 500 : 0;
+  // slice(-0) is slice(0), i.e. the whole array — spell the empty case out.
+  const reviewLog = keep === 0 ? [] : log.slice(-keep);
+  const shed = { ...payload, game: { ...payload.game, reviewLog } };
+  if (level >= 3) shed.cardTombstones = {};
+  return shed;
+}
 
 // A remote payload with no subjects and no cards is either a legitimate "user
 // deleted everything" or a corrupted/half-written sync. We can't tell those
@@ -434,9 +476,29 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     };
     saveTimer.current = setTimeout(async () => {
       try {
-        const result = await storage.set(STORAGE_KEY, JSON.stringify(payload));
-        if (!result) setError("Couldn't save — your last change may not persist.");
-        else setError("");
+        // Retry with progressively less baggage rather than giving up on the
+        // whole write: a payload that won't fit must still be able to persist
+        // the cards, which are the only part nobody can reconstruct. See
+        // shedForQuota.
+        let saved = false;
+        let level = 0;
+        for (; level < SHED_LEVELS; level++) {
+          saved = await storage.set(
+            STORAGE_KEY,
+            JSON.stringify(shedForQuota(payload, level)),
+            { silent: level > 0 },
+          );
+          if (saved) break;
+        }
+        if (!saved) {
+          setError(
+            "Out of storage — this device can't save your cards. Sign in to back them up, " +
+            "or export a backup from Settings, then delete some card pictures."
+          );
+        } else if (level > 0) {
+          report("sync.saveLocal.shed", new Error(`saved at shed level ${level}`));
+          setError("Storage is nearly full — your study history was trimmed to keep your cards saved.");
+        } else setError("");
       } catch (e) {
         report("sync.saveLocal", e);
         setError("Couldn't save — your last change may not persist.");

@@ -3,7 +3,9 @@
 // cap) and live here instead, under their own localStorage keys. Cards only
 // carry a small id pointing into this store, so the fact that a card has a
 // picture syncs across devices even though the picture itself doesn't.
-const PREFIX = "fc-img-";
+// Exported so report.js can measure how much of the origin's storage budget
+// the pictures are using without owning a second copy of the prefix.
+export const PREFIX = "fc-img-";
 const MAX_DIMENSION = 1000;
 const JPEG_QUALITY = 0.75;
 
