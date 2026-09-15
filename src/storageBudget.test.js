@@ -113,14 +113,14 @@ describe("a full store is reported, not swallowed", () => {
     expect(entry).toBeTruthy();
     expect(entry.err).toContain("QuotaExceededError");
     expect(entry.err).toContain("5000 chars");
-    expect(entry.err).toContain("1 pictures");
+    expect(entry.err).toContain("1 un-migrated picture");
   });
 
   it("counts the pictures separately, because they are what fills the store", () => {
     window.localStorage.setItem("fc-img-a", "x".repeat(1024 * 100));
     window.localStorage.setItem("fc-img-b", "x".repeat(1024 * 100));
     window.localStorage.setItem("flashcard-catalog-data", "x".repeat(1024 * 10));
-    expect(storageUsage()).toContain("2 pictures");
+    expect(storageUsage()).toContain("2 un-migrated pictures");
   });
 });
 

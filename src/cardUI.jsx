@@ -6,8 +6,36 @@
 // renders the drills, the drills render the card — so they moved here, the way
 // gameUI.jsx keeps the gamification screens out of that file.
 // ---------------------------------------------------------------------------
+import { useEffect, useState } from "react";
 import * as imageStore from "./imageStore";
 import { RichText, isRich } from "./richText";
+
+// Card pictures live in IndexedDB, so reading one is asynchronous — and "not
+// read yet" must never be drawn as "not on this device", which is the message
+// three of these call sites show and which a plain null would have triggered on
+// every first render. Hence three states, not two:
+//
+//   undefined  still being read — draw nothing, or a placeholder
+//   a string   the picture
+//   null       this device genuinely doesn't have it (a card that synced from
+//              another phone; the picture never travels with it)
+//
+// The initial state comes from peekImage, which answers from the memory cache
+// and the not-yet-migrated localStorage keys without waiting, so a picture
+// already on screen once never flickers again.
+export function useCardImage(imageId) {
+  const [src, setSrc] = useState(() => (imageId ? imageStore.peekImage(imageId) : null));
+  useEffect(() => {
+    if (!imageId) { setSrc(null); return; }
+    const known = imageStore.peekImage(imageId);
+    if (known !== undefined) { setSrc(known); return; }
+    let cancelled = false;
+    setSrc(undefined);
+    imageStore.getImage(imageId).then((value) => { if (!cancelled) setSrc(value); });
+    return () => { cancelled = true; };
+  }, [imageId]);
+  return src;
+}
 
 // Re-exported rather than redefined: the distractor filter in drills.js has to
 // use the very same rule, or a "wrong" answer can grade as correct. See the
@@ -115,8 +143,12 @@ export function CardShell({ children, tabLabel, tabColor, fill }) {
 }
 
 export function CardFace({ text, imageId, size }) {
-  const src = imageId ? imageStore.getImage(imageId) : null;
+  const src = useCardImage(imageId);
   if (imageId) {
+    // A box the size the picture will be, rather than the "not on this device"
+    // message: the read takes a frame or two, and a card that briefly claims
+    // its picture is missing is worse than one that briefly shows a gap.
+    if (src === undefined) return <div style={{ height: 220 }} />;
     return src
       ? <img src={src} alt={text || ""} style={{ maxWidth: "100%", maxHeight: 220, borderRadius: 8, objectFit: "contain" }} />
       : <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-faint)", margin: 0 }}>Picture not available on this device</p>;

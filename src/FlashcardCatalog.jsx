@@ -17,7 +17,7 @@ import * as appDownload from "./appDownload";
 import * as imageStore from "./imageStore";
 import {
   normalize, PrimaryButton, GhostButton, TextField, Label,
-  IndexCardTab, CardShell, CardFace,
+  IndexCardTab, CardShell, CardFace, useCardImage,
 } from "./cardUI";
 import { pushBackHandler, consumeBack } from "./backHandler";
 import * as G from "./gamification";
@@ -289,6 +289,15 @@ export default function FlashcardCatalog() {
     }).then((h) => { handle = h; });
     return () => { handle && handle.remove(); };
   }, []);
+
+  // Card pictures used to be written into localStorage, where they competed
+  // with the catalog for one fixed per-origin budget and, about thirty
+  // pictures in, left no room for it — the save threw, nothing was written,
+  // and the day's cards were gone at the next launch. Moving them into
+  // IndexedDB is what gives that space back, so this runs as early as it can
+  // and exactly once: it is a no-op from the second launch onwards, and it
+  // finishes itself at the next one if it is interrupted.
+  useEffect(() => { imageStore.migrateLegacyImages(); }, []);
 
   // Study and session screens each have an obvious "up" level; mirror it so
   // the hardware back button behaves like the on-screen back/exit buttons.
@@ -1931,12 +1940,18 @@ function EmptyState({ onAdd, onImport }) {
 // coming back. That's the information that tells a student what to do next —
 // the answer mode never did.
 function CardRow({ card, onEdit, onDelete }) {
-  const frontThumb = card.frontImageId ? imageStore.getImage(card.frontImageId) : null;
+  const frontThumb = useCardImage(card.frontImageId);
+  const thumbPending = frontThumb === undefined;
   const tags = tagsLib.cardTags(card);
   // A cloze card's stored `front` is already the rendered question with its
   // blank in place, so the list shows the same thing the study screen will.
+  // `thumbPending` keeps the row from calling a picture missing during the
+  // frame it takes to read it out of IndexedDB — the row would otherwise
+  // relabel itself on every scroll back into view.
   const title = card.frontImageId
-    ? (frontThumb ? (card.occlusionMaskId ? `Hidden area ${card.occlusionIndex || ""}`.trim() : "Picture card") : "Picture (not on this device)")
+    ? (frontThumb || thumbPending
+        ? (card.occlusionMaskId ? `Hidden area ${card.occlusionIndex || ""}`.trim() : "Picture card")
+        : "Picture (not on this device)")
     : card.front;
   return (
     <div style={{
@@ -2215,7 +2230,9 @@ function TypeToggle({ value, onChange }) {
 function ImagePicker({ imageId, onPick, onRemove, label }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
-  const src = imageId ? imageStore.getImage(imageId) : null;
+  // A picture just chosen is in the memory cache already, so this is only ever
+  // undefined for one that was picked in an earlier session.
+  const src = useCardImage(imageId) || null;
 
   const handleChange = async (e) => {
     const file = e.target.files[0];
@@ -3274,7 +3291,13 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
         }}>Troubleshooting</p>
         <GhostButton
           onClick={async () => {
-            const text = diagnosticsText(diagInfo || {});
+            // Asked here rather than inside diagnosticsText, which is sync:
+            // counting what is in IndexedDB is not.
+            const pictures = await imageStore.countImages();
+            const text = diagnosticsText({
+              ...(diagInfo || {}),
+              pictures: pictures == null ? "unknown" : pictures,
+            });
             try {
               await navigator.clipboard.writeText(text);
               setBackupNote(""); // keep the two notes from colliding visually

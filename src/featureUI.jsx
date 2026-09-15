@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { PrimaryButton, GhostButton, TextField, Label, normalize } from "./cardUI";
+import { PrimaryButton, GhostButton, TextField, Label, normalize, useCardImage } from "./cardUI";
 import { RichText, isRich } from "./richText";
 import * as statsLib from "./stats";
 import * as testModeLib from "./testMode";
@@ -23,7 +23,6 @@ import * as tutorLib from "./tutor";
 import * as leechLib from "./leech";
 import * as deckShareLib from "./deckShare";
 import * as noteToCards from "./noteToCards";
-import * as imageStore from "./imageStore";
 import { normalizeSettings } from "./srs";
 
 const panel = {
@@ -619,7 +618,10 @@ export function ClozeEditor({ value, onChange }) {
 // ---------------------------------------------------------------------------
 
 export function OcclusionEditor({ imageId, masks, mode, onChange, onChangeMode }) {
-  const src = imageStore.getImage(imageId);
+  // undefined while the picture is being read out of IndexedDB — the editor
+  // draws around an <img> that isn't there yet, which it already had to cope
+  // with for a picture this device doesn't hold.
+  const src = useCardImage(imageId);
   const boxRef = useRef(null);
   const [drag, setDrag] = useState(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -765,7 +767,7 @@ export function OcclusionEditor({ imageId, masks, mode, onChange, onChangeMode }
 
 // The study-time renderer for an occlusion card.
 export function OcclusionCard({ card, revealed }) {
-  const src = imageStore.getImage(card.frontImageId);
+  const src = useCardImage(card.frontImageId);
   const boxRef = useRef(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const measure = () => {
@@ -778,6 +780,9 @@ export function OcclusionCard({ card, revealed }) {
     return () => window.removeEventListener("resize", measure);
   }, [src]);
 
+  // Only once the read has actually come back: saying the picture isn't here
+  // while it is still being fetched would put that message on every card.
+  if (src === undefined) return null;
   if (!src) return <div style={caption}>This picture isn't on this device.</div>;
   const hidden = occlusionLib.visibleMasks(card, revealed);
   const active = occlusionLib.activeMask(card);

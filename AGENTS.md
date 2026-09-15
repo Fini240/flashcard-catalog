@@ -70,7 +70,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/ankiDroid.js` | Direct AnkiDroid import via its content provider (Android only) |
 | `android/.../AnkiDroidPlugin.java` | The native half of that: queries `content://com.ichi2.anki.flashcards` |
 | `src/firebaseSync.js` | Auth + Firestore sync (contains the Firebase client config) |
-| `src/imageStore.js` | Local storage of card images (never uploaded) |
+| `src/imageStore.js` | Card pictures, in IndexedDB (never uploaded). Owns the one-way migration off the old `fc-img-` localStorage keys, and the memory cache behind `peekImage`. Read it before touching either. |
 | `src/gamification.js` | XP, levels, weekly ranks, streaks, quests, achievements, heatmap. Also owns `reviewLog` — one entry per answer, capped at `MAX_REVIEW_LOG`, and the only record of what actually happened. `stats.js` and the FSRS optimiser read it. |
 | `src/gameUI.jsx` | The gamification surface: status bar, today card, quests, streak/goal/friends sheets |
 | `src/social.js` | Friend codes, usernames, public `profiles/` docs, nudges, friends + global leaderboards |
@@ -366,11 +366,21 @@ Play Store compatibility problem).
   no trace in Copy diagnostics at all); `shedForQuota` retries the write
   without the review log, then without the tombstones, so the catalog is the
   last thing sacrificed; and `diagnosticsText` prints the store's size and how
-  much of it is pictures. **The actual fix is to move card images out of
-  localStorage into IndexedDB** — they are far the largest thing in the
-  budget, and they are the only thing in it that doesn't need to be there.
-  Until that lands, a user with a few dozen photographed cards is on borrowed
-  space. `storageBudget.test.js` holds the arithmetic.
+  much of it is pictures. **1.2.8 then moved the pictures out into IndexedDB**,
+  which is what actually gave the space back — see the header of
+  `imageStore.js`. The three containment measures stay: they are what catches
+  the next thing that outgrows the budget, and they are the only reason this
+  one was diagnosable. `storageBudget.test.js` holds the arithmetic.
+- **Reading a card picture is asynchronous, and `null` is a message.** Three
+  screens draw "not on this device" when `getImage` comes back empty — the
+  normal state for a card that synced from another phone, since the picture
+  never travels with it. Once the pictures moved into IndexedDB, a plain null
+  would have put that message on *every* picture card for the frame it takes
+  to read one. So `useCardImage` in `cardUI.jsx` is tri-state (`undefined`
+  while reading, a string, `null` for genuinely absent) and is the only thing
+  components may use; `imageStore.peekImage` answers synchronously from the
+  memory cache and the not-yet-migrated localStorage keys, which is what keeps
+  a card that has been drawn once from flickering again.
 - **`game` rides the parent document, and a Firestore document is capped at
   1 MiB.** `MAX_REVIEW_LOG` was 20,000 entries ≈ 1.4 MB, so every parent-doc
   write by a user who got that far would have been rejected outright — taking
@@ -574,14 +584,6 @@ Two things to know before editing:
   nothing references them from code.
 
 ## Open items
-- [ ] **Card images still live in localStorage** (added 1.2.7), where they
-      compete with the catalog for one fixed per-origin budget and are by far
-      the biggest thing in it. 1.2.7 only stops the catalog being the part
-      that gets dropped when the budget runs out. Moving them to IndexedDB is
-      the fix: `imageStore` gains an async `getImage`, the five synchronous
-      call sites (`cardUI.jsx`, `featureUI.jsx` x2, `FlashcardCatalog.jsx` x2)
-      become a hook, and the existing `fc-img-` keys are copied over and
-      deleted on first run — which is what actually gives the space back.
 - [ ] **The widget has never been placed on a real home screen** (added
       1.2.3). It compiles, and the APK carries the receiver, the layout and all
       30 mascot drawables — but no one has watched a launcher inflate it. The

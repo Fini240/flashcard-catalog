@@ -6,9 +6,15 @@
 // Kept tiny on purpose — if this module ever needs configuration, it has
 // already grown past its job.
 
-import { PREFIX as IMAGE_PREFIX } from "./imageStore";
-
 const MAX_ENTRIES = 20;
+
+// The localStorage key prefix that card pictures were stored under before
+// 1.2.8 moved them into IndexedDB. It is defined here, of all places, because
+// this module must not import anything: storageUsage below measures the store,
+// and imageStore calls report() to say when the store failed it, so the two
+// importing each other would be a cycle. imageStore takes the constant from
+// here instead.
+export const LEGACY_IMAGE_PREFIX = "fc-img-";
 
 export function report(where, err) {
   // eslint-disable-next-line no-console
@@ -54,9 +60,10 @@ function safe(fn) {
   try { return String(fn()); } catch (e) { return "unavailable"; }
 }
 
-// How much of the per-origin store is in use, and how much of that is card
-// pictures — they are far the largest thing in it, so the split is what says
-// whether the fix is "delete some photos" or "you have too many cards".
+// How much of the per-origin store the catalog is working inside, and how much
+// of it is still being held by pictures 1.2.8 hasn't moved out yet. Those are
+// the characters the catalog can't have, and a non-zero count is the sign that
+// the migration couldn't run on this device.
 export function storageUsage() {
   const ls = window.localStorage;
   let total = 0;
@@ -66,10 +73,14 @@ export function storageUsage() {
     const key = ls.key(i);
     const size = key.length + (ls.getItem(key) || "").length;
     total += size;
-    if (key.startsWith(IMAGE_PREFIX)) { images += size; imageCount++; }
+    if (key.startsWith(LEGACY_IMAGE_PREFIX)) { images += size; imageCount++; }
   }
   const k = (n) => `${Math.round(n / 1024)}k chars`;
-  return `${k(total)} used (${imageCount} pictures, ${k(images)})`;
+  // The picture figure is the pre-1.2.8 leftovers: pictures live in IndexedDB
+  // now, and a non-zero count here means the migration hasn't finished (or
+  // couldn't run), which is worth knowing because those are the characters the
+  // catalog can't have.
+  return `${k(total)} used, of which ${imageCount} un-migrated picture${imageCount === 1 ? "" : "s"} (${k(images)})`;
 }
 
 export function diagnosticsText(extra = {}) {
@@ -80,12 +91,12 @@ export function diagnosticsText(extra = {}) {
     // account on two addresses is two different local stores.
     `origin: ${safe(() => window.location.origin)}`,
     `online: ${safe(() => navigator.onLine)}`,
-    // The first question to ask about missing cards. localStorage is a fixed
-    // per-origin budget (~5.2M characters in Chromium) shared between the
-    // catalog and every card picture, and when it is full the save fails, the
-    // app carries on looking correct, and the work is gone at the next launch.
-    // A dump that doesn't say how full the store is can't tell that apart from
-    // a sync fault.
+    // The first question to ask about missing cards. The whole catalog is
+    // written into localStorage under one key, and localStorage is a fixed
+    // per-origin budget (~5.2M characters in Chromium); when it is full the
+    // save fails, the app carries on looking correct, and the work is gone at
+    // the next launch. A dump that doesn't say how full the store is can't
+    // tell that apart from a sync fault.
     `storage: ${safe(storageUsage)}`,
   ];
   for (const [k, v] of Object.entries(extra)) lines.push(`${k}: ${v}`);
