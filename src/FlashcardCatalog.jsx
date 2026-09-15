@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
   FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search, Download, ClipboardList,
-  Zap, Flag, Volume2
+  Zap, Flag, Volume2, RefreshCw
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -15,6 +15,7 @@ import * as ankiImport from "./ankiImport";
 import * as ankiDroid from "./ankiDroid";
 import * as appDownload from "./appDownload";
 import * as orphansLib from "./orphans";
+import * as updateCheck from "./updateCheck";
 import * as imageStore from "./imageStore";
 import {
   normalize, PrimaryButton, GhostButton, TextField, Label,
@@ -243,6 +244,10 @@ export default function FlashcardCatalog() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Asked once, on the library screen, and only where an APK is any use.
   const [apkBanner, setApkBanner] = useState(appDownload.isBannerOffered);
+  // { version, action } once a newer release is known to exist, else null.
+  // See updateCheck.js — the sideloaded APK cannot update itself, so being
+  // told is the only way a user ever learns a fix exists.
+  const [updateOffer, setUpdateOffer] = useState(null);
   const [theme, setTheme] = useState(getStoredTheme);
   const systemDark = useSystemDark();
   const darkMode = resolveDarkMode(theme, systemDark);
@@ -289,6 +294,22 @@ export default function FlashcardCatalog() {
       if (!consumeBack()) CapacitorApp.minimizeApp();
     }).then((h) => { handle = h; });
     return () => { handle && handle.remove(); };
+  }, []);
+
+  // Ask on launch, and again whenever the app comes back to the foreground: a
+  // phone app is not relaunched for days at a time, and the resume is the only
+  // other moment a new release could become true while someone is watching.
+  useEffect(() => {
+    let cancelled = false;
+    const ask = () => {
+      updateCheck.check().then((offer) => { if (!cancelled) setUpdateOffer(offer); });
+    };
+    ask();
+    let handle;
+    CapacitorApp.addListener("appStateChange", ({ isActive }) => { if (isActive) ask(); })
+      .then((h) => { if (cancelled) h?.remove?.(); else handle = h; })
+      .catch((e) => report("updateCheck.resume", e));
+    return () => { cancelled = true; handle?.remove?.(); };
   }, []);
 
   // Card pictures used to be written into localStorage, where they competed
@@ -864,7 +885,16 @@ export default function FlashcardCatalog() {
       {error && (
         <div style={bannerStyle}>{error}</div>
       )}
-      {view === "library" && apkBanner && (
+      {/* Above the "get the app" banner and shown on every screen, not just the
+          library: this one is about the app being out of date, which is true
+          wherever you happen to be standing. */}
+      {updateOffer && (
+        <UpdateBanner
+          offer={updateOffer}
+          onDismiss={() => { updateCheck.dismissUpdate(updateOffer.version); setUpdateOffer(null); }}
+        />
+      )}
+      {view === "library" && apkBanner && !updateOffer && (
         <AppDownloadBanner onDismiss={() => { appDownload.dismissBanner(); setApkBanner(false); }} />
       )}
       {view === "library" && (
@@ -1024,6 +1054,77 @@ export default function FlashcardCatalog() {
 // library screen rather than only in Settings, because the features that need
 // installing — reminders, the widget, AnkiDroid — are exactly the ones you
 // never go looking for. One offer, one dismissal, no second asking.
+// "There is a newer version." Styled as the app-download banner's louder
+// sibling — same card, accent border — because it is the same kind of message
+// and a second visual language for it would only be a second thing to learn.
+//
+// The button differs by platform and the wording has to as well: "Download"
+// inside the installed app means fetching an APK and installing it, which is
+// several deliberate steps on Android; "Reload" on the web is one tap and
+// instant. Calling both of them "Update" would make one of the two a lie.
+function UpdateBanner({ offer, onDismiss }) {
+  const downloading = offer.action === "download";
+  return (
+    <div style={{
+      position: "relative", margin: "12px 16px 8px", padding: "13px 34px 13px 14px",
+      display: "flex", alignItems: "center", gap: 10,
+      background: "var(--card-bg)", border: "1px solid var(--accent)", borderRadius: 14,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{
+          margin: 0, fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600,
+          color: "var(--text-strong)",
+        }}>Version {offer.version} is out</p>
+        <p style={{
+          margin: "2px 0 0", fontFamily: "Inter, sans-serif", fontSize: 12,
+          color: "var(--text-muted)", lineHeight: 1.35,
+        }}>
+          {downloading
+            ? `You have ${APP_VERSION}. Updates are not automatic \u2014 download and open it to install.`
+            : `You have ${APP_VERSION}. Reload to pick it up.`}
+        </p>
+      </div>
+      {downloading ? (
+        <a
+          href={appDownload.APK_URL}
+          download={appDownload.APK_FILENAME}
+          rel="noopener"
+          onClick={onDismiss}
+          style={updateActionStyle}
+        >
+          <Download size={15} /> Download
+        </a>
+      ) : (
+        <button onClick={() => window.location.reload()} style={{ ...updateActionStyle, cursor: "pointer" }}>
+          <RefreshCw size={15} /> Reload
+        </button>
+      )}
+      {/* Dismissing hides this version and only this version — the next
+          release asks again. See updateCheck.updateOffer. */}
+      <button
+        onClick={onDismiss}
+        aria-label="Not now"
+        style={{
+          position: "absolute", top: 6, right: 6, width: 28, height: 28,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "none", border: "none", padding: 0, cursor: "pointer",
+          WebkitTapHighlightColor: "transparent",
+        }}
+      >
+        <X size={13} color="var(--text-faint)" />
+      </button>
+    </div>
+  );
+}
+
+const updateActionStyle = {
+  flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6,
+  background: "var(--accent)", color: "var(--shell-bg)", textDecoration: "none",
+  border: "none", borderRadius: 10, padding: "11px 13px", minHeight: 42,
+  fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5,
+  WebkitTapHighlightColor: "transparent",
+};
+
 function AppDownloadBanner({ onDismiss }) {
   return (
     <div style={{

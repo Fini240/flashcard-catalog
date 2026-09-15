@@ -87,6 +87,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/onboarding.jsx` | How those two look: the first-run walkthrough and the update note. |
 | `src/backHandler.js` | Android hardware/gesture back button → in-app navigation |
 | `src/appDownload.js` | The one link to the installed Android app — the rolling `latest` release asset. Offered on the web only: a dismissable banner on the library screen, and a filled button in Settings. |
+| `src/updateCheck.js` | Telling a user their app is out of date. Compares `APP_VERSION` against `version.json` on hosting; Download in the APK, Reload on the web; a dismissal remembers the *version*, not a boolean. |
 | `src/theme.js` | Light/dark choice — automatic (device), light or dark. Holds the migration off the old boolean switch; unit-tested. |
 | `functions/index.js` | Cloud Function `generateFlashcards`; `DAILY_LIMIT` (per user) and `GLOBAL_DAILY_LIMIT` (whole project) live here |
 | `scripts/screenshots.mjs` | Regenerates Play Store screenshots via puppeteer-core |
@@ -108,6 +109,13 @@ point of the note is that nothing lands unannounced. Then:
 ```bash
 npm run build && npx cap sync android && cd android && ./gradlew assembleDebug
 ```
+
+`npm run build` also emits `dist/version.json` from `APP_VERSION` (the
+`version-manifest` plugin in `vite.config.js`), and step 2 below is what puts
+it where every installed app can see it. That file is how a sideloaded APK
+learns it is out of date — so **a release that skips the hosting deploy leaves
+every phone believing it is current**, however many times the APK is uploaded.
+The two are one step for this reason.
 
 then, all of these — the user treats them as one unit:
 
@@ -372,6 +380,17 @@ Play Store compatibility problem).
   `imageStore.js`. The three containment measures stay: they are what catches
   the next thing that outgrows the budget, and they are the only reason this
   one was diagnosable. `storageBudget.test.js` holds the arithmetic.
+- **The APK never updates itself, so something has to say so.** It is
+  sideloaded from a rolling GitHub release: whatever a user installed is what
+  they keep, for months, and every data-loss fix in this file only reaches a
+  phone when its owner goes and fetches a new build. The account that spent
+  weeks un-migrating itself was on an old APK. `updateCheck.js` closes that:
+  the app reads `version.json` off hosting at launch and on resume, and offers
+  Download (native) or Reload (web). Three things it must keep doing — fail
+  silently when offline, because that is how this app is normally used; compare
+  versions numerically, or 1.2.10 will look older than 1.2.9 and strand
+  everyone; and remember a dismissal *as a version*, so "not now" in January
+  does not silence every fix for the rest of the year.
 - **Reading a card picture is asynchronous, and `null` is a message.** Three
   screens draw "not on this device" when `getImage` comes back empty — the
   normal state for a card that synced from another phone, since the picture
