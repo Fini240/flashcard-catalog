@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.2.8";
+export const APP_VERSION = "1.2.9";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,15 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.2.9",
+    date: "2026-09-15",
+    items: [
+      "Folders could disappear and take their cards out of sight with them \u2014 the cards were never lost, but no folder could show them, which amounts to the same thing when you're looking for them. Cards in that state now appear on your catalog screen under \u201cCards without a folder\u201d, where you can see them, study them and file them back where you want them.",
+      "The cause is fixed too: an account could quietly drop back to the old way of syncing, where the last device to write wins and takes the whole catalog with it. It can't now, and a device that finds itself in that state moves itself back.",
+      "Problem reports keep their history. The diagnostics in Settings used to forget everything each time the app started, which is exactly when the things worth reporting happen.",
+    ],
+  },
   {
     version: "1.2.8",
     date: "2026-09-15",

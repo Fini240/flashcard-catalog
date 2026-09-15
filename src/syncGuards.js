@@ -51,3 +51,25 @@ export function shouldHealFromRemote({ subjects, remote, emptiedLocally }) {
   if (len(subjects) > 0) return false;
   return !!remote && len(remote.subjects) > 0;
 }
+
+// The fourth wipe was slower than the others and so went unnoticed for weeks.
+//
+// `cardsMigratedAt` on the parent document is how every client decides whether
+// cards travel as their own documents or as an array on that document. The
+// legacy push writes the whole document without merging — it has to, or it
+// could never shrink the cards array — so one legacy write from a client that
+// hasn't entered per-card mode *removes* the marker, and the account is
+// un-migrated. Every client then falls back to whole-document last-writer-wins
+// for the entire catalog, which is the thing per-card sync exists to escape,
+// and nothing puts the marker back: only an explicit sign-in used to migrate,
+// and a signed-in user never signs in again.
+//
+// Seen on a real account: marker absent, a 114-card subcollection sitting
+// unused, and 24 cards stranded in five folders a stale tree had overwritten.
+//
+// So a client about to make that write asks this first, and enters the mode
+// instead. The account's own document is the authority on which mode it is in;
+// this client's belief about it is not.
+export function mustEnterPerCardMode({ remote, perCardMode }) {
+  return !!remote && !!remote.cardsMigratedAt && !perCardMode;
+}

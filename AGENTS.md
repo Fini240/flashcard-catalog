@@ -57,6 +57,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/featureUI.jsx` | The 1.2.0 screens and controls (statistics, test runner, notes pane, occlusion editor, sharing dialogs, confidence bar, tutor panel). Kept out of `FlashcardCatalog.jsx`, which is large enough. |
 | `src/smoke.test.jsx` | **Renders the real app and every new screen against jsdom.** The pure-logic suites say nothing about whether the app still starts; this is what catches a bad import, a missing prop or a duplicate React key. It found the DST bug below. |
 | `src/backup.js` | JSON export/import of the whole catalog — the user-facing recovery path |
+| `src/orphans.js` | Cards whose folder no longer exists — finding them, grouping them, and refiling them on request. Pure. A view, never an automatic repair; the header says why. |
 | `src/report.js` | Error reporting: console + a 20-entry ring buffer behind the Settings "Copy diagnostics" button. Every catch that would otherwise swallow a failure calls `report()`. |
 | `src/*.test.js` | Vitest suites for the pure logic — SRS, gamification, per-card merge. `npm test`. |
 | `src/aiImport.js` | AI card generation; owner-free-tier vs BYOK routing |
@@ -397,6 +398,46 @@ Play Store compatibility problem).
   permanent now, so **nothing may let `cards` state transiently drop a card
   while per-card mode is on** — `applyLocalEdits` reads that as a deletion and
   propagates it to every device.
+- **2026-09-15: an account had been quietly un-migrated, and was losing a
+  folder at a time.** The fourth wipe, and the slowest. `cardsMigratedAt` on
+  the parent doc is how every client decides whether cards travel as documents
+  or as an array; `pushData` writes the whole document without merging, so one
+  legacy push from a client not in per-card mode *removes* it. Nothing put it
+  back: the restore effect declined to migrate ("an account with no
+  cardsMigratedAt is left alone for handleSignIn to migrate deliberately"), and
+  `handleSignIn` only runs when somebody taps Sign in with Google — which a
+  signed-in user never does. So the account sat in whole-document
+  last-writer-wins for weeks, and each launch was another chance for a stale
+  subject tree to overwrite a newer one.
+  The evidence, read straight out of Firestore: `cardsMigratedAt` absent, a
+  114-card subcollection sitting there unused, the parent doc still carrying
+  its 114-card array, and **24 live cards pointing at five folders that were no
+  longer in the tree** — all created the previous day, none with review
+  history. The user's report was "cards often vanish". They had not been
+  deleted; nothing in the app could show them.
+  Two fixes, and they are different in kind. The restore effect now migrates as
+  well as adopts, and `guards.mustEnterPerCardMode` makes a client about to
+  legacy-push over a migrated account enter the mode instead — those close the
+  route in. `orphans.js` is the other half and the more important one: whatever
+  goes wrong upstream, **a card must never be somewhere the user cannot look.**
+- **A card is only findable through the tree, so nothing may strand it.** Every
+  list in the library finds cards by walking `subjects` and matching `nodeId`.
+  A card whose node is missing is in the catalog, syncs, counts in Settings and
+  even turns up in "study everything" — and cannot be opened. `orphans.js`
+  finds them and the library shows them as "Cards without a folder". It is
+  deliberately a **view, not a repair**: the same state occurs for a moment
+  during an ordinary sync when cards arrive before the tree that explains
+  them, so a client that rehomed on sight would scatter a synced catalog into
+  a recovery folder every time the network was slow. Shown, it corrects itself
+  the instant the real folder arrives.
+- **The diagnostics buffer survives a restart, and has to.** It lived on
+  `window` alone until a report came back reading "recent errors (0): (none)"
+  from the device above — because the user had done the obvious thing and
+  opened the app fresh to fetch it. A record of faults covering only the
+  current launch cannot describe a fault that happens at launch, and most of
+  this app's worst ones do. It is mirrored into localStorage now, capped at 20
+  entries and flushed on a microtask so a burst costs one write. **Reading
+  "(none)" proves nothing about builds before 1.2.9.**
 - **Cross-device sync has bitten this app three times.** Local data once
   overwrote a freshly signed-in account's cards; cards vanished from a
   logged-in account (~90 lost); and on 2026-08-11 a phone was wiped by the

@@ -148,3 +148,59 @@ describe("the diagnostics buffer survives an error that repeats", () => {
     expect(recentErrors().map((e) => e.where)).toEqual(["a", "b", "a"]);
   });
 });
+
+describe("the diagnostics buffer outlives the launch that filled it", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.__lastErrors = [];
+  });
+
+  it("is still there after a restart", async () => {
+    // A real report came back "recent errors (0): (none)" from a device whose
+    // cards had been going missing for days — because the user opened the app
+    // fresh to fetch it. An in-memory buffer cannot describe a fault that
+    // happens at launch, which is most of this app's worst ones.
+    const { report } = await import("./report");
+    report("sync.push", new Error("permission-denied"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The restart: memory gone, storage intact.
+    delete window.__lastErrors;
+    vi.resetModules();
+    const fresh = await import("./report");
+
+    const errs = fresh.recentErrors();
+    expect(errs).toHaveLength(1);
+    expect(errs[0].where).toBe("sync.push");
+    expect(fresh.diagnosticsText()).toContain("permission-denied");
+  });
+
+  it("costs one write for a burst, not one per error", async () => {
+    const { report } = await import("./report");
+    const spy = vi.spyOn(Storage.prototype, "setItem");
+    for (let i = 0; i < 10; i++) report("sync.push", new Error("attempt " + i));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(spy.mock.calls.filter((c) => c[0] === "flashcard-catalog-errors")).toHaveLength(1);
+    spy.mockRestore();
+  });
+
+  it("stays within its cap, so it can never be what fills the store", async () => {
+    const { report, recentErrors: recent } = await import("./report");
+    for (let i = 0; i < 200; i++) report("where" + i, new Error("e" + i));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(recent().length).toBeLessThanOrEqual(20);
+    expect((window.localStorage.getItem("flashcard-catalog-errors") || "").length).toBeLessThan(20 * 300);
+  });
+
+  it("can be cleared, for a second dump after a fix", async () => {
+    const { report, clearErrors, recentErrors: recent } = await import("./report");
+    report("a", new Error("one"));
+    await Promise.resolve();
+    clearErrors();
+    expect(recent()).toEqual([]);
+    expect(window.localStorage.getItem("flashcard-catalog-errors")).toBeNull();
+  });
+});

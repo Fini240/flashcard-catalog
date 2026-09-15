@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { refusesParentPush, refusesLegacyPush, shouldHealFromRemote } from "./syncGuards";
+import { refusesParentPush, refusesLegacyPush, shouldHealFromRemote, mustEnterPerCardMode } from "./syncGuards";
 
 const tree = [{ id: "s1", name: "Biology", children: [] }, { id: "s2", name: "¡Adelante 1!", children: [] }];
 const remote = { subjects: tree, cards: [{ id: "k1" }, { id: "k2" }] };
@@ -73,5 +73,22 @@ describe("shouldHealFromRemote", () => {
   it("does nothing when the server is empty too", () => {
     expect(shouldHealFromRemote({ subjects: [], remote: { subjects: [] }, emptiedLocally: false })).toBe(false);
     expect(shouldHealFromRemote({ subjects: [], remote: null, emptiedLocally: false })).toBe(false);
+  });
+});
+
+describe("mustEnterPerCardMode", () => {
+  const migrated = { subjects: tree, cards: [], cardsMigratedAt: 1757000000000 };
+
+  it("stops a legacy whole-doc push from un-migrating an account", () => {
+    expect(mustEnterPerCardMode({ remote: migrated, perCardMode: false })).toBe(true);
+  });
+
+  it("leaves a client that is already in the mode alone", () => {
+    expect(mustEnterPerCardMode({ remote: migrated, perCardMode: true })).toBe(false);
+  });
+
+  it("says nothing about an account that has genuinely never migrated", () => {
+    expect(mustEnterPerCardMode({ remote, perCardMode: false })).toBe(false);
+    expect(mustEnterPerCardMode({ remote: null, perCardMode: false })).toBe(false);
   });
 });

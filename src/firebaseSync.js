@@ -62,6 +62,17 @@ export async function pullData(uid) {
   return snapshot.data;
 }
 
+// The legacy whole-document write. It does NOT merge, deliberately: the legacy
+// path has to be able to shrink the cards array, and a merging write can only
+// ever add.
+//
+// Which is exactly why it is dangerous, and why safePush must never call it
+// with a payload that has lost `cardsMigratedAt`. One such write un-migrates an
+// account — the marker is how every client decides whether cards travel as
+// documents or as an array on this doc — and an un-migrated account is back on
+// whole-document last-writer-wins for the whole catalog. It happened to a real
+// account, and nothing put it back, because only an explicit sign-in used to
+// migrate and a signed-in user never signs in again.
 export async function pushData(uid, payload) {
   await FirebaseFirestore.setDocument({ reference: docRef(uid), data: payload });
 }

@@ -394,6 +394,24 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   // to send, we adopt it instead of overwriting it.
   const safePush = async (uid, payload) => {
     const current = await firebaseSync.pullData(uid);
+    // This account is migrated and this client is about to write a legacy
+    // whole document over it. That write does not merge, so it would carry the
+    // account *back* to the array — un-migrating it, and putting the whole
+    // catalog back under last-writer-wins for every client that reads it
+    // afterwards. Enter the mode instead of overwriting the evidence of it.
+    //
+    // The restore effect normally gets here first; this is the window before
+    // it finishes, and the sole reason a real account spent weeks flipping
+    // between the two modes, losing a folder at a time.
+    if (guards.mustEnterPerCardMode({ remote: current, perCardMode: perCardModeRef.current })) {
+      report("sync.legacyPushOverMigrated", new Error(
+        `entered per-card mode rather than overwrite a migrated account for ${uid}`
+      ));
+      ownerUidRef.current = uid;
+      await enterPerCardMode(uid, current);
+      await pushPerCard(uid, payload.subjects, payload.game);
+      return;
+    }
     if (current && (current.updatedAt || 0) > payload.updatedAt) {
       acceptRemoteIfNewer(current, { uid });
       return;
@@ -609,8 +627,26 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   // its catalog from the parent doc's dead cards array. The phone looked fine
   // only because it was still inside the session where it had signed in.
   //
-  // Only adopts, never migrates — an account with no cardsMigratedAt is left
-  // alone for handleSignIn to migrate deliberately.
+  // It migrates as well as adopts, and that is a deliberate change from the
+  // first version, which did "only adopt — an account with no cardsMigratedAt
+  // is left alone for handleSignIn to migrate deliberately."
+  //
+  // That reasoning assumed a missing cardsMigratedAt means "never migrated".
+  // It doesn't: a legacy whole-document push overwrites the parent doc without
+  // the field, so one such write un-migrates an account that had been migrated
+  // for weeks. And then nothing puts it back, because this effect declined to
+  // migrate and handleSignIn only runs when somebody actually taps "Sign in
+  // with Google" — which a signed-in user never does. The account is stuck in
+  // whole-document last-writer-wins, the exact mode per-card sync exists to
+  // escape, and every launch is another chance for an older payload to
+  // overwrite a newer one.
+  //
+  // Seen on a real account (2026-09-15): cardsMigratedAt absent, a 114-card
+  // subcollection sitting right there unused, and 24 cards pointing at five
+  // folders that a stale tree had overwritten out of existence.
+  //
+  // migrateCardsToSubcollection is idempotent and merges by timestamp, so
+  // running it from here is the same safe operation sign-in performs.
   useEffect(() => {
     // signingInRef: handleSignIn sets googleUser, which runs this effect while
     // that function is still deciding what this account's state is. Both then
@@ -632,7 +668,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
         // merging there is exactly the bug that once pushed one account's
         // cards into another's document.
         const ownedHere = ownerUidRef.current === googleUser.uid || ownerUidRef.current === null;
-        if (remote && remote.cardsMigratedAt && ownedHere) {
+        if (remote && ownedHere) {
           ownerUidRef.current = googleUser.uid;
           await enterPerCardMode(googleUser.uid, remote);
           // A restored session must take the subject tree and game too. The

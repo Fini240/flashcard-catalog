@@ -14,6 +14,7 @@ import * as ocr from "./ocr";
 import * as ankiImport from "./ankiImport";
 import * as ankiDroid from "./ankiDroid";
 import * as appDownload from "./appDownload";
+import * as orphansLib from "./orphans";
 import * as imageStore from "./imageStore";
 import {
   normalize, PrimaryButton, GhostButton, TextField, Label,
@@ -1335,6 +1336,22 @@ function Library({
     />
   ) : null;
 
+  // Cards the tree can't reach. Computed here rather than in the tile so the
+  // sheet and the tile can never disagree about which cards those are.
+  const orphans = orphansLib.findOrphans(cards, subjects);
+  const orphanSheet = extra === "orphans" ? (
+    <LooseCardsSheet
+      orphans={orphans}
+      subjects={subjects}
+      onClose={() => setExtra(null)}
+      onRehome={(ids, nodeId) => {
+        setCards(cs => orphansLib.rehome(cs, ids, nodeId));
+        setExtra(null);
+      }}
+      onEdit={(c) => { setExtra(null); setCardForm({ nodeId: c.nodeId, editingId: c.id }); }}
+    />
+  ) : null;
+
   // Accepts either raw `text` (parsed as "Front | Back" lines) or a pre-parsed
   // `cardPairs` array of {front, back} (from file/photo AI extraction).
   const importCards = ({ subjectName, categoryName, text, cardPairs }) => {
@@ -1555,6 +1572,20 @@ function Library({
           );
         })}
 
+        {/* Cards whose folder is gone. Without this tile there is nowhere in
+            the app they can be reached: every other list finds cards by walking
+            the tree. See orphans.js — it is a view, so it disappears by itself
+            if the missing folder turns up in a later sync. */}
+        {orphans.length > 0 && (
+          <NodeRow name="Cards without a folder" cards={orphans}
+            color="#B5533C" tabColor="#8C4230"
+            onOpen={() => setExtra("orphans")}
+            onStudy={() => goStudy(null)}
+            onDelete={() => setExtra("orphans")}
+            deleteTitle="Sort these out"
+          />
+        )}
+
         <div style={{ marginTop: 20 }}>
           {addingSubject && (
             <div style={{ display: "flex", gap: 8 }}>
@@ -1580,6 +1611,7 @@ function Library({
           />
         )}
         {leechSheet}
+        {orphanSheet}
       </div>
     );
   }
@@ -1774,6 +1806,7 @@ function Library({
         />
       )}
       {leechSheet}
+      {orphanSheet}
       {extra === "speech" && (
         <Sheet title={`Read aloud — ${trail[0].name}`} onClose={() => setExtra(null)}>
           {/* Configured per subject, not per card: a vocabulary subject is one
@@ -1815,6 +1848,87 @@ function Library({
 // library reads as "how solid is this deck" instead of just "how many cards".
 // The Study button sits on the row itself — one tap from the list into a
 // session, rather than opening the folder and hunting for a button.
+// The one place in the app a card whose folder is gone can be reached. See
+// orphans.js for why they exist and why nothing moves them automatically.
+//
+// The folder's name is not recoverable — it only ever lived in the subject
+// tree, which is what was lost — so the groups are described by size and by
+// when they were last worked on, which between them is usually enough for
+// someone to recognise "that's my chemistry vocab".
+function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
+  const groups = orphansLib.groupOrphans(orphans);
+  const folders = flattenTree(subjects);
+  const [target, setTarget] = useState(() => (folders.length ? folders[folders.length - 1].id : ""));
+
+  return (
+    <Sheet title={`Cards without a folder (${orphans.length})`} onClose={onClose}>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.5, margin: "0 0 14px" }}>
+        These cards are still here and still in your study queue, but the folder
+        they were filed in is gone, so no folder can show them. Put them
+        somewhere and they'll behave like any other card.
+      </p>
+      {folders.length === 0 ? (
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-faint)", margin: "0 0 14px" }}>
+          Make a subject first, then come back and file them into it.
+        </p>
+      ) : (
+        <div style={{ marginBottom: 18 }}>
+          <Label>Put them in</Label>
+          <select value={target} onChange={(e) => setTarget(e.target.value)} style={selectStyle}>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>{"\u00a0".repeat(f.depth * 2)}{f.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {groups.map((group) => (
+        <div key={group.nodeId} style={{
+          border: "1px solid var(--card-border)", borderRadius: 10, padding: "12px 14px", marginBottom: 12,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, color: "var(--text-strong)" }}>
+                {group.cards.length} card{group.cards.length === 1 ? "" : "s"} from one folder
+              </span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>
+                last worked on {group.lastEdited ? new Date(group.lastEdited).toLocaleDateString() : "unknown"}
+              </span>
+            </div>
+            {folders.length > 0 && (
+              <GhostButton
+                onClick={() => onRehome(group.cards.map((c) => c.id), target)}
+                style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", fontSize: 12.5, padding: "8px 12px", minHeight: 38, flexShrink: 0 }}
+              >
+                Move these
+              </GhostButton>
+            )}
+          </div>
+          {group.cards.slice(0, 4).map((c) => (
+            <button key={c.id} onClick={() => onEdit(c)} style={{
+              display: "block", width: "100%", textAlign: "left", background: "none", border: "none",
+              padding: "5px 0", cursor: "pointer", WebkitTapHighlightColor: "transparent",
+            }}>
+              <span style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+                {c.front || "(picture)"}
+              </span>
+            </button>
+          ))}
+          {group.cards.length > 4 && (
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>
+              and {group.cards.length - 4} more
+            </span>
+          )}
+        </div>
+      ))}
+      {folders.length > 0 && groups.length > 1 && (
+        <PrimaryButton onClick={() => onRehome(orphans.map((c) => c.id), target)}>
+          Move all {orphans.length} there
+        </PrimaryButton>
+      )}
+    </Sheet>
+  );
+}
+
 function NodeRow({ name, cards, color, tabColor, onOpen, onDelete, deleteTitle, compact, onStudy }) {
   const list = cards || [];
   const count = list.length;
