@@ -300,7 +300,7 @@ export function Sheet({ title, children, onClose, footer }) {
         }}
       >
         <div style={{ padding: "14px 16px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-strong)" }}>{title}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--on-shell-strong)" }}>{title}</div>
           <GhostButton onClick={onClose}>Close</GhostButton>
         </div>
         <div style={{ padding: "0 16px 16px", overflowY: "auto" }}>{children}</div>
@@ -425,7 +425,7 @@ export function SpeechSettings({ subject, onChange }) {
         onChange={(e) => set({ [`${side}Lang`]: e.target.value || null })}
         style={{
           width: "100%", padding: "9px 10px", borderRadius: 8, minHeight: 40,
-          background: "var(--shell-raised)", color: "var(--text-strong)",
+          background: "var(--shell-raised)", color: "var(--on-shell-strong)",
           border: "1px solid var(--shell-raised)", fontSize: 14,
         }}
       >
@@ -441,7 +441,7 @@ export function SpeechSettings({ subject, onChange }) {
     <div>
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-        <span style={{ color: "var(--text-strong)", fontSize: 14 }}>Read cards aloud</span>
+        <span style={{ color: "var(--on-shell-strong)", fontSize: 14 }}>Read cards aloud</span>
       </label>
       {cfg.enabled && (
         <>
@@ -490,7 +490,7 @@ export function ConfidenceBar({ onRate }) {
             onClick={() => onRate(i + 1)}
             style={{
               flex: 1, minHeight: 52, borderRadius: 10, border: "none", cursor: "pointer",
-              background: "var(--shell-raised)", color: "var(--text-strong)",
+              background: "var(--shell-raised)", color: "var(--on-shell-strong)",
               fontSize: 11.5, fontFamily: "Inter, sans-serif", padding: "6px 2px",
               display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
               WebkitTapHighlightColor: "transparent",
@@ -588,7 +588,7 @@ export function ClozeEditor({ value, onChange }) {
         placeholder="The {{c1::mitochondrion}} is the powerhouse of the cell."
         style={{
           width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 8,
-          background: "var(--shell-raised)", color: "var(--text-strong)",
+          background: "var(--shell-raised)", color: "var(--on-shell-strong)",
           border: "1px solid var(--shell-raised)", fontSize: 14, fontFamily: "Inter, sans-serif",
           resize: "vertical",
         }}
@@ -854,7 +854,7 @@ der Hund ::: the dog
 The heart pumps {{c1::blood}} around the body.`}
         style={{
           width: "100%", boxSizing: "border-box", marginTop: 10, padding: "10px 12px", borderRadius: 8,
-          background: "var(--shell-raised)", color: "var(--text-strong)",
+          background: "var(--shell-raised)", color: "var(--on-shell-strong)",
           border: "1px solid var(--shell-raised)", fontSize: 14,
           fontFamily: "ui-monospace, Menlo, monospace", resize: "vertical",
         }}
@@ -865,7 +865,7 @@ The heart pumps {{c1::blood}} around the body.`}
           {preview.cards.slice(0, 8).map((c, i) => (
             <div key={i} style={{ fontSize: 13, marginTop: 5, color: "var(--text-muted)" }}>
               {c.path?.length > 0 && <span style={{ color: "var(--text-faint)" }}>{c.path.join(" › ")} · </span>}
-              <span style={{ color: "var(--text-strong)" }}><RichText text={c.front} /></span> → <RichText text={c.back} />
+              <span style={{ color: "var(--on-shell-strong)" }}><RichText text={c.front} /></span> → <RichText text={c.back} />
             </div>
           ))}
           {preview.cards.length > 8 && <div style={caption}>…and {preview.cards.length - 8} more</div>}
@@ -898,7 +898,10 @@ export function ShareDeckModal({ deckName, cards, owner, onClose, onPublish }) {
 
       {preview.ok && state.phase !== "done" && (
         <>
-          <div style={{ ...bigNumber, marginBottom: 2 }}>{preview.payload.cardCount}</div>
+          {/* bigNumber is painted for the paper card it is used on in
+              Statistics; this one is on the navy sheet, where --text-strong is
+              near-black and the count simply was not there. */}
+          <div style={{ ...bigNumber, color: "var(--on-shell-strong)", marginBottom: 2 }}>{preview.payload.cardCount}</div>
           <div style={caption}>cards will be shared, credited to {owner?.username || "you"}.</div>
           {preview.skipped.length > 0 && (
             <div style={{ ...caption, marginTop: 8 }}>
@@ -923,7 +926,7 @@ export function ShareDeckModal({ deckName, cards, owner, onClose, onPublish }) {
       {state.phase === "done" && (
         <div style={{ textAlign: "center", padding: "10px 0" }}>
           <div style={caption}>Share this code:</div>
-          <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: 5, color: "var(--text-strong)", fontFamily: "'IBM Plex Mono', monospace", margin: "8px 0" }}>
+          <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: 5, color: "var(--on-shell-strong)", fontFamily: "'IBM Plex Mono', monospace", margin: "8px 0" }}>
             {state.code}
           </div>
           <GhostButton onClick={() => navigator.clipboard?.writeText(state.code)}>Copy code</GhostButton>
@@ -969,14 +972,14 @@ export function ImportDeckModal({ onClose, onFetch, onImport }) {
 
       {state.phase === "found" && (
         <>
-          <div style={{ fontSize: 17, fontWeight: 600, color: "var(--text-strong)" }}>{state.deck.name}</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: "var(--on-shell-strong)" }}>{state.deck.name}</div>
           <div style={caption}>
             {state.deck.cardCount} cards{state.deck.byUsername ? ` · by ${state.deck.byUsername}` : ""}
           </div>
           <div style={{ marginTop: 10 }}>
             {state.deck.cards.slice(0, 5).map((c, i) => (
               <div key={i} style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
-                <span style={{ color: "var(--text-strong)" }}>{c.front}</span> → {c.back}
+                <span style={{ color: "var(--on-shell-strong)" }}>{c.front}</span> → {c.back}
               </div>
             ))}
           </div>

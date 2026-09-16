@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.3.0";
+export const APP_VERSION = "1.4.0";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,17 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.4.0",
+    date: "2026-09-16",
+    items: [
+      "Cards can be moved between folders. Tap Select above the card list, tick the ones you want, and pick where they go \u2014 including into another subject. Everything the card has learned goes with it: the schedule, the tags, the history.",
+      "Tags written with umlauts or accents were being mangled. #Pr\u00fcfung became #prfung, #Gr\u00f6\u00dfe became #gre, and a tag in a non-Latin alphabet vanished altogether \u2014 so the same tag typed twice could end up as two. Tags written in a note were worse: #pr\u00fcfung left \u201c\u00fcfung\u201d sitting in the card's answer. Tags already saved are untouched.",
+      "The bottom sheets were unreadable in light mode. Their headings were being drawn in almost exactly the colour behind them \u2014 the six-character share code, the notes you were typing, and the headings in \u201cCards without a folder\u201d were all effectively invisible.",
+      "A card found by search whose folder is gone now opens \u201cCards without a folder\u201d instead of doing nothing at all.",
+      "Filing a card back out of \u201cCards without a folder\u201d now settles it into its new subject properly. It used to keep pointing at the subject it came from, which left it with no wrong answers to offer in a multiple-choice drill.",
+    ],
+  },
   {
     version: "1.3.0",
     date: "2026-09-15",

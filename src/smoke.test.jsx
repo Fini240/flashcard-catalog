@@ -24,7 +24,16 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 // Capacitor's plugins expect a native bridge; without these the module-level
 // imports throw before any component is reached.
 vi.mock("@capacitor-firebase/firestore", () => ({ FirebaseFirestore: {} }));
-vi.mock("@capacitor-firebase/authentication", () => ({ FirebaseAuthentication: {} }));
+// Enough of the auth plugin to survive a session restore. An empty object is
+// fine while nothing awaits the restore, but any test that lets a microtask run
+// reaches `addListener` and reports a TypeError that has nothing to do with
+// what is being tested.
+vi.mock("@capacitor-firebase/authentication", () => ({
+  FirebaseAuthentication: {
+    addListener: async () => ({ remove() {} }),
+    getCurrentUser: async () => ({ user: null }),
+  },
+}));
 vi.mock("@capacitor/local-notifications", () => ({ LocalNotifications: {} }));
 vi.mock("@capacitor-mlkit/text-recognition", () => ({ TextRecognition: {} }));
 vi.mock("@capacitor/filesystem", () => ({ Filesystem: {}, Directory: {}, Encoding: {} }));
@@ -177,6 +186,72 @@ describe("the new screens render", () => {
     render(<ImportDeckModal onClose={() => {}} onFetch={async () => ({ ok: false, error: "no" })} onImport={() => {}} />);
     const find = [...container.querySelectorAll("button")].find((b) => /find deck/i.test(b.textContent));
     expect(find.disabled).toBe(true); // empty code
+    expect(errors).toEqual([]);
+  });
+});
+
+// Moving cards is the one feature whose whole job is to change where a card is
+// filed, so a unit test of the pure move says nothing about whether the user
+// can reach it. This drives the real app from the library screen through
+// picking a card to seeing it land in another subject.
+describe("moving cards between folders", () => {
+  const seed = {
+    subjects: [
+      { id: "s1", name: "Biology", children: [] },
+      { id: "s2", name: "Espanol", children: [] },
+    ],
+    cards: [
+      { id: "a", front: "Mitochondrion", back: "powerhouse", nodeId: "s1", subjectId: "s1" },
+      { id: "b", front: "Ribosome", back: "protein factory", nodeId: "s1", subjectId: "s1" },
+    ],
+  };
+
+  const click = (el) => act(() => el.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  const byText = (re) => [...container.querySelectorAll("button, div, span")].find((e) => re.test(e.textContent));
+  const button = (re) => [...container.querySelectorAll("button")].find((b) => re.test(b.textContent));
+
+  const openBiology = async () => {
+    const { default: FlashcardCatalog } = await import("./FlashcardCatalog");
+    window.localStorage.setItem("flashcard-catalog-data", JSON.stringify(seed));
+    render(<FlashcardCatalog />);
+    // The load is async, so let the promise that reads localStorage settle.
+    await act(async () => { await Promise.resolve(); });
+    click(byText(/^Biology/));
+    return FlashcardCatalog;
+  };
+
+  beforeEach(() => window.localStorage.clear());
+
+  it("picks a card in one subject and files it into another", async () => {
+    await openBiology();
+    expect(container.textContent).toContain("Mitochondrion");
+
+    click(button(/^Select$/));
+    // In picking mode the per-row edit and delete buttons stand down, so a
+    // mis-tap during a bulk move cannot delete a card.
+    expect(button(/^Select$/)).toBeFalsy();
+    expect(container.querySelector('[role="checkbox"]')).toBeTruthy();
+
+    click(container.querySelector('[role="checkbox"]').closest("div[style]").parentElement);
+    expect(container.textContent).toMatch(/1 selected/);
+
+    click(button(/^Move$/));
+    expect(container.textContent).toContain("Move 1 card");
+
+    click(button(/Move it here/));
+    // Gone from Biology, and the app says where it went.
+    expect(container.textContent).not.toContain("Mitochondrion");
+    expect(container.textContent).toContain("Espanol");
+    expect(errors).toEqual([]);
+  });
+
+  it("offers every folder except the one the cards are already in", async () => {
+    await openBiology();
+    click(button(/^Select$/));
+    click(container.querySelector('[role="checkbox"]').closest("div[style]").parentElement);
+    click(button(/^Move$/));
+    const options = [...container.querySelectorAll("option")].map((o) => o.textContent.trim());
+    expect(options).toEqual(["Espanol"]);
     expect(errors).toEqual([]);
   });
 });

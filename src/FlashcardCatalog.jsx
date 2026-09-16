@@ -15,6 +15,7 @@ import * as ankiImport from "./ankiImport";
 import * as ankiDroid from "./ankiDroid";
 import * as appDownload from "./appDownload";
 import * as orphansLib from "./orphans";
+import * as moveLib from "./moveCards";
 import * as updateCheck from "./updateCheck";
 import * as imageStore from "./imageStore";
 import {
@@ -911,6 +912,7 @@ export default function FlashcardCatalog() {
           onOpenSettings={() => setSettingsOpen(true)}
           extra={extra}
           setExtra={setExtra}
+          setMessage={setError}
           srsSettings={srsSettings}
           onUnsuspend={unsuspendCard}
           onForgive={forgiveCard}
@@ -1348,7 +1350,7 @@ function IconBtn({ onClick, title, children, danger }) {
 function Library({
   subjects, setSubjects, cards, setCards, game, nudgeCount, onOpenSheet, onQuickStudy,
   goStudy, startReview, googleUser, onOpenSettings,
-  extra, setExtra, srsSettings, onUnsuspend, onForgive, onPublishDeck, onOpenTest,
+  extra, setExtra, setMessage, srsSettings, onUnsuspend, onForgive, onPublishDeck, onOpenTest,
 }) {
   const [path, setPath] = useState([]); // node ids from root subject down
   const [searchQuery, setSearchQuery] = useState("");
@@ -1360,6 +1362,11 @@ function Library({
   const [importOpen, setImportOpen] = useState(null); // null | { mode: "paste"|"file"|"photo" }
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState([]);
+  // Picking cards to move. null when off; a Set of card ids when on, so the
+  // list can go straight into selecting with the card the user long-pressed
+  // already ticked. Cleared whenever the folder changes — a selection made in
+  // one folder means nothing in the next.
+  const [selection, setSelection] = useState(null);
 
   // Hardware back button pops one folder level at a time, same as tapping
   // the parent breadcrumb. Only registered while actually inside a folder —
@@ -1367,6 +1374,17 @@ function Library({
   useEffect(() => {
     if (path.length > 0) return pushBackHandler(() => setPath(path.slice(0, -1)));
   }, [path]);
+
+  // Registered after the one above, so it sits on top of it: while cards are
+  // being picked, back cancels the picking rather than leaving the folder and
+  // silently throwing the selection away.
+  useEffect(() => {
+    if (selection) return pushBackHandler(() => setSelection(null));
+  }, [selection]);
+
+  // A selection is about the cards in front of you. Leaving the folder, or
+  // narrowing the list with a tag filter, makes it mean something else.
+  useEffect(() => { setSelection(null); }, [path.join("/"), tagFilter.join(",")]);
 
   const trail = getTrail(subjects, path);
   const currentNode = trail[trail.length - 1] || null;
@@ -1397,6 +1415,10 @@ function Library({
     })));
     setNewSubcategoryName(""); setAddingSubcategory(false);
   };
+  // Both deletes update from the previous state rather than from the `cards`
+  // this render closed over. A remote snapshot can land between the render and
+  // the tap — the sync engine calls setCards from its own listeners — and the
+  // closed-over array would then put every card it did not know about back.
   const deleteNode = (id) => {
     const node = findNodeById(subjects, id);
     const idsToRemove = node ? collectIds(node) : [id];
@@ -1407,7 +1429,7 @@ function Library({
         imageStore.removeImage(c.backImageId);
       }
     });
-    setCards(cards.filter(c => !idsToRemove.includes(c.nodeId)));
+    setCards(cs => cs.filter(c => !idsToRemove.includes(c.nodeId)));
     const idx = path.indexOf(id);
     if (idx !== -1) setPath(path.slice(0, idx));
   };
@@ -1417,7 +1439,7 @@ function Library({
       imageStore.removeImage(card.frontImageId);
       imageStore.removeImage(card.backImageId);
     }
-    setCards(cards.filter(c => c.id !== id));
+    setCards(cs => cs.filter(c => c.id !== id));
   };
 
   // Rendered from both branches of this component (the subject grid and the
@@ -1445,8 +1467,9 @@ function Library({
       orphans={orphans}
       subjects={subjects}
       onClose={() => setExtra(null)}
-      onRehome={(ids, nodeId) => {
-        setCards(cs => orphansLib.rehome(cs, ids, nodeId));
+      onRehome={(ids, target) => {
+        if (!target) return;
+        setCards(cs => orphansLib.rehome(cs, ids, target));
         setExtra(null);
       }}
       onEdit={(c) => { setExtra(null); setCardForm({ nodeId: c.nodeId, editingId: c.id }); }}
@@ -1560,8 +1583,12 @@ function Library({
       : [];
     const openSearchResult = (card) => {
       const p = findPathTo(subjects, card.nodeId);
-      if (!p) return;
       setSearchQuery("");
+      // Search reads the whole catalog, including cards whose folder is gone —
+      // and there is no folder to open for those. Tapping one used to do
+      // nothing at all, which is the worst possible answer to "I found it,
+      // where is it?". Send them to the one screen that can show it.
+      if (!p) return setExtra("orphans");
       setPath(p);
       setCardForm({ nodeId: card.nodeId, editingId: card.id });
     };
@@ -1853,11 +1880,19 @@ function Library({
         </div>
       )}
 
-      <div style={{ margin: "4px 0 10px" }}>
+      <div style={{ margin: "4px 0 10px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: "var(--on-shell-muted)", letterSpacing: 0.5, textTransform: "uppercase" }}>
           Cards in this folder ({visibleCards.length}
           {tagFilter.length > 0 && ` of ${nodeCards.length}`})
         </span>
+        {/* Filing is something you do to several cards at once far more often
+            than to one, so the list gets a picking mode rather than a "move"
+            item hidden inside every card's editor. */}
+        {visibleCards.length > 0 && (
+          <SmallButton onClick={() => setSelection(selection ? null : new Set())}>
+            {selection ? "Cancel" : "Select"}
+          </SmallButton>
+        )}
       </div>
 
       {visibleCards.length === 0 ? (
@@ -1870,11 +1905,45 @@ function Library({
         <div style={{ background: "var(--card-bg)", borderRadius: 10, padding: "4px 16px", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }}>
           {visibleCards.map(c => (
             <CardRow key={c.id} card={c}
+              selectable={!!selection}
+              selected={!!selection && selection.has(c.id)}
+              onToggle={() => setSelection(sel => {
+                const next = new Set(sel);
+                if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
+                return next;
+              })}
               onDelete={() => deleteCard(c.id)}
               onEdit={() => setCardForm({ nodeId: currentNode.id, editingId: c.id })}
             />
           ))}
         </div>
+      )}
+
+      {selection && (
+        <MoveBar
+          count={selection.size}
+          allSelected={selection.size === visibleCards.length}
+          onSelectAll={() => setSelection(new Set(visibleCards.map(c => c.id)))}
+          onClear={() => setSelection(new Set())}
+          onMove={() => setExtra("move")}
+        />
+      )}
+
+      {extra === "move" && selection && (
+        <MoveCardsSheet
+          cards={cards}
+          selectedIds={[...selection]}
+          subjects={subjects}
+          fromNodeId={currentNode.id}
+          onClose={() => setExtra(null)}
+          onMove={(ids, target) => {
+            if (!target) return;
+            setCards(cs => moveLib.moveCards(cs, ids, target));
+            setExtra(null);
+            setSelection(null);
+            setMessage(`Moved ${ids.length} card${ids.length === 1 ? "" : "s"} to ${target.label}.`);
+          }}
+        />
       )}
 
       {cardForm && (
@@ -1958,26 +2027,31 @@ function Library({
 // someone to recognise "that's my chemistry vocab".
 function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
   const groups = orphansLib.groupOrphans(orphans);
-  const folders = flattenTree(subjects);
-  const [target, setTarget] = useState(() => (folders.length ? folders[folders.length - 1].id : ""));
+  // The whole folder, not just its id: an orphan's `subjectId` points at a
+  // subject that is gone, and refiling has to replace it or the card arrives
+  // in its new deck unable to borrow a wrong answer from any of its new
+  // neighbours. See the header of moveCards.js.
+  const folders = moveLib.folderOptions(subjects);
+  const [targetId, setTargetId] = useState(() => (folders.length ? folders[folders.length - 1].nodeId : ""));
+  const target = folders.find((f) => f.nodeId === targetId) || null;
 
   return (
     <Sheet title={`Cards without a folder (${orphans.length})`} onClose={onClose}>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.5, margin: "0 0 14px" }}>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "0 0 14px" }}>
         These cards are still here and still in your study queue, but the folder
         they were filed in is gone, so no folder can show them. Put them
         somewhere and they'll behave like any other card.
       </p>
       {folders.length === 0 ? (
-        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-faint)", margin: "0 0 14px" }}>
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", margin: "0 0 14px" }}>
           Make a subject first, then come back and file them into it.
         </p>
       ) : (
         <div style={{ marginBottom: 18 }}>
-          <Label>Put them in</Label>
-          <select value={target} onChange={(e) => setTarget(e.target.value)} style={selectStyle}>
+          <Label style={{ color: "var(--on-shell-muted)" }}>Put them in</Label>
+          <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={selectStyle}>
             {folders.map((f) => (
-              <option key={f.id} value={f.id}>{"\u00a0".repeat(f.depth * 2)}{f.name}</option>
+              <option key={f.nodeId} value={f.nodeId}>{"\u00a0".repeat(f.depth * 2)}{f.name}</option>
             ))}
           </select>
         </div>
@@ -1988,7 +2062,7 @@ function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <div style={{ minWidth: 0 }}>
-              <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, color: "var(--text-strong)" }}>
+              <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, color: "var(--on-shell-strong)" }}>
                 {group.cards.length} card{group.cards.length === 1 ? "" : "s"} from one folder
               </span>
               <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>
@@ -1998,7 +2072,7 @@ function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
             {folders.length > 0 && (
               <GhostButton
                 onClick={() => onRehome(group.cards.map((c) => c.id), target)}
-                style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", fontSize: 12.5, padding: "8px 12px", minHeight: 38, flexShrink: 0 }}
+                style={{ fontSize: 12.5, padding: "8px 12px", minHeight: 38, flexShrink: 0 }}
               >
                 Move these
               </GhostButton>
@@ -2009,7 +2083,7 @@ function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
               display: "block", width: "100%", textAlign: "left", background: "none", border: "none",
               padding: "5px 0", cursor: "pointer", WebkitTapHighlightColor: "transparent",
             }}>
-              <span style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+              <span style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
                 {c.front || "(picture)"}
               </span>
             </button>
@@ -2025,6 +2099,99 @@ function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
         <PrimaryButton onClick={() => onRehome(orphans.map((c) => c.id), target)}>
           Move all {orphans.length} there
         </PrimaryButton>
+      )}
+    </Sheet>
+  );
+}
+
+// The bar that appears under the card list while cards are being picked. It
+// sits in the flow rather than fixed to the bottom of the screen: the folder
+// view already scrolls, and a floating bar on Android lands on top of the
+// gesture area on exactly the phones this app is used on.
+function MoveBar({ count, allSelected, onSelectAll, onClear, onMove }) {
+  return (
+    <div style={{
+      position: "sticky", bottom: 0, marginTop: 12, zIndex: 20,
+      background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 10,
+      boxShadow: "0 -4px 18px rgba(0,0,0,0.3)", padding: "10px 12px",
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+    }}>
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--text-secondary)" }}>
+        {count} selected
+      </span>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {/* Themed tokens, not SmallButton: that one is painted for the dark
+            shell (cream on translucent white) and this bar sits on a card,
+            which is cream in light mode — the label vanished into it. */}
+        <GhostButton
+          onClick={allSelected ? onClear : onSelectAll}
+          style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", fontSize: 12.5, padding: "8px 14px", minHeight: 38, flexShrink: 0 }}
+        >
+          {allSelected ? "None" : "All"}
+        </GhostButton>
+        <PrimaryButton onClick={onMove} disabled={count === 0}>
+          Move
+        </PrimaryButton>
+      </div>
+    </div>
+  );
+}
+
+// Where the picked cards are going. The picker offers every folder in the
+// catalog by its full path, because "Verbs" on its own is ambiguous the moment
+// two subjects both have one — which is the normal shape of a language deck.
+//
+// The destination list deliberately includes parent folders and the subject
+// itself: a subject can hold cards directly, and "put these back one level up"
+// is the commonest tidy-up there is.
+function MoveCardsSheet({ cards, selectedIds, subjects, fromNodeId, onClose, onMove }) {
+  const folders = moveLib.folderOptions(subjects).filter((f) => f.nodeId !== fromNodeId);
+  const [targetId, setTargetId] = useState(() => (folders.length ? folders[0].nodeId : ""));
+  const target = folders.find((f) => f.nodeId === targetId) || null;
+  // Half a cloze text cannot move without the other half — see moveCards.js.
+  const moving = moveLib.expandSelection(cards, selectedIds);
+  const alongForTheRide = moving.length - selectedIds.length;
+
+  return (
+    <Sheet title={`Move ${moving.length} card${moving.length === 1 ? "" : "s"}`} onClose={onClose}>
+      {folders.length === 0 ? (
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", margin: "0 0 14px" }}>
+          There is nowhere else to put them yet. Add another subject or
+          subcategory first.
+        </p>
+      ) : (
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <Label style={{ color: "var(--on-shell-muted)" }}>Move to</Label>
+            <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={selectStyle}>
+              {folders.map((f) => (
+                <option key={f.nodeId} value={f.nodeId}>{"\u00a0".repeat(f.depth * 2)}{f.name}</option>
+              ))}
+            </select>
+            {target && target.path.length > 1 && (
+              <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)", margin: "6px 0 0" }}>
+                {target.label}
+              </p>
+            )}
+          </div>
+
+          {alongForTheRide > 0 && (
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-strong)", lineHeight: 1.5, margin: "0 0 14px" }}>
+              {alongForTheRide === 1
+                ? "One more card is coming too: it was made from the same fill-in-the-blank text or the same picture, and splitting the set up would break editing it."
+                : `${alongForTheRide} more cards are coming too: they were made from the same fill-in-the-blank texts or pictures, and splitting a set up would break editing it.`}
+            </p>
+          )}
+
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "0 0 16px" }}>
+            Everything a card has learned travels with it — the schedule, the
+            streak, the tags. Only the folder changes.
+          </p>
+
+          <PrimaryButton onClick={() => onMove(moving, target)}>
+            Move {moving.length === 1 ? "it" : "them"} here
+          </PrimaryButton>
+        </>
       )}
     </Sheet>
   );
@@ -2154,7 +2321,7 @@ function EmptyState({ onAdd, onImport }) {
 // A card row now leads with its strength: pips, the state word, and when it's
 // coming back. That's the information that tells a student what to do next —
 // the answer mode never did.
-function CardRow({ card, onEdit, onDelete }) {
+function CardRow({ card, onEdit, onDelete, selectable, selected, onToggle }) {
   const frontThumb = useCardImage(card.frontImageId);
   const thumbPending = frontThumb === undefined;
   const tags = tagsLib.cardTags(card);
@@ -2168,12 +2335,34 @@ function CardRow({ card, onEdit, onDelete }) {
         ? (card.occlusionMaskId ? `Hidden area ${card.occlusionIndex || ""}`.trim() : "Picture card")
         : "Picture (not on this device)")
     : card.front;
+  // While cards are being picked, the whole row is the target — a checkbox
+  // alone is a small thing to hit on a phone — and edit/delete step aside so a
+  // mis-tap during a bulk move can't delete a card.
   return (
-    <div style={{
-      display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: "10px 0", borderBottom: "1px solid var(--card-border-light)",
-    }}>
+    <div
+      onClick={selectable ? onToggle : undefined}
+      style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "10px 0", borderBottom: "1px solid var(--card-border-light)",
+        cursor: selectable ? "pointer" : "default",
+        WebkitTapHighlightColor: "transparent",
+      }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        {selectable && (
+          <span
+            role="checkbox"
+            aria-checked={!!selected}
+            aria-label={`Select ${card.front || "this card"}`}
+            style={{
+              width: 20, height: 20, borderRadius: 6, flexShrink: 0,
+              border: `1.5px solid ${selected ? "var(--accent)" : "var(--card-border)"}`,
+              background: selected ? "var(--accent)" : "transparent",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            {selected && <Check size={13} color="var(--shell-bg)" strokeWidth={3} />}
+          </span>
+        )}
         {card.frontImageId && (
           frontThumb
             ? <img src={frontThumb} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
@@ -2197,10 +2386,12 @@ function CardRow({ card, onEdit, onDelete }) {
           </div>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-        <IconBtn title="Edit" onClick={onEdit}><Pencil size={13.5} color="var(--text-secondary)" /></IconBtn>
-        <IconBtn title="Delete" danger onClick={onDelete}><Trash2 size={13.5} color="#B5533C" /></IconBtn>
-      </div>
+      {!selectable && (
+        <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+          <IconBtn title="Edit" onClick={onEdit}><Pencil size={13.5} color="var(--text-secondary)" /></IconBtn>
+          <IconBtn title="Delete" danger onClick={onDelete}><Trash2 size={13.5} color="#B5533C" /></IconBtn>
+        </div>
+      )}
     </div>
   );
 }

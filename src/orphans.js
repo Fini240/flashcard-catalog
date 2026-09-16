@@ -24,6 +24,8 @@
 // real folder arrives. Moved, it would not.
 // ---------------------------------------------------------------------------
 
+import { moveCards } from "./moveCards";
+
 export function nodeIdsIn(subjects) {
   const ids = new Set();
   const walk = (node) => {
@@ -56,13 +58,13 @@ export function groupOrphans(orphans) {
   return [...groups.values()].sort((a, b) => b.cards.length - a.cards.length);
 }
 
-// Move a set of cards into an existing folder. Returns the whole card array
-// with those cards refiled — `updatedAt` deliberately untouched, because
-// cardSync.applyLocalEdits is the one place allowed to stamp a card and it
-// will notice the changed nodeId on its own. Stamping here would be a second
-// place that does it, which is the hazard that cost a whole study session once.
-export function rehome(cards, orphanIds, nodeId) {
-  const moving = new Set(orphanIds);
-  if (!nodeId || moving.size === 0) return cards;
-  return (cards || []).map((c) => (moving.has(c.id) ? { ...c, nodeId } : c));
+// Move a set of cards into an existing folder — this sheet's name for an
+// ordinary move, and the same operation, so it shares the implementation in
+// moveCards.js rather than keeping a second one here. `target` is a folder
+// option from `moveCards.folderOptions`; passing a bare nodeId still works but
+// leaves `subjectId` pointing at the subject the card came from, which for an
+// orphan is a subject that no longer exists — see the header of moveCards.js
+// for what that costs.
+export function rehome(cards, orphanIds, target) {
+  return moveCards(cards, orphanIds, target);
 }

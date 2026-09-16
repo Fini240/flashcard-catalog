@@ -18,13 +18,21 @@ export const MAX_TAGS_PER_CARD = 12;
 // Spaces become hyphens rather than splitting into two tags: a person typing
 // "past paper" means one label, and silently making it two is worse than
 // either honouring it or refusing it.
+//
+// A letter is `\p{L}`, not `a-z`. The first version kept ASCII only, which
+// quietly deleted the letter rather than the tag: #Prüfung became #prfung and
+// #Größe became #gre, so the same tag typed twice could come out as two, and a
+// tag written in a non-Latin script came out empty and was dropped entirely.
+// This app is used to study languages — a tag it cannot spell is not a small
+// gap. Existing tags are untouched: they are matched as literal strings, so
+// anything already stored keeps working and only new input is spelled right.
 export function normalizeTag(raw) {
   const t = String(raw || "")
     .trim()
     .replace(/^#+/, "")
     .toLowerCase()
     .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9\-_/]/g, "")
+    .replace(/[^\p{L}\p{N}\-_/]/gu, "")
     .replace(/-{2,}/g, "-")
     .replace(/^[-/]+|[-/]+$/g, "");
   return t.slice(0, MAX_TAG_LENGTH);

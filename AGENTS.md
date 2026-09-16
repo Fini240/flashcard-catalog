@@ -57,6 +57,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/featureUI.jsx` | The 1.2.0 screens and controls (statistics, test runner, notes pane, occlusion editor, sharing dialogs, confidence bar, tutor panel). Kept out of `FlashcardCatalog.jsx`, which is large enough. |
 | `src/smoke.test.jsx` | **Renders the real app and every new screen against jsdom.** The pure-logic suites say nothing about whether the app still starts; this is what catches a bad import, a missing prop or a duplicate React key. It found the DST bug below. |
 | `src/backup.js` | JSON export/import of the whole catalog — the user-facing recovery path |
+| `src/moveCards.js` | Refiling cards into another folder — the folder picker's options, the whole-group rule, and the move itself. Pure and unit-tested. `orphans.rehome` delegates to it, so the loose-cards sheet and the Select→Move flow cannot drift apart. |
 | `src/orphans.js` | Cards whose folder no longer exists — finding them, grouping them, and refiling them on request. Pure. A view, never an automatic repair; the header says why. |
 | `src/report.js` | Error reporting: console + a 20-entry ring buffer behind the Settings "Copy diagnostics" button. Every catch that would otherwise swallow a failure calls `report()`. |
 | `src/*.test.js` | Vitest suites for the pure logic — SRS, gamification, per-card merge. `npm test`. |
@@ -252,6 +253,46 @@ Play Store compatibility problem).
   `startOfDay`, which shifted the heatmap and streak by a day for every user
   east of Greenwich, i.e. all of them, and made them disagree with the streak
   the rest of the app already showed.
+- **A card's `subjectId` is not decoration, and a move has to carry it.**
+  Every library screen files a card by `nodeId` alone, so it is easy to believe
+  `subjectId` is vestigial. `drills.js` reads it: `tierOf` offers wrong answers
+  from the same subcategory first, then the same subject, and *never* from
+  another subject. A card whose `subjectId` still names the folder tree it left
+  therefore either borrows distractors from an unrelated deck or — when that
+  old subject is gone, which is exactly the case for a card refiled out of the
+  loose pile — gets none at all, because every candidate reads as "different
+  subject" and is filtered out. The multiple-choice drill quietly stops being
+  offered for that card. `moveCards.js` sets both fields together and is the
+  only thing that should move a card.
+- **A move takes whole cloze/occlusion groups, never half of one.**
+  `expandSaved` finds a card's siblings by (source, `nodeId`). Move half a
+  group and that lookup stops seeing the half that left, so the next edit of
+  the remainder *re-creates* the missing deletions as new, history-less cards
+  while the moved ones stay put — one duplicate per blank. `expandSelection` in
+  `moveCards.js` grows any selection to whole groups first, and its `groupKey`
+  must stay in step with `expandSaved`'s sibling rule.
+- **The navy shell is not a themeable surface, and `--text-*` is not its ink.**
+  `--card-bg`/`--text-strong` and friends belong to the *paper* card surface
+  and flip with the theme; the shell (`--shell-bg`) is dark in both modes and
+  does not. Light mode makes `--text-strong` near-black, so text drawn straight
+  onto the shell renders at about **1.01:1** — not low contrast, invisible.
+  Every bottom sheet had this: the six-character share code, the notes textarea
+  you were typing into, the headings in "Cards without a folder", the sheet
+  titles themselves. Use `--on-shell-strong` / `--on-shell-muted` for anything
+  sitting directly on a `Sheet`; card tokens are correct only inside a `panel`
+  (which carries `--card-bg` of its own). A `caption` or `bigNumber` from
+  `featureUI.jsx` is styled for the paper surface — override its colour when
+  you use it on a sheet. Worth re-checking with a contrast sweep after any
+  sheet work: walk the sheet's subtree comparing computed colour against the
+  nearest painted background, and treat anything under ~2.5 as a defect.
+- **Character classes that mean "a letter" must be `\p{L}`, not `a-z`.**
+  This app is used to study languages and its user writes German. An ASCII-only
+  class does not reject the input, it *deletes* the character: `normalizeTag`
+  turned `#Prüfung` into `prfung` and `#Größe` into `gre`, so one tag typed
+  twice became two, and a tag in a non-Latin script came out empty and was
+  dropped. `noteToCards`'s `INLINE_TAG_RE` was worse — it matched up to the
+  umlaut, tagged the card `pr`, and left `üfung` behind *inside the card's
+  answer text*. `tags.test.js` pins both.
 - **There is one answer normaliser, `normalizeAnswer` in `drills.js`.**
   `cardUI.jsx` re-exports it as `normalize`. When there were two — one that
   stripped punctuation and one that didn't — a multiple-choice distractor

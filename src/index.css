@@ -31,6 +31,15 @@ html, body, #root {
   --brand: #2F6F6D;           /* teal — links, selected states */
   --success: #5C7A44;         /* moss green */
   --highlight: #C98A2B;       /* ochre — selections, warnings */
+  /* The navy shell is not a themeable surface — it is dark in both modes — so
+     text drawn straight onto it needs its own ink. The --text-* family below
+     belongs to the paper card surface, which is near-black in light mode:
+     used on the shell it renders at about 1:1 against it, which is not "low
+     contrast" but invisible. That is what happened to every bottom sheet in
+     the app — the six-character share code, the notes you were typing, the
+     headings in "Cards without a folder". #EDE6D3 is the ink the shell's own
+     buttons already use; this only gives it a name. */
+  --on-shell-strong: #EDE6D3; /* primary text on the navy shell */
   --on-shell-muted: #8CA0C2;  /* muted text/icons on the navy shell */
   --on-shell-faint: #5A6B8C;  /* fainter shell text */
   --info: #4E7FA8;            /* informational blue */

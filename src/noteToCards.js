@@ -33,7 +33,11 @@ const HYPHEN_RE = /^\s*(?:[-*•]\s+)?(.+?)\s+-\s+(.+?)\s*$/;
 const Q_RE = /^\s*(?:Q|Question)\s*[:.]\s*(.+?)\s*$/i;
 const A_RE = /^\s*(?:A|Answer)\s*[:.]\s*(.+?)\s*$/i;
 const HEADING_RE = /^\s*(#{1,6})\s+(.+?)\s*$/;
-const INLINE_TAG_RE = /(?:^|\s)#([a-z0-9][a-z0-9\-_/]*)/gi;
+// Unicode letters, not `a-z` — and here the ASCII version did more than
+// mangle the tag. `#prüfung` matched as far as the umlaut, so the card kept
+// the tag `pr` and the leftover `üfung` was left sitting in its answer text.
+// Must stay in step with `normalizeTag` in tags.js.
+const INLINE_TAG_RE = /(?:^|\s)#([\p{L}\p{N}][\p{L}\p{N}\-_/]*)/gu;
 
 const indentOf = (line) => {
   const m = line.match(/^[ \t]*/);
