@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as D from "./drills";
+import * as C from "./cloze";
 
 const card = (id, front, back, extra = {}) => ({ id, front, back, ...extra });
 
@@ -56,6 +57,16 @@ describe("localCloze", () => {
 
   it("returns nothing for an empty answer", () => {
     expect(D.localCloze(card("x", "q", "   "))).toBe(null);
+  });
+
+  it("uses the authored deletion for each hand-written cloze card", () => {
+    const cards = C.expand("The {{c1::mitochondrion}} powers the {{c2::cell}}.");
+    const queue = D.buildQueue(D.drillById("gaps"), cards, {}, cards);
+    expect(queue.map((step) => step.payload.text)).toEqual([
+      "The ____ powers the cell.",
+      "The mitochondrion powers the ____.",
+    ]);
+    expect(queue.map((step) => step.payload.answers)).toEqual([["mitochondrion"], ["cell"]]);
   });
 });
 

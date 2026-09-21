@@ -31,7 +31,18 @@ const hintStyle = {
 // ---------- fill in the blank ----------
 
 export function ClozeCard({ card, payload, onResult }) {
-  const [value, setValue] = useState("");
+  const suppliedAnswers = Array.isArray(payload.answers) && payload.answers.length
+    ? payload.answers
+    : [payload.answer];
+  const rawParts = String(payload.text || "").split("____");
+  // AI exercises contain one blank. Hand-authored clozes can deliberately
+  // share an index, so they carry one answer per blank. Do not let malformed
+  // AI output create an unanswerable extra field.
+  const parts = rawParts.length - 1 === suppliedAnswers.length
+    ? rawParts
+    : [rawParts[0] || "", rawParts.slice(1).join("____")];
+  const answers = suppliedAnswers.slice(0, parts.length - 1);
+  const [values, setValues] = useState(() => answers.map(() => ""));
   const [verdict, setVerdict] = useState(null); // null | "right" | "wrong"
   const inputRef = useRef(null);
 
@@ -39,10 +50,12 @@ export function ClozeCard({ card, payload, onResult }) {
 
   const check = () => {
     if (verdict) return;
-    setVerdict(normalize(value) === normalize(payload.answer) ? "right" : "wrong");
+    setVerdict(values.every((value, i) => normalize(value) === normalize(answers[i])) ? "right" : "wrong");
   };
-
-  const [before, after] = splitOnBlank(payload.text);
+  const setValue = (index, value) => {
+    setValues((current) => current.map((old, i) => i === index ? value : old));
+  };
+  const allFilled = values.every((value) => value.trim());
 
   return (
     <>
@@ -50,33 +63,43 @@ export function ClozeCard({ card, payload, onResult }) {
         <p style={promptStyle}>{payload.prompt || card.front}</p>
         <div style={{
           fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 20, color: "var(--text-strong)",
-          lineHeight: 1.5, textAlign: "center", margin: "0 0 18px",
+          lineHeight: 1.5, textAlign: "center", margin: "0 0 18px", whiteSpace: "pre-wrap",
         }}>
-          {before}
-          <span style={{
-            display: "inline-block", minWidth: 90, padding: "0 8px", margin: "0 2px",
-            borderBottom: `2px solid ${verdict === "right" ? "var(--success)" : verdict === "wrong" ? "#B5533C" : "var(--accent)"}`,
-            color: verdict === "wrong" ? "#B5533C" : "var(--accent)",
-          }}>
-            {verdict ? (verdict === "right" ? value : payload.answer) : value || " "}
-          </span>
-          {after}
+          {parts.map((part, i) => (
+            <span key={`${i}:${part}`}>
+              {part}
+              {i < answers.length && (
+                <span style={{
+                  display: "inline-block", minWidth: 90, padding: "0 8px", margin: "0 2px",
+                  borderBottom: `2px solid ${verdict === "right" ? "var(--success)" : verdict === "wrong" ? "#B5533C" : "var(--accent)"}`,
+                  color: verdict === "wrong" ? "#B5533C" : "var(--accent)",
+                }}>
+                  {verdict ? (verdict === "right" ? values[i] : answers[i]) : values[i] || " "}
+                </span>
+              )}
+            </span>
+          ))}
         </div>
 
         {!verdict && (
-          <TextField
-            ref={inputRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") check(); }}
-            placeholder="The missing word"
-            style={{ textAlign: "center" }}
-          />
+          <div style={{ display: "grid", gap: 8 }}>
+            {answers.map((_, i) => (
+              <TextField
+                key={i}
+                ref={i === 0 ? inputRef : undefined}
+                value={values[i]}
+                onChange={(e) => setValue(i, e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && allFilled) check(); }}
+                placeholder={answers.length === 1 ? "The missing word" : `Missing word ${i + 1}`}
+                style={{ textAlign: "center" }}
+              />
+            ))}
+          </div>
         )}
 
         {verdict === "wrong" && (
           <p style={{ ...captionStyle, color: "#B5533C", margin: "4px 0 0" }}>
-            You wrote "{value.trim() || "nothing"}"
+            You wrote {values.map((value) => `"${value.trim() || "nothing"}"`).join(" and ")}
           </p>
         )}
         {verdict === "right" && (
@@ -92,20 +115,12 @@ export function ClozeCard({ card, payload, onResult }) {
               <GhostButton onClick={() => setVerdict("wrong")} style={{ flex: 1, color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
                 Show me
               </GhostButton>
-              <PrimaryButton onClick={check} disabled={!value.trim()} style={{ flex: 1 }}>Check</PrimaryButton>
+              <PrimaryButton onClick={check} disabled={!allFilled} style={{ flex: 1 }}>Check</PrimaryButton>
             </>
           )}
       </div>
     </>
   );
-}
-
-// The blank is always exactly "____" — drills.js and the model both guarantee
-// it, and anything that reached here without one was dropped upstream.
-function splitOnBlank(text) {
-  const i = (text || "").indexOf("____");
-  if (i === -1) return [text || "", ""];
-  return [text.slice(0, i), text.slice(i + 4)];
 }
 
 // ---------- true or false ----------

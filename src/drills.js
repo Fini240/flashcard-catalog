@@ -13,6 +13,8 @@
 // one, so nothing in the study flow can depend on a network call.
 // ---------------------------------------------------------------------------
 
+import * as cloze from "./cloze";
+
 export const EXERCISES = {
   FLIP: "flip",
   MCQ: "mcq",
@@ -191,6 +193,22 @@ const STOPWORDS = new Set([
 // furniture. Crude next to what a model picks, but it never fails and it never
 // waits on the network.
 export function localCloze(card) {
+  // A hand-authored cloze has already told us exactly what belongs in the gap.
+  // Re-running the generic "longest useful word" heuristic made every card
+  // from the same source ask for the same word, even when its own front showed
+  // a different deletion.
+  if (card?.clozeSource && card?.clozeIndex != null) {
+    const specific = cloze.fillInExercise(card.clozeSource, card.clozeIndex);
+    if (specific.answers.length) {
+      return {
+        ...specific,
+        // Kept for AI/legacy consumers that expect a single answer. ClozeCard
+        // reads `answers` and supports the uncommon case of several c1 gaps.
+        answer: specific.answers[0],
+        prompt: card.front,
+      };
+    }
+  }
   const back = (card.back || "").trim();
   if (!back) return null;
   const words = back.split(/\s+/);

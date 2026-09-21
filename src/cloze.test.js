@@ -41,6 +41,20 @@ describe("cloze parsing", () => {
     expect(cloze.hasCloze("{{c1::unclosed")).toBe(false);
     expect(cloze.plainText("{{c1::unclosed and more text")).toBe("{{c1::unclosed and more text");
   });
+
+  it("accepts a deletion that spans lines, as the editor can create", () => {
+    const source = "The {{c1::mitochondrion\npowers}} the cell.";
+    expect(cloze.hasCloze(source)).toBe(true);
+    expect(cloze.render(source, 1).question).toBe("The […] the cell.");
+    expect(cloze.plainText(source)).toBe("The mitochondrion\npowers the cell.");
+  });
+
+  it("renders every deletion of one number as a fill-in exercise", () => {
+    expect(cloze.fillInExercise("{{c1::alpha}} and {{c1::beta}}", 1)).toEqual({
+      text: "____ and ____",
+      answers: ["alpha", "beta"],
+    });
+  });
 });
 
 describe("expanding a source into cards", () => {

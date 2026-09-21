@@ -25,7 +25,10 @@
 
 // Nested braces are not supported (Anki's own parser doesn't either) and the
 // lazy inner group keeps a malformed `{{c1::a` from eating the rest of the text.
-const CLOZE_RE = /\{\{c(\d+)::(.*?)\}\}/g;
+// A deletion may cover a line break when somebody selects two lines in the
+// editor. `.` would silently stop there, leaving the editor with markup it
+// had just created but could no longer save.
+const CLOZE_RE = /\{\{c(\d+)::([\s\S]*?)\}\}/g;
 export const BLANK = "[…]";
 
 export const hasCloze = (text) => {
@@ -98,6 +101,33 @@ export function answersFor(text, index) {
     if (Number(m[1]) === index) out.push(splitHint(m[2]).answer);
   }
   return out;
+}
+
+// Render a user-authored cloze as an exercise. Unlike `render`, which uses
+// the compact `[…]` card preview, this keeps a literal blank for every part
+// the learner needs to type. It is intentionally separate from the automatic
+// gap generator in drills.js: a manually chosen deletion must never be
+// replaced by whichever word happens to be longest in the answer.
+export function fillInExercise(text, index) {
+  const s = String(text || "");
+  const answers = [];
+  let question = "";
+  let last = 0;
+  CLOZE_RE.lastIndex = 0;
+  let m;
+  while ((m = CLOZE_RE.exec(s))) {
+    question += s.slice(last, m.index);
+    const { answer } = splitHint(m[2]);
+    if (Number(m[1]) === index) {
+      question += "____";
+      answers.push(answer);
+    } else {
+      question += answer;
+    }
+    last = m.index + m[0].length;
+  }
+  question += s.slice(last);
+  return { text: question, answers };
 }
 
 // Expands one source text into card drafts — one per cloze number.
