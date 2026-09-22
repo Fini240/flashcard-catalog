@@ -1358,6 +1358,8 @@ function Library({
   const [newSubjectName, setNewSubjectName] = useState("");
   const [addingSubcategory, setAddingSubcategory] = useState(false);
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
+  const [renamingNode, setRenamingNode] = useState(null); // { id, name }
+  const [renameValue, setRenameValue] = useState("");
   const [cardForm, setCardForm] = useState(null); // {nodeId, editingId?}
   const [importOpen, setImportOpen] = useState(null); // null | { mode: "paste"|"file"|"photo" }
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -1414,6 +1416,20 @@ function Library({
       ...n, children: [...(n.children || []), { id: uid(), name: newSubcategoryName.trim(), children: [] }],
     })));
     setNewSubcategoryName(""); setAddingSubcategory(false);
+  };
+  // Folder names are presentation only. Keeping the id intact is what keeps
+  // every card, subfolder, shared deck and sync reference attached to it.
+  const beginRename = (node) => {
+    if (!node) return;
+    setRenamingNode({ id: node.id, name: node.name });
+    setRenameValue(node.name);
+  };
+  const saveRename = () => {
+    const name = renameValue.trim();
+    if (!name || !renamingNode) return;
+    setSubjects((nodes) => mapTree(nodes, renamingNode.id, (node) => ({ ...node, name })));
+    setRenamingNode(null);
+    setRenameValue("");
   };
   // Both deletes update from the previous state rather than from the `cards`
   // this render closed over. A remote snapshot can land between the render and
@@ -1570,6 +1586,16 @@ function Library({
   };
 
   const totalCards = cards.length;
+  const renameSheet = renamingNode ? (
+    <RenameNodeSheet
+      initialName={renamingNode.name}
+      isSubject={subjects.some((subject) => subject.id === renamingNode.id)}
+      value={renameValue}
+      onChange={setRenameValue}
+      onClose={() => { setRenamingNode(null); setRenameValue(""); }}
+      onSave={saveRename}
+    />
+  ) : null;
 
   // ---------- top level: list of subjects ----------
   if (path.length === 0) {
@@ -1693,6 +1719,8 @@ function Library({
           return (
             <NodeRow key={s.id} name={s.name} cards={subjectCards} color={color.bg} tabColor={color.tab}
               onOpen={() => setPath([s.id])}
+              onRename={() => beginRename(s)}
+              renameTitle="Rename subject"
               onDelete={() => deleteNode(s.id)}
               deleteTitle="Delete subject"
               onStudy={subjectCards.length ? () => goStudy(s.id) : null}
@@ -1738,6 +1766,7 @@ function Library({
             onOpenSettings={onOpenSettings}
           />
         )}
+        {renameSheet}
         {leechSheet}
         {orphanSheet}
       </div>
@@ -1823,6 +1852,9 @@ function Library({
               </>
             )}
           </div>
+          <IconBtn title={path.length === 1 ? "Rename subject" : "Rename folder"} onClick={() => beginRename(currentNode)}>
+            <Pencil size={15} color="var(--on-shell-muted)" />
+          </IconBtn>
           <IconBtn title="Delete this folder" danger onClick={() => deleteNode(currentNode.id)}>
             <Trash2 size={16} color="var(--danger)" />
           </IconBtn>
@@ -1862,6 +1894,8 @@ function Library({
             return (
               <NodeRow key={child.id} name={child.name} cards={childCards} color={rootColor.bg} tabColor={rootColor.tab}
                 onOpen={() => setPath([...path, child.id])}
+                onRename={() => beginRename(child)}
+                renameTitle="Rename folder"
                 onDelete={() => deleteNode(child.id)}
                 deleteTitle="Delete subcategory"
                 onStudy={childCards.length ? () => goStudy(child.id) : null}
@@ -1975,6 +2009,7 @@ function Library({
           }}
         />
       )}
+      {renameSheet}
       {leechSheet}
       {orphanSheet}
       {extra === "speech" && (
@@ -2197,7 +2232,29 @@ function MoveCardsSheet({ cards, selectedIds, subjects, fromNodeId, onClose, onM
   );
 }
 
-function NodeRow({ name, cards, color, tabColor, onOpen, onDelete, deleteTitle, compact, onStudy }) {
+function RenameNodeSheet({ initialName, isSubject, value, onChange, onClose, onSave }) {
+  const label = isSubject ? "subject" : "folder";
+  return (
+    <Sheet title={`Rename ${label}`} onClose={onClose}>
+      <Label style={{ color: "var(--on-shell-muted)" }}>Name</Label>
+      <TextField
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => { if (event.key === "Enter" && value.trim()) onSave(); }}
+        autoFocus
+        placeholder={initialName}
+      />
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "12px 0 16px" }}>
+        Cards and subfolders stay exactly where they are.
+      </p>
+      <PrimaryButton onClick={onSave} disabled={!value.trim()} style={{ width: "100%" }}>
+        Save name
+      </PrimaryButton>
+    </Sheet>
+  );
+}
+
+function NodeRow({ name, cards, color, tabColor, onOpen, onRename, renameTitle, onDelete, deleteTitle, compact, onStudy }) {
   const list = cards || [];
   const count = list.length;
   const strength = G.deckStrength(list);
@@ -2246,6 +2303,7 @@ function NodeRow({ name, cards, color, tabColor, onOpen, onDelete, deleteTitle, 
                 cursor: "pointer", WebkitTapHighlightColor: "transparent",
               }}><BookOpen size={13} /> Study</button>
             )}
+            {onRename && <IconBtn title={renameTitle || "Rename folder"} onClick={onRename}><Pencil size={14} color="var(--text-secondary)" /></IconBtn>}
             <IconBtn title={deleteTitle} danger onClick={onDelete}><Trash2 size={14} color="#B5533C" /></IconBtn>
           </div>
         </div>

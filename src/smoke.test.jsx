@@ -254,4 +254,56 @@ describe("moving cards between folders", () => {
     expect(options).toEqual(["Espanol"]);
     expect(errors).toEqual([]);
   });
+
+  it("renames a subject without moving or losing its cards", async () => {
+    await openBiology();
+    const rename = [...container.querySelectorAll("button")].find((b) => b.title === "Rename subject");
+    click(rename);
+    const input = container.querySelector("input");
+    act(() => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      setValue.call(input, "Life science");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click(button(/^Save name$/));
+    expect(container.textContent).toContain("Life science");
+    expect(container.textContent).toContain("Mitochondrion");
+    expect(errors).toEqual([]);
+  });
+
+  it("opens the rename dialog from a subject in the catalog", async () => {
+    window.localStorage.setItem("flashcard-catalog-data", JSON.stringify(seed));
+    const { default: FlashcardCatalog } = await import("./FlashcardCatalog");
+    render(<FlashcardCatalog />);
+    await act(async () => { await Promise.resolve(); });
+    const rename = [...container.querySelectorAll("button")].find((b) => b.title === "Rename subject");
+    click(rename);
+    expect(container.textContent).toContain("Rename subject");
+    expect(container.querySelector("input")).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  it("renames a subfolder without changing the card filed in it", async () => {
+    window.localStorage.setItem("flashcard-catalog-data", JSON.stringify({
+      subjects: [{ id: "s1", name: "Biology", children: [{ id: "n1", name: "Cells", children: [] }] }],
+      cards: [{ id: "a", front: "Mitochondrion", back: "powerhouse", nodeId: "n1", subjectId: "s1" }],
+    }));
+    const { default: FlashcardCatalog } = await import("./FlashcardCatalog");
+    render(<FlashcardCatalog />);
+    await act(async () => { await Promise.resolve(); });
+    click(byText(/^Biology/));
+    click([...container.querySelectorAll("span")].find((span) => span.textContent === "Cells"));
+    const rename = [...container.querySelectorAll("button")].find((b) => b.title === "Rename folder");
+    click(rename);
+    const input = container.querySelector("input");
+    act(() => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      setValue.call(input, "Cell structure");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click(button(/^Save name$/));
+    expect(container.textContent).toContain("Cell structure");
+    expect(container.textContent).toContain("Mitochondrion");
+    expect(errors).toEqual([]);
+  });
 });
