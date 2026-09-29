@@ -159,10 +159,11 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal }
         : "Add a few cards and your streak starts today.";
 
   return (
-    <div style={{
+    <div className="fc-today-card" style={{
       background: "var(--card-bg)", borderRadius: 12, padding: 16, marginBottom: 16,
       boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
     }}>
+      <p className="fc-continue-label">Continue studying</p>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <button onClick={onOpenGoal} title="Change your daily goal" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
           <Ring value={pct} size={56} stroke={6} color={done ? "var(--success)" : "var(--accent)"} track="var(--card-border)">

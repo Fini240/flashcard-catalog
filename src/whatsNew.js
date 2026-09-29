@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.4.2";
+export const APP_VERSION = "1.5.0";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,14 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.5.0",
+    date: "2026-09-29",
+    items: [
+      "The desktop web app now has a three-column workspace: navigation on the left, your subject library and Continue studying in the center, and your daily goal, streak, weekly rank and quests on the right.",
+      "Subject and folder cards can now be opened with the keyboard.",
+    ],
+  },
   {
     version: "1.4.2",
     date: "2026-09-21",

@@ -66,6 +66,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/aiDrills.js` | The model's version of the same content, plus deck-tuned drill suggestions. Strictly optional — every failure path falls back to `drills.js`, so no study flow may ever depend on it. Cached in `localStorage` against a fingerprint of the card text. |
 | `src/drillUI.jsx` | The cloze, true/false and match-pairs exercises. Match grades a whole group of cards at once. |
 | `src/cardUI.jsx` | The shared visual vocabulary — buttons, fields, the index card itself. Extracted from `FlashcardCatalog.jsx` so `drillUI.jsx` can use it without a circular import. |
+| `src/desktopUI.jsx`, `src/desktop.css` | Desktop web navigation and progress rail, enabled at 1100px. The subject grid becomes two columns at 1320px. Native Capacitor screens keep the single-column shell; `.fc-web-shell` scopes the desktop layout. |
 | `src/ocr.js` | On-device ML Kit text recognition + fallback decision |
 | `src/fileImport.js` | PDF / .docx / text extraction |
 | `src/ankiImport.js` | Anki `.apkg` / `.colpkg` file import — unzip, zstd, SQLite, HTML and cloze cleanup. `buildDecks()` is shared by both import routes. |

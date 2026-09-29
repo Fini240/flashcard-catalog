@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { Capacitor } from "@capacitor/core";
+import { DesktopNavigation, DesktopProgress } from "./desktopUI";
+import "./desktop.css";
 import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
@@ -241,6 +244,7 @@ export default function FlashcardCatalog() {
   const [cards, setCards] = useState([]);
   const [game, setGame] = useState(G.emptyGame);
   const [view, setView] = useState("library"); // library | study | session
+  const [libraryRootRequest, setLibraryRootRequest] = useState(0);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Asked once, on the library screen, and only where an APK is any use.
@@ -882,6 +886,13 @@ export default function FlashcardCatalog() {
       onSignIn={handleSignIn} onSignOut={handleSignOut}
       onOpenSettings={() => setSettingsOpen(true)}
       darkMode={darkMode}
+      view={view} subjects={subjects} cards={cards} game={game} nudgeCount={nudges.length}
+      onOpenSheet={setSheet}
+      onNavigate={(next) => {
+        if (next === "library") setLibraryRootRequest(n => n + 1);
+        if (next === "study") setStudyNodeId("all");
+        setView(next);
+      }}
     >
       {error && (
         <div style={bannerStyle}>{error}</div>
@@ -900,6 +911,7 @@ export default function FlashcardCatalog() {
       )}
       {view === "library" && (
         <Library
+          rootRequest={libraryRootRequest}
           subjects={subjects} setSubjects={setSubjects}
           cards={cards} setCards={setCards}
           game={game}
@@ -1201,15 +1213,14 @@ const addMenuItemStyle = {
 };
 
 // ---------- shell / theme ----------
-function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSettings, darkMode }) {
+function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSettings, darkMode,
+  view = "library", subjects = [], cards = [], game, onNavigate, onOpenSheet, nudgeCount }) {
+  const titles = { library: "Your library", study: "Set up a study session", stats: "Learning statistics", session: "Study session", test: "Test yourself" };
   return (
-    <div style={{
-      minHeight: "100vh",
+    <div className={`fc-shell${Capacitor.isNativePlatform() ? "" : " fc-web-shell"}`} data-view={view} style={{
       background: "var(--shell-bg)",
       backgroundImage:
         "radial-gradient(circle at 20% 10%, rgba(255,255,255,0.03), transparent 40%), radial-gradient(circle at 90% 80%, rgba(255,255,255,0.025), transparent 40%)",
-      display: "flex",
-      flexDirection: "column",
       ...(darkMode ? THEME_VARS.dark : THEME_VARS.light),
     }}>
       <style>{`
@@ -1263,12 +1274,12 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
           .fc-signin-label { display: none; }
         }
       `}</style>
-      <header style={{
+      <header className="fc-topbar" style={{
         padding: "22px 20px 14px",
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
         borderBottom: "1px solid rgba(255,255,255,0.08)", flexWrap: "nowrap",
       }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, overflow: "hidden" }}>
+        <div className="fc-mobile-brand" style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, overflow: "hidden" }}>
           <span style={{
             fontFamily: "Fraunces, serif", fontWeight: 700, fontStyle: "italic",
             fontSize: 26, color: "var(--accent)", letterSpacing: 0.2, flexShrink: 0,
@@ -1278,14 +1289,23 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
             letterSpacing: 1.5, textTransform: "uppercase", whiteSpace: "nowrap",
           }}>Flashcard drawer</span>
         </div>
+        <div className="fc-desktop-title">
+          <h1>{titles[view] || titles.library}</h1>
+          <p>{subjects.length} subject{subjects.length !== 1 ? "s" : ""} · {cards.length} card{cards.length !== 1 ? "s" : ""}</p>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
           <SyncControl googleUser={googleUser} syncState={syncState} onSignIn={onSignIn} onSignOut={onSignOut} />
           <IconBtn title="Settings" onClick={onOpenSettings}><Settings size={18} color="var(--on-shell-muted)" /></IconBtn>
         </div>
       </header>
-      <main style={{ flex: 1, maxWidth: 640, width: "100%", margin: "0 auto", padding: "16px 16px 40px" }}>
+      {onNavigate && <DesktopNavigation view={view} onNavigate={onNavigate}
+        nudgeCount={nudgeCount}
+        onOpenFriends={() => onOpenSheet("friends")} onOpenSettings={onOpenSettings} />}
+      <main className="fc-main">
         {children}
       </main>
+      {game && <DesktopProgress game={game} onOpenGoal={() => onOpenSheet("goal")}
+        onOpenStreak={() => onOpenSheet("streak")} onOpenFriends={() => onOpenSheet("friends")} />}
     </div>
   );
 }
@@ -1348,11 +1368,13 @@ function IconBtn({ onClick, title, children, danger }) {
 
 // ---------- LIBRARY ----------
 function Library({
+  rootRequest,
   subjects, setSubjects, cards, setCards, game, nudgeCount, onOpenSheet, onQuickStudy,
   goStudy, startReview, googleUser, onOpenSettings,
   extra, setExtra, setMessage, srsSettings, onUnsuspend, onForgive, onPublishDeck, onOpenTest,
 }) {
   const [path, setPath] = useState([]); // node ids from root subject down
+  useEffect(() => { setPath([]); }, [rootRequest]);
   const [searchQuery, setSearchQuery] = useState("");
   const [addingSubject, setAddingSubject] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
@@ -1621,12 +1643,12 @@ function Library({
 
     return (
       <div>
-        <StatusBar
+        <div className="fc-mobile-progress"><StatusBar
           game={game}
           nudgeCount={nudgeCount}
           onOpenStreak={() => onOpenSheet("streak")}
           onOpenFriends={() => onOpenSheet("friends")}
-        />
+        /></div>
         <RiskBanner game={game} onStudyNow={onQuickStudy} />
 
         {totalCards > 0 && (
@@ -1639,7 +1661,7 @@ function Library({
           />
         )}
 
-        {totalCards > 0 && <QuestList game={game} />}
+        {totalCards > 0 && <div className="fc-mobile-progress"><QuestList game={game} /></div>}
 
         {totalCards > 0 && (
           <div style={{ position: "relative", marginBottom: 14 }}>
@@ -1712,7 +1734,7 @@ function Library({
           </div>
         )}
 
-        {subjects.map((s, i) => {
+        <div className="fc-subject-grid">{subjects.map((s, i) => {
           const color = SUBJECT_COLORS[i % SUBJECT_COLORS.length];
           const ids = collectIds(s);
           const subjectCards = cards.filter(c => ids.includes(c.nodeId));
@@ -1726,7 +1748,7 @@ function Library({
               onStudy={subjectCards.length ? () => goStudy(s.id) : null}
             />
           );
-        })}
+        })}</div>
 
         {/* Cards whose folder is gone. Without this tile there is nowhere in
             the app they can be reached: every other list finds cards by walking
@@ -2261,16 +2283,15 @@ function NodeRow({ name, cards, color, tabColor, onOpen, onRename, renameTitle, 
   const due = list.filter(c => isDue(c)).length;
   return (
     <div style={{ position: "relative", marginTop: compact ? 10 : 26 }}>
-      <div
-        onClick={onOpen}
+      <div className="fc-node-card" onClick={(event) => { if (!event.target.closest("button")) onOpen(); }}
         style={{
           background: "var(--card-bg)", borderRadius: compact ? 8 : "2px 10px 10px 10px",
           boxShadow: compact ? "0 2px 8px rgba(0,0,0,0.18)" : "0 4px 14px rgba(0,0,0,0.25)",
           padding: compact ? "12px 14px" : "16px 16px 14px 18px",
           cursor: "pointer", borderLeft: compact ? `3px solid ${color}` : "none",
         }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, flex: 1 }}>
+        <div className="fc-node-summary" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <button className="fc-node-open" onClick={onOpen}>
             {count > 0 && (
               <Ring value={strength} size={compact ? 30 : 38} stroke={compact ? 3.5 : 4} color={color} track="var(--card-border)">
                 <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: compact ? 9 : 10.5, fontWeight: 600, color: "var(--text-secondary)" }}>
@@ -2293,8 +2314,8 @@ function NodeRow({ name, cards, color, tabColor, onOpen, onRename, renameTitle, 
                 {count} card{count !== 1 ? "s" : ""}{due > 0 ? ` · ${due} due` : ""}
               </span>
             </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          </button>
+          <div className="fc-node-actions" style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
             {onStudy && (
               <button onClick={onStudy} title={`Study ${name}`} style={{
                 background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 8,
