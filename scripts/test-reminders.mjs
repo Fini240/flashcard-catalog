@@ -1,8 +1,8 @@
 // Smoke tests for the escalating daily study reminders.
 //
 // Two things are worth testing: which slots get scheduled (the ladder, and the
-// rule that all of it stops once the daily goal is met — not merely once a
-// single card has been answered), and what each rung says, since the whole
+// rule that all of it stops after a completed session — not merely once a
+// single card in an unfinished session has been answered), and what each rung says, since the whole
 // point of escalating is that the wording escalates with it.
 //
 // Run: node scripts/test-reminders.mjs
@@ -72,6 +72,8 @@ ok("enabling late still fills the horizon", late.length === 6 * RUNGS, late.leng
 console.log("the goal is what silences them");
 const partial = { ...base, history: { [today]: { cards: 6, correct: 5, xp: 40, goalMet: false, sessions: 1 } } };
 ok("partial progress still gets reminded", hoursOn(plan(partial, on, at(9)), today).length === RUNGS);
+const habit = { ...partial, history: { [today]: { ...partial.history[today], habitMet: true } } };
+ok("a short completed session clears today's nudges", hoursOn(plan(habit, on, at(9)), today).length === 0);
 const met = { ...base, history: { [today]: { cards: 20, correct: 18, xp: 130, goalMet: true, sessions: 1 } } };
 ok("a met goal clears the rest of today", hoursOn(plan(met, on, at(9)), today).length === 0);
 ok("but tomorrow is untouched", hoursOn(plan(met, on, at(9)), "2026-08-11").length === RUNGS);

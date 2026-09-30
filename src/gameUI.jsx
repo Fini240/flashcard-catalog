@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import * as G from "./gamification";
 import * as social from "./social";
+import { planDescription } from './studyPlan';
 
 // ---------- small shared primitives ----------
 
@@ -136,7 +137,7 @@ const chipLabel = { fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, co
 
 // ---------- today's goal + the single most important button in the app ----------
 
-export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, pausedSession, onResume, onDiscard }) {
+export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, pausedSession, onResume, onDiscard, plan }) {
   const t = G.todayStats(game);
   const pct = Math.min(1, t.cards / game.goalCards);
   const done = t.cards >= game.goalCards;
@@ -176,10 +177,10 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, 
         </button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15.5, fontWeight: 700, color: "var(--text-strong)", margin: 0 }}>
-            {pausedSession ? "Pick up where you left off" : headline}
+            {pausedSession ? "Pick up where you left off" : plan ? `${plan.name}${plan.cards.length ? ` · about ${Math.max(1, Math.ceil(plan.seconds / 60))} min` : ''}` : headline}
           </p>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "3px 0 0", lineHeight: 1.35 }}>
-            {pausedSession ? `${pausedSession.index} of ${pausedSession.queue.length} exercises done · saved on this device` : sub}
+            {pausedSession ? `${pausedSession.index} of ${pausedSession.queue.length} exercises done · saved on this device` : plan ? planDescription(plan) || plan.reason : sub}
           </p>
         </div>
       </div>
@@ -190,10 +191,12 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, 
           fontWeight: 700, fontSize: 16.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           WebkitTapHighlightColor: "transparent", boxShadow: "0 2px 10px rgba(242,197,114,0.25)",
         }}>
-          <Sparkles size={18} /> {pausedSession ? "Resume session" : dueCount > 0 ? `Study ${Math.min(dueCount, 20)} cards` : "Practice now"}
+          <Sparkles size={18} /> {pausedSession ? "Resume session" : plan ? plan.cards.length ? `Study today · ${plan.cards.length} cards` : 'Choose extra practice' : dueCount > 0 ? `Study ${Math.min(dueCount, 20)} cards` : "Practice now"}
         </button>
       )}
       {pausedSession && <button className="fc-discard-session" onClick={onDiscard}>Discard paused session</button>}
+      {!pausedSession && plan?.cards.length > 0 && <p className="fc-plan-reason">{plan.reason}</p>}
+      <p className="fc-habit-note">{G.habitMet(game) ? 'Streak safe for today.' : 'Complete one short session to keep your streak.'} {done ? 'Daily goal complete.' : `${remaining} cards left for your daily goal bonus.`}</p>
     </div>
   );
 }
@@ -301,12 +304,12 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
           <div key={d.key} style={{ flex: 1, textAlign: "center" }}>
             <div style={{
               height: 34, borderRadius: 8,
-              background: d.goalMet ? "var(--accent-warm)" : d.frozen ? "var(--info)" : d.future ? "var(--card-border-light)" : "var(--input-bg)",
+              background: d.habitMet ? "var(--accent-warm)" : d.frozen ? "var(--info)" : d.future ? "var(--card-border-light)" : "var(--input-bg)",
               border: d.today ? "2px solid #F2C572" : "1px solid var(--card-border)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              {d.goalMet && <Flame size={14} color="#FBF7EC" fill="#FBF7EC" />}
-              {d.frozen && !d.goalMet && <Snowflake size={13} color="#FBF7EC" />}
+              {d.habitMet && <Flame size={14} color="#FBF7EC" fill="#FBF7EC" />}
+              {d.frozen && !d.habitMet && <Snowflake size={13} color="#FBF7EC" />}
             </div>
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, color: "var(--text-faint)" }}>
               {["M", "T", "W", "T", "F", "S", "S"][i]}
@@ -315,7 +318,7 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
         ))}
       </div>
       <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "0 0 18px" }}>
-        Miss a day and a banked freeze covers it automatically — you earn one every 7 streak days.
+        Complete one short session to extend your streak. Your full daily goal earns an extra bonus. A banked freeze covers a missed day automatically.
       </p>
 
       <SectionLabel>Level {lvl.level}</SectionLabel>
@@ -905,7 +908,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
 
       {!award.goalMet && (
         <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "12px 0 0" }}>
-          {award.goalCards - award.cardsToday} more card{award.goalCards - award.cardsToday !== 1 ? "s" : ""} today keeps your streak alive.
+          {award.habitMet ? 'Streak safe for today. ' : ''}{award.goalCards - award.cardsToday} more card{award.goalCards - award.cardsToday !== 1 ? "s" : ""} for your daily goal bonus.
         </p>
       )}
       {award.freezeEarned && (
@@ -963,7 +966,7 @@ export function RiskBanner({ game, onStudyNow }) {
           Your {game.streak}-day streak ends tonight
         </p>
         <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#B8C6DC", margin: "2px 0 0" }}>
-          {game.goalCards - G.todayStats(game).cards} cards saves it.
+          One short session saves it. Your daily goal is separate.
         </p>
       </div>
       <button onClick={onStudyNow} style={{

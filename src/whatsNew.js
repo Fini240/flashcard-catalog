@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.6.0";
+export const APP_VERSION = "1.7.0";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,16 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.7.0",
+    date: "2026-09-30",
+    items: [
+      "Study today recommends a short subject session with due reviews and a small batch of new cards. Exercises change from first exposure to choices and written recall as cards become familiar.",
+      "One completed study session now protects your streak. Your full daily goal still earns a separate XP bonus, and reminders stop once the streak is safe.",
+      "Set an exam date on a subject to prioritise it in daily practice and see a coverage target, final-review period and catch-up guidance.",
+      "Subject cards now show familiar, learning, unseen and set-aside counts beside the existing progress bar.",
+    ],
+  },
   {
     version: "1.6.0",
     date: "2026-09-30",

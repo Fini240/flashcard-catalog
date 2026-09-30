@@ -38,6 +38,8 @@ import {
 } from "./theme";
 import * as drillsLib from "./drills";
 import * as savedStudy from "./studySession";
+import * as studyPlan from "./studyPlan";
+import { ExamDateSheet } from "./studyPlanUI";
 import { useStudyKeys, useExerciseSnapshot, KeyHint } from "./studyShortcuts";
 import * as aiDrills from "./aiDrills";
 import { ClozeCard, TrueFalseCard, MatchCard } from "./drillUI";
@@ -725,6 +727,8 @@ export default function FlashcardCatalog() {
 
   // ---------- scheduler settings ----------
   const srsSettings = normalizeSettings(game?.srs);
+  const todayPlan = useMemo(() => studyPlan.studyTodayPlan(cards, subjects, game, srsSettings), [cards, subjects, game]);
+  const setExamDate = (id, date) => setGame(g => ({ ...g, exams: { ...(g.exams || {}), [id]: date } }));
   const setSrsSettings = (next) => setGame(g => ({ ...g, srs: normalizeSettings(next) }));
 
   // ---------- leeches ----------
@@ -950,28 +954,10 @@ export default function FlashcardCatalog() {
     syncWidget(next);
   };
 
-  // "Study now" — the one-tap path. Builds the best queue it can without
-  // asking the user a single question: due cards first, weakest cards next,
-  // capped at the daily goal so a session always feels finishable.
+  // The plan is built without network requests and explains its small batch.
   const quickStudy = () => {
-    // The daily limits are applied before the shuffle, not after: they serve
-    // reviews ahead of new cards (see srs.applyDailyLimits), and shuffling
-    // first would throw that ordering away. Shuffling afterwards keeps the
-    // selection while still varying the order within it.
-    const due = shuffle(applyDailyLimits(cards, srsSettings));
-    let queue = due;
-    if (queue.length === 0) {
-      // Nothing due: practise the shakiest cards instead of a random grab bag.
-      // Suspended leeches stay out — they are set aside precisely so they stop
-      // being offered, and "nothing due" is exactly when they would surface.
-      queue = [...cards]
-        .filter(c => !leechLib.isSuspended(c))
-        .sort((a, b) => (a.srsBox || 0) - (b.srsBox || 0))
-        .slice(0, 30);
-      queue = shuffle(queue);
-    }
-    const remaining = Math.max(5, game.goalCards - G.todayStats(game).cards);
-    startSession(queue.slice(0, Math.max(remaining, 10)), "library");
+    if (todayPlan.cards.length) startSession(todayPlan.cards, "library", studyPlan.GUIDED_DRILL);
+    else setView("study");
   };
 
   const chooseTheme = (id) => {
@@ -1027,6 +1013,8 @@ export default function FlashcardCatalog() {
           nudgeCount={nudges.length}
           onOpenSheet={setSheet}
           onQuickStudy={quickStudy}
+          todayPlan={todayPlan}
+          onExamDate={setExamDate}
           pausedSession={pausedSession?.ownerUid === sessionOwner ? pausedSession : null}
           onResumeSession={resumeSession}
           onDiscardSession={discardSession}
@@ -1488,6 +1476,7 @@ function IconBtn({ onClick, title, children, danger }) {
 // ---------- LIBRARY ----------
 function Library({
   rootRequest,
+  todayPlan, onExamDate,
   pausedSession, onResumeSession, onDiscardSession,
   subjects, setSubjects, cards, setCards, game, nudgeCount, onOpenSheet, onQuickStudy,
   goStudy, startReview, googleUser, onOpenSettings,
@@ -1501,6 +1490,7 @@ function Library({
   const [addingSubcategory, setAddingSubcategory] = useState(false);
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
   const [renamingNode, setRenamingNode] = useState(null); // { id, name }
+  const [examSubject, setExamSubject] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [cardForm, setCardForm] = useState(null); // {nodeId, editingId?}
   const [importOpen, setImportOpen] = useState(null); // null | { mode: "paste"|"file"|"photo" }
@@ -1781,6 +1771,7 @@ function Library({
             totalCards={totalCards}
             onStudyNow={onQuickStudy}
             onOpenGoal={() => onOpenSheet("goal")}
+            plan={todayPlan}
           />
         )}
 
@@ -1869,6 +1860,8 @@ function Library({
               onDelete={() => deleteNode(s.id)}
               deleteTitle="Delete subject"
               onStudy={subjectCards.length ? () => goStudy(s.id) : null}
+              exam={studyPlan.examPlan(subjectCards, game.exams?.[s.id], srsSettings)}
+              onExam={() => setExamSubject(s)}
             />
           );
         })}</div>
@@ -1912,6 +1905,10 @@ function Library({
           />
         )}
         {renameSheet}
+        {examSubject && <ExamDateSheet subject={examSubject}
+          cards={cards.filter(card => collectIds(examSubject).includes(card.nodeId))}
+          date={game.exams?.[examSubject.id]} settings={srsSettings}
+          onSave={date => onExamDate(examSubject.id, date)} onClose={() => setExamSubject(null)} />}
         {leechSheet}
         {orphanSheet}
       </div>
@@ -2399,7 +2396,7 @@ function RenameNodeSheet({ initialName, isSubject, value, onChange, onClose, onS
   );
 }
 
-function NodeRow({ name, cards, color, tabColor, onOpen, onRename, renameTitle, onDelete, deleteTitle, compact, onStudy }) {
+function NodeRow({ name, cards, color, tabColor, onOpen, onRename, renameTitle, onDelete, deleteTitle, compact, onStudy, exam, onExam }) {
   const list = cards || [];
   const count = list.length;
   const strength = G.deckStrength(list);
@@ -2454,12 +2451,24 @@ function NodeRow({ name, cards, color, tabColor, onOpen, onRename, renameTitle, 
         {count > 0 && (
           <div style={{ marginTop: 10 }}>
             <MasteryBar cards={list} height={compact ? 5 : 6} />
+            {!compact && <LearningSummary cards={list} />}
           </div>
         )}
       </div>
+      {onExam && <button className="fc-exam-button" onClick={onExam} aria-label={`Set exam date for ${name}`}>
+        {exam ? `Exam ${exam.date} · ${exam.days < 0 ? 'update date' : exam.days === 0 ? 'today' : `${exam.days} days left`}` : 'Set exam date'}
+        {exam && exam.days >= 0 && <span>{exam.catchUp ? 'Extra time needed' : exam.finalReview ? 'Final review' : `${exam.newPerDay} new/day + due reviews`}</span>}
+      </button>}
       {!compact && <IndexCardTab color={tabColor} label="Tap to open" />}
     </div>
   );
+}
+
+function LearningSummary({ cards }) {
+  const summary = studyPlan.learningSummary(cards);
+  return <p className="fc-learning-summary" title="Familiar means a review strength of at least 3; it is not a guarantee of exam readiness.">
+    {summary.familiar} familiar · {summary.learning} learning · {summary.unseen} unseen{summary.suspended ? ` · ${summary.suspended} set aside` : ''}
+  </p>;
 }
 
 function SmallButton({ onClick, children }) {

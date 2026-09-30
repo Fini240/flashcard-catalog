@@ -19,6 +19,16 @@ function withProgress(cards, extra = {}) {
   return gameWith({ history: { [TODAY]: { cards, correct: cards, xp: 0, goalMet: false } }, ...extra });
 }
 
+it("a short completed session protects the widget streak but leaves the goal bar partial", () => {
+  const game = withProgress(3, { streak: 4 });
+  game.history[TODAY].habitMet = true;
+  const snap = W.snapshot(game, at(21));
+  expect(snap.done).toBe(3);
+  expect(snap.today).toBe("0:happy");
+  expect(JSON.parse(snap.messages).happy).toContain("Streak safe");
+  expect(W.moodNow(game, at(21))).toBe("happy");
+});
+
 describe("mascots", () => {
   it("defaults an unknown or missing id", () => {
     expect(W.normalizeMascot(undefined)).toBe(W.DEFAULT_MASCOT);
@@ -146,7 +156,7 @@ describe("messageFor", () => {
     expect(W.messageFor("waiting", args)).toBe("14 to go today");
   });
   it("only invokes the streak when there is one to lose", () => {
-    expect(W.messageFor("worried", args)).toBe("14 left to keep your streak");
+    expect(W.messageFor("worried", args)).toBe("One session keeps your streak");
     expect(W.messageFor("sad", args)).toBe("Don't lose 9 days tonight");
     expect(W.messageFor("worried", { ...args, streak: 0 })).toBe("14 to go today");
     expect(W.messageFor("sad", { ...args, streak: 0 })).toBe("14 to go today");

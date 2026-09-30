@@ -171,6 +171,24 @@ describe("recordSession", () => {
     expect(award.base).toBe(2 * G.XP.repeatCard);
   });
 
+  it("a short completed session protects the streak without completing the full goal", () => {
+    const first = G.recordSession(gameWith({ goalCards: 20 }), [], { answers: [{ correct: false }], perfect: false });
+    expect(first.game.streak).toBe(1);
+    expect(first.award).toMatchObject({ habitMet: true, goalMet: false, goalBonus: 0 });
+    expect(G.streakAtRisk(first.game)).toBe(false);
+    expect(G.weekDays(first.game).find(day => day.today).habitMet).toBe(true);
+    const second = G.recordSession(first.game, [], { answers: Array.from({ length: 19 }, () => ({ correct: true })) });
+    expect(second.game.streak).toBe(1);
+    expect(second.award.goalBonus).toBe(G.XP.goalReached);
+    expect(second.award.streakUp).toBe(false);
+    expect(G.recordSession(gameWith(), [], { answers: [] }).game.streak).toBe(0);
+  });
+  it("a freeze-covered day stays distinct from an actual study day", () => {
+    const next = G.rollOver(gameWith({ streak: 4, freezes: 2, lastStudyDay: "2026-08-09", lastSeenDay: "2026-08-09" }), TODAY);
+    expect(G.habitMet(next, "2026-08-11")).toBe(false);
+    expect(G.weekDays(next).find(day => day.key === "2026-08-11")).toMatchObject({ habitMet: false, frozen: true });
+  });
+
   it("meeting the daily goal pays once and starts the streak", () => {
     const g = gameWith({ goalCards: 2 });
     const { award, game } = G.recordSession(g, [], {

@@ -106,7 +106,7 @@ describe("study checkpoints and undo in the real app", () => {
     const settle = () => act(async () => { await Promise.resolve(); });
     const data = () => JSON.parse(localStorage.getItem("flashcard-catalog-data"));
     render(<FlashcardCatalog />); await settle();
-    click(button("Study 3 cards"));
+    click(button("Study today · 3 cards"));
     key("2"); await settle();
     expect(data().game.reviewLog).toHaveLength(1);
     expect(JSON.parse(localStorage.getItem("flashcard-study-session-v1")).index).toBe(1);
@@ -262,7 +262,7 @@ describe("moving cards between folders", () => {
     render(<FlashcardCatalog />);
     // The load is async, so let the promise that reads localStorage settle.
     await act(async () => { await Promise.resolve(); });
-    click(byText(/^Biology/));
+    click([...container.querySelectorAll(".fc-node-open span")].find(el => el.textContent === "Biology").closest("button"));
     return FlashcardCatalog;
   };
 
@@ -337,7 +337,7 @@ describe("moving cards between folders", () => {
     const { default: FlashcardCatalog } = await import("./FlashcardCatalog");
     render(<FlashcardCatalog />);
     await act(async () => { await Promise.resolve(); });
-    click(byText(/^Biology/));
+    click([...container.querySelectorAll(".fc-node-open span")].find(el => el.textContent === "Biology").closest("button"));
     click([...container.querySelectorAll("span")].find((span) => span.textContent === "Cells"));
     const rename = [...container.querySelectorAll("button")].find((b) => b.title === "Rename folder");
     click(rename);

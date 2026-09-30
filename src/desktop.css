@@ -7,6 +7,14 @@
 .fc-shell textarea:focus-visible, .fc-shell select:focus-visible, .fc-flip:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .fc-node-open:focus-visible { outline-color: var(--brand) !important; }
 .fc-key-hint { display: none; }
+.fc-plan-reason, .fc-habit-note, .fc-learning-summary { margin: 12px 0 0; color: var(--text-secondary); font: 12px/1.5 Inter, system-ui, sans-serif; }
+.fc-habit-note { padding-top: 12px; border-top: 1px solid var(--card-border); }
+.fc-learning-summary { margin-top: 9px; }
+.fc-exam-button { display: block; width: 100%; margin-top: 10px; min-height: 44px; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: 8px; background: var(--card-bg); color: var(--text-secondary); text-align: left; font: 12px/1.5 Inter, system-ui, sans-serif; }
+.fc-exam-button span { display: block; color: var(--text-strong); font-weight: 600; }
+.fc-plan-copy { display: block; margin: 14px 0 8px; color: var(--on-shell-muted); font: 13px/1.6 Inter, system-ui, sans-serif; }
+.fc-exam-preview { padding: 16px; margin-top: 16px; border: 1px solid var(--shell-raised); border-radius: 10px; color: var(--on-shell-strong); font: 13px/1.6 Inter, system-ui, sans-serif; }
+.fc-exam-preview p { margin: 10px 0 0; }
 .fc-session-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 18px 0 0; font: 12px Inter, system-ui, sans-serif; color: var(--on-shell-muted); }
 .fc-session-tools button, .fc-resume-note button { color: var(--on-shell-strong); border: 1px solid rgba(255,255,255,.18); border-radius: 8px; background: transparent; padding: 10px 14px; min-height: 40px; font: inherit; }
 .fc-session-tools button:disabled { opacity: .45; cursor: default; }

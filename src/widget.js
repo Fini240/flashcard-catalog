@@ -87,8 +87,8 @@ const LADDER = [
 //     is no bad news to deliver, so it doesn't invent any.
 //   * Started but not finished drops every rung by one. Someone who did half
 //     the goal at lunch has not been ignoring it.
-export function moodSchedule({ done = 0, goal = G.DEFAULT_GOAL_CARDS, streak = 0 } = {}) {
-  if (done >= goal) return [{ from: 0, mood: HAPPY }];
+export function moodSchedule({ done = 0, goal = G.DEFAULT_GOAL_CARDS, streak = 0, habitMet = false } = {}) {
+  if (done >= goal || habitMet) return [{ from: 0, mood: HAPPY }];
 
   const cap = streak > 0 ? MOODS.length - 1 : 2;
   const soften = done > 0 ? 1 : 0;
@@ -113,12 +113,13 @@ export function moodSchedule({ done = 0, goal = G.DEFAULT_GOAL_CARDS, streak = 0
 //
 // Short on purpose — the widget gives this line about half its width, and an
 // ellipsised sentence says less than a blunt one.
-export function messageFor(mood, { done = 0, goal = G.DEFAULT_GOAL_CARDS, streak = 0 } = {}) {
+export function messageFor(mood, { done = 0, goal = G.DEFAULT_GOAL_CARDS, streak = 0, habitMet = false } = {}) {
   const left = Math.max(0, goal - done);
+  if (habitMet && left > 0) return `Streak safe · ${left} for your goal`;
   if (mood === HAPPY) return "All done for today";
   if (mood === "waiting") return `${left} to go today`;
   if (mood === "worried") {
-    return streak > 0 ? `${left} left to keep your streak` : `${left} to go today`;
+    return streak > 0 ? 'One session keeps your streak' : `${left} to go today`;
   }
   if (mood === "sad") {
     return streak > 0 ? `Don't lose ${streak} days tonight` : `${left} to go today`;
@@ -151,9 +152,9 @@ export function dayWindow(game, endKey, size = DAY_WINDOW) {
     const key = G.addDays(endKey, -i);
     const h = game.history[key];
     const goal = game.goalCards || G.DEFAULT_GOAL_CARDS;
-    // Same test reminders.js uses: `goalMet` is set when a session records it,
-    // but a day whose count already covers the goal is met either way.
-    const met = !!(h && (h.goalMet || h.cards >= goal));
+    // Completed sessions protect the habit; older goal-complete days
+    // keep their earned marks too.
+    const met = G.habitMet(game, key) || !!(h && h.cards >= goal);
     // A frozen day is not a day the user studied, and drawing it as one would
     // be a lie the streak itself doesn't tell — it gets its own mark.
     const frozen = Array.isArray(game.frozenDays) && game.frozenDays.includes(key);
@@ -206,8 +207,8 @@ export function snapshot(game, now = new Date()) {
     goal,
     mascot: normalizeMascot(game.mascot),
     // Today, as it actually stands.
-    today: encodeSchedule(moodSchedule({ done: stats.cards, goal, streak })),
-    messages: JSON.stringify(messagesFor({ done: stats.cards, goal, streak })),
+    today: encodeSchedule(moodSchedule({ done: stats.cards, goal, streak, habitMet: G.habitMet(game, day) })),
+    messages: JSON.stringify(messagesFor({ done: stats.cards, goal, streak, habitMet: G.habitMet(game, day) })),
     days: encodeDays(dayWindow(game, day)),
     // And the day after midnight, which the app will almost certainly not be
     // open to see: nothing done, streak carried over, the strip rolled on by
@@ -245,6 +246,7 @@ export function moodNow(game, now = new Date()) {
     done: G.todayStats(game, day).cards,
     goal,
     streak: game.streak || 0,
+    habitMet: G.habitMet(game, day),
   });
   return moodAt(schedule, now.getHours() * 60 + now.getMinutes());
 }

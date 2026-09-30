@@ -28,7 +28,7 @@ export const DEFAULT_REMINDER = { enabled: false };
 // The day's ladder. One easy-to-ignore nudge around lunch, then progressively
 // more direct as the day runs out — the last one lands while there is still
 // time to actually do something about it, not at 23:55 when the answer is
-// "too late". Every rung is cancelled the moment the daily goal is met, so a
+// "too late". Every rung is cancelled after a completed study session, so a
 // user who studies in the morning hears nothing at all.
 export const LADDER = [
   { hour: 12, minute: 30, tone: "gentle" },
@@ -84,13 +84,13 @@ function messageFor({ tone, dayIndex, done, goal, streak, dueCount }) {
     return { title: "Your goal is still open", body: `${cards(goal)} today — that's about ten minutes.` };
   }
   if (tone === "push") {
-    if (streak > 0) return { title: `Keep your ${streak}-day streak`, body: `${cards(left)} left to hit today's goal.` };
+    if (streak > 0) return { title: `Keep your ${streak}-day streak`, body: 'Complete one short session to keep it going.' };
     return { title: "Evening review?", body: `${cards(left)} left to hit today's goal.` };
   }
   // The last rung is the only one allowed to sound urgent, and only when
   // something is genuinely about to be lost.
   if (streak > 0) {
-    return { title: `Your ${streak}-day streak ends tonight`, body: `${cards(left)} to keep it alive.` };
+    return { title: `Your ${streak}-day streak ends tonight`, body: 'One short session keeps it alive.' };
   }
   return { title: "Last call for today", body: `${cards(left)} and the day counts.` };
 }
@@ -150,10 +150,8 @@ async function cancelAll() {
 // Every rung of every day in the horizon that still deserves a notification,
 // as concrete fire times. Pure so it can be tested without a device.
 //
-// The rule that matters: reminders exist to get the daily goal met, so they all
-// stop for a day the moment it is met — not merely when a card has been
-// answered. A user who does half the goal at lunch should still hear about the
-// other half in the evening.
+// A completed session protects the habit and stops today's nudges. A partly
+// answered session still needs completing; the full goal is a separate reward.
 export function plan(game, reminder, now = new Date()) {
   if (!reminder || !reminder.enabled) return [];
   const today = G.dayKey(now.getTime());
@@ -164,7 +162,7 @@ export function plan(game, reminder, now = new Date()) {
 
   for (let i = 0; i < HORIZON_DAYS; i++) {
     // Today is already accounted for — no reason to interrupt anyone again.
-    if (i === 0 && goalMetToday) continue;
+    if (i === 0 && (goalMetToday || G.habitMet(game, today))) continue;
     const key = G.addDays(today, i);
     LADDER.forEach((rung, rungIndex) => {
       const at = G.dayKeyToDate(key);

@@ -85,6 +85,7 @@ export const DRILLS = [
 ];
 
 export function drillById(id) {
+  if (id === 'guided') return { id: 'guided', label: 'Study today', types: [EXERCISES.MCQ, EXERCISES.WRITE, EXERCISES.FLIP] };
   return DRILLS.find((d) => d.id === id) || DRILLS[DRILLS.length - 1];
 }
 
@@ -351,8 +352,12 @@ export function buildQueue(drill, cards, content = {}, allCards) {
   cards.forEach((card, i) => {
     // Rotate through the drill's formats so a mixed drill actually mixes,
     // rather than leaving it to chance whether you see all of them.
-    const types = drill.types.filter((t) => supports(t, card, pool));
-    const type = types.length ? types[i % types.length] : EXERCISES.FLIP;
+    const preferred = drill.id === 'guided'
+      ? (card.clozeSource || card.back?.length > 120 || (!card.fsrsStability && !(card.srsBox > 0)) ? [EXERCISES.FLIP] : card.srsBox >= 2 && hasText(card)
+        ? [EXERCISES.WRITE] : [EXERCISES.MCQ, EXERCISES.FLIP])
+      : drill.types;
+    const types = preferred.filter((t) => supports(t, card, pool));
+    const type = types.length ? types[drill.id === 'guided' ? 0 : i % types.length] : EXERCISES.FLIP;
     steps.push(step(type, [card], payloadFor(type, card, pool, content[card.id])));
   });
   return steps;

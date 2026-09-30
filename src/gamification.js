@@ -12,7 +12,8 @@
 //     durable progress — is worth the most. You cannot farm XP by replaying
 //     easy material: cards you already answered today pay a reduced rate.
 //   * The daily goal is measured in cards, not minutes, because "20 cards" is
-//     something a student can picture and a minute count isn't.
+//     something a student can picture and a minute count isn't. A completed
+//     short session protects the streak independently of that full goal.
 //   * Streak freezes are automatic and free. Losing a 40-day streak to a sick
 //     day makes people quit; we'd rather protect the habit than sell it back.
 // ---------------------------------------------------------------------------
@@ -75,7 +76,7 @@ export function emptyGame() {
     xp: 0,
     streak: 0,
     bestStreak: 0,
-    lastStudyDay: null, // last day the daily goal was actually met
+    lastStudyDay: null, // last day a non-empty study session was completed
     lastSeenDay: null, // last day the app rolled its streak bookkeeping
     freezes: 2,
     frozenDays: [], // days a freeze covered, for the calendar
@@ -242,7 +243,14 @@ function freezesEarnedBetween(from, to) {
 
 export function streakAtRisk(game, today = dayKey()) {
   if (game.streak <= 0) return false;
-  return !todayStats(game, today).goalMet;
+  return !habitMet(game, today);
+}
+
+// Older history only recorded goal completion. Keep those earned days without
+// retroactively claiming that unfinished sessions met the new habit rule.
+export function habitMet(game, key = dayKey()) {
+  const h = game.history?.[key];
+  return !!(h?.habitMet || h?.goalMet || (game.lastStudyDay === key && !game.frozenDays?.includes(key)));
 }
 
 // ---------- levels ----------
@@ -302,6 +310,7 @@ export function weekDays(game, today = dayKey()) {
       future: daysBetween(today, key) > 0,
       today: key === today,
       goalMet: !!(h && h.goalMet),
+      habitMet: habitMet(game, key),
       frozen: game.frozenDays.includes(key),
       xp: (h && h.xp) || 0,
     };
@@ -499,16 +508,18 @@ export function recordSession(game, cards, result) {
       correct: correctToday,
       xp: (before.xp || 0) + gained,
       goalMet: goalMetNow,
+      habitMet: !!before.habitMet || !!before.goalMet || answered > 0,
       sessions: (before.sessions || 0) + 1,
       levelUps: (before.levelUps || 0) + levelUps,
     },
   };
 
-  // streak: only a day where the goal was actually met counts
+  // One completed, non-empty session protects the habit. The full daily goal
+  // still pays its separate bonus, and later sessions cannot extend it twice.
   let streak = next.streak;
   let streakUp = false;
   let lastStudyDay = next.lastStudyDay;
-  if (goalJustMet) {
+  if (answered > 0 && lastStudyDay !== today) {
     const gap = lastStudyDay ? daysBetween(lastStudyDay, today) : null;
     if (gap === 1) streak = streak + 1; // yesterday → continue
     else if (gap === 0) streak = Math.max(streak, 1); // shouldn't happen, but harmless
@@ -568,6 +579,7 @@ export function recordSession(game, cards, result) {
       questsDone,
       newAchievements,
       goalMet: goalMetNow,
+      habitMet: habitMet(next, today),
       cardsToday,
       goalCards: next.goalCards,
     },
