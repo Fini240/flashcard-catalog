@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.5.1";
+export const APP_VERSION = "1.6.0";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,15 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.6.0",
+    date: "2026-09-30",
+    items: [
+      "Pause or reload a study session and resume the same exercise, including your answer, on this device.",
+      "On desktop, use Space to reveal, number keys to answer, Enter to continue, and Cmd/Ctrl+Z to undo the last grade. Shortcut hints appear beside the controls.",
+      "Undo also works on the session summary and corrects the XP award. The final answer now stays in your review history.",
+    ],
+  },
   {
     version: "1.5.1",
     date: "2026-09-30",

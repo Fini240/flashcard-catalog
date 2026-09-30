@@ -136,7 +136,7 @@ const chipLabel = { fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, co
 
 // ---------- today's goal + the single most important button in the app ----------
 
-export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal }) {
+export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, pausedSession, onResume, onDiscard }) {
   const t = G.todayStats(game);
   const pct = Math.min(1, t.cards / game.goalCards);
   const done = t.cards >= game.goalCards;
@@ -176,23 +176,24 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal }
         </button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15.5, fontWeight: 700, color: "var(--text-strong)", margin: 0 }}>
-            {headline}
+            {pausedSession ? "Pick up where you left off" : headline}
           </p>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "3px 0 0", lineHeight: 1.35 }}>
-            {sub}
+            {pausedSession ? `${pausedSession.index} of ${pausedSession.queue.length} exercises done · saved on this device` : sub}
           </p>
         </div>
       </div>
       {totalCards > 0 && (
-        <button onClick={onStudyNow} style={{
+        <button onClick={pausedSession ? onResume : onStudyNow} style={{
           width: "100%", marginTop: 14, background: "var(--accent)", color: "var(--shell-bg)", border: "none",
           borderRadius: 10, padding: "15px 20px", minHeight: 52, fontFamily: "Inter, sans-serif",
           fontWeight: 700, fontSize: 16.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           WebkitTapHighlightColor: "transparent", boxShadow: "0 2px 10px rgba(242,197,114,0.25)",
         }}>
-          <Sparkles size={18} /> {dueCount > 0 ? `Study ${Math.min(dueCount, 20)} cards` : "Practice now"}
+          <Sparkles size={18} /> {pausedSession ? "Resume session" : dueCount > 0 ? `Study ${Math.min(dueCount, 20)} cards` : "Practice now"}
         </button>
       )}
+      {pausedSession && <button className="fc-discard-session" onClick={onDiscard}>Discard paused session</button>}
     </div>
   );
 }

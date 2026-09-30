@@ -8,6 +8,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Check, X } from "lucide-react";
 import { CardShell, CardFace, PrimaryButton, GhostButton, TextField, normalize } from "./cardUI";
+import { useStudyKeys, useExerciseSnapshot, KeyHint } from "./studyShortcuts";
 
 const captionStyle = {
   textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
@@ -30,7 +31,7 @@ const hintStyle = {
 
 // ---------- fill in the blank ----------
 
-export function ClozeCard({ card, payload, onResult }) {
+export function ClozeCard({ card, payload, onResult, initialState, onStateChange, shortcutsEnabled }) {
   const suppliedAnswers = Array.isArray(payload.answers) && payload.answers.length
     ? payload.answers
     : [payload.answer];
@@ -42,8 +43,8 @@ export function ClozeCard({ card, payload, onResult }) {
     ? rawParts
     : [rawParts[0] || "", rawParts.slice(1).join("____")];
   const answers = suppliedAnswers.slice(0, parts.length - 1);
-  const [values, setValues] = useState(() => answers.map(() => ""));
-  const [verdict, setVerdict] = useState(null); // null | "right" | "wrong"
+  const [values, setValues] = useState(() => initialState?.values?.length === answers.length ? initialState.values : answers.map(() => ""));
+  const [verdict, setVerdict] = useState(initialState?.verdict || null); // null | "right" | "wrong"
   const inputRef = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
@@ -56,6 +57,9 @@ export function ClozeCard({ card, payload, onResult }) {
     setValues((current) => current.map((old, i) => i === index ? value : old));
   };
   const allFilled = values.every((value) => value.trim());
+  useExerciseSnapshot({ values, verdict }, onStateChange);
+  const next = () => onResult(verdict === "right");
+  useStudyKeys(verdict ? { Enter: next, " ": next } : { Enter: allFilled ? check : null }, shortcutsEnabled);
 
   return (
     <>
@@ -89,7 +93,7 @@ export function ClozeCard({ card, payload, onResult }) {
                 ref={i === 0 ? inputRef : undefined}
                 value={values[i]}
                 onChange={(e) => setValue(i, e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && allFilled) check(); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.repeat && !e.isComposing && allFilled) { e.preventDefault(); check(); } }}
                 placeholder={answers.length === 1 ? "The missing word" : `Missing word ${i + 1}`}
                 style={{ textAlign: "center" }}
               />
@@ -109,13 +113,13 @@ export function ClozeCard({ card, payload, onResult }) {
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         {verdict
-          ? <PrimaryButton onClick={() => onResult(verdict === "right")} style={{ flex: 1 }}>Next</PrimaryButton>
+          ? <PrimaryButton onClick={next} style={{ flex: 1 }}>Next<KeyHint>Enter</KeyHint></PrimaryButton>
           : (
             <>
               <GhostButton onClick={() => setVerdict("wrong")} style={{ flex: 1, color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
                 Show me
               </GhostButton>
-              <PrimaryButton onClick={check} disabled={!allFilled} style={{ flex: 1 }}>Check</PrimaryButton>
+              <PrimaryButton onClick={check} disabled={!allFilled} style={{ flex: 1 }}>Check<KeyHint>Enter</KeyHint></PrimaryButton>
             </>
           )}
       </div>
@@ -125,10 +129,13 @@ export function ClozeCard({ card, payload, onResult }) {
 
 // ---------- true or false ----------
 
-export function TrueFalseCard({ payload, onResult }) {
-  const [picked, setPicked] = useState(null);
+export function TrueFalseCard({ payload, onResult, initialState, onStateChange, shortcutsEnabled }) {
+  const [picked, setPicked] = useState(initialState?.picked ?? null);
   const answered = picked !== null;
   const wasRight = picked === payload.isTrue;
+  useExerciseSnapshot({ picked }, onStateChange);
+  const next = () => onResult(wasRight);
+  useStudyKeys(answered ? { Enter: next, " ": next } : { "1": () => setPicked(false), "2": () => setPicked(true) }, shortcutsEnabled);
 
   return (
     <>
@@ -171,14 +178,14 @@ export function TrueFalseCard({ payload, onResult }) {
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         {answered ? (
-          <PrimaryButton onClick={() => onResult(wasRight)} style={{ flex: 1 }}>Next</PrimaryButton>
+          <PrimaryButton onClick={next} style={{ flex: 1 }}>Next<KeyHint>Enter</KeyHint></PrimaryButton>
         ) : (
           <>
             <GhostButton onClick={() => setPicked(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>
-              <X size={16} /> False
+              <X size={16} /> False<KeyHint>1</KeyHint>
             </GhostButton>
             <PrimaryButton onClick={() => setPicked(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>
-              <Check size={16} /> True
+              <Check size={16} /> True<KeyHint>2</KeyHint>
             </PrimaryButton>
           </>
         )}
@@ -192,16 +199,16 @@ export function TrueFalseCard({ payload, onResult }) {
 // Tap a term, then tap its meaning. Two taps rather than a drag: dragging
 // inside a scrolling page on a phone fights the scroll, and there is no
 // gesture here that a tap can't express.
-export function MatchCard({ payload, onResult }) {
+export function MatchCard({ payload, onResult, initialState, onStateChange, shortcutsEnabled }) {
   const pairs = payload.pairs;
-  const [meanings] = useState(() => shuffleOnce(pairs));
-  const [pickedTerm, setPickedTerm] = useState(null);
-  const [solved, setSolved] = useState({});   // id -> true
+  const [meanings] = useState(() => initialState?.meanings || shuffleOnce(pairs));
+  const [pickedTerm, setPickedTerm] = useState(initialState?.pickedTerm || null);
+  const [solved, setSolved] = useState(initialState?.solved || {});   // id -> true
   const [wrongFlash, setWrongFlash] = useState(null);
   // A card is only "got it" if it was paired correctly the first time it was
   // tried, which is what makes this a test rather than a process of
   // elimination.
-  const missed = useRef(new Set());
+  const missed = useRef(new Set(initialState?.missed || []));
 
   const done = Object.keys(solved).length === pairs.length;
 
@@ -222,6 +229,8 @@ export function MatchCard({ payload, onResult }) {
   const finish = () => {
     onResult(pairs.map((p) => ({ cardId: p.id, correct: !missed.current.has(p.id) })));
   };
+  useExerciseSnapshot({ meanings, pickedTerm, solved, missed: [...missed.current] }, onStateChange);
+  useStudyKeys(done ? { Enter: finish, " ": finish } : {}, shortcutsEnabled);
 
   return (
     <>
@@ -254,7 +263,7 @@ export function MatchCard({ payload, onResult }) {
 
       <div style={{ marginTop: 16 }}>
         <PrimaryButton onClick={finish} disabled={!done} style={{ width: "100%" }}>
-          {done ? "Next" : `${Object.keys(solved).length} of ${pairs.length} paired`}
+          {done ? <>Next<KeyHint>Enter</KeyHint></> : `${Object.keys(solved).length} of ${pairs.length} paired`}
         </PrimaryButton>
       </div>
     </>
@@ -270,6 +279,7 @@ function PairButton({ label, state, dimmed, onClick }) {
   }[state];
   return (
     <button
+      data-study-option
       onClick={onClick}
       disabled={state === "solved"}
       style={{

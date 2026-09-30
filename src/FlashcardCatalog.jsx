@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import { flushSync } from "react-dom";
 import { Capacitor } from "@capacitor/core";
 import { DesktopNavigation, DesktopProgress } from "./desktopUI";
 import "./desktop.css";
@@ -36,6 +37,8 @@ import {
   systemPrefersDark, resolveDarkMode,
 } from "./theme";
 import * as drillsLib from "./drills";
+import * as savedStudy from "./studySession";
+import { useStudyKeys, useExerciseSnapshot, KeyHint } from "./studyShortcuts";
 import * as aiDrills from "./aiDrills";
 import { ClozeCard, TrueFalseCard, MatchCard } from "./drillUI";
 import { applyGrade, isLevelUp, isDue, normalizeSettings, applyDailyLimits } from "./srs";
@@ -275,11 +278,16 @@ export default function FlashcardCatalog() {
   const sessionQueueRef = useRef([]);
   const sessionDrillRef = useRef({ drill: null, content: {} }); // how this session asks
   const sessionOriginRef = useRef("study"); // where Exit/back leads from a session
+  const [pausedSession, setPausedSession] = useState(null);
+  const [sessionCheckpoint, setSessionCheckpoint] = useState(null);
+  const [sessionStart, setSessionStart] = useState(null);
+  const flushedCheckpointRef = useRef(null);
+  const finishReceiptRef = useRef(null);
 
   // Local persistence + cloud sync + sign-in all live in the sync engine —
   // extracted so the conflict/ownership logic is reviewable on its own.
   const {
-    loaded, googleUser, syncState,
+    loaded, googleUser, syncState, flushLocal,
     currentDataRef, ownerUidRef, updatedAtRef, skipNextPush,
     signIn: handleSignIn, signOut: handleSignOut,
   } = useSyncEngine({
@@ -287,6 +295,46 @@ export default function FlashcardCatalog() {
     setSubjects, setCards, setGame, setError,
     migrate: { migrateSubjects, migrateCards },
   });
+
+  const sessionOwner = ownerUidRef.current || null;
+  useEffect(() => {
+    if (!loaded) return;
+    setPausedSession(savedStudy.readSession(cards, sessionOwner));
+  }, [loaded, sessionOwner]);
+
+  useLayoutEffect(() => {
+    if (!sessionCheckpoint || sessionCheckpoint.ownerUid !== sessionOwner) return;
+    let cancelled = false;
+    // flushLocal writes synchronously to localStorage before its promise
+    // resolves. Save the cursor only after that succeeded.
+    const revision = `${sessionCheckpoint.id}:${sessionCheckpoint.round}:${sessionCheckpoint.index}:${sessionCheckpoint.gradedIds.length}`;
+    const previous = flushedCheckpointRef.current;
+    const flushed = previous?.revision === revision && previous.saved
+      ? Promise.resolve(true) : flushLocal();
+    flushed.then(saved => {
+      flushedCheckpointRef.current = { revision, saved };
+      if (cancelled || !saved) return;
+      if (sessionCheckpoint.index >= sessionCheckpoint.queue.length) {
+        savedStudy.clearSession();
+        setPausedSession(null);
+      } else {
+        if (!savedStudy.writeSession(sessionCheckpoint)) {
+          setError("This session couldn't be saved on this device. Keep the app open to finish it.");
+        }
+        setPausedSession(sessionCheckpoint);
+      }
+    });
+    return () => { cancelled = true; };
+    // flushLocal uses the sync engine's latest stamped payload; its identity
+    // changes each render and must not cause a checkpoint loop.
+  }, [sessionCheckpoint, sessionOwner]);
+
+  useEffect(() => {
+    if (view === "session" && sessionStart?.ownerUid !== sessionOwner) {
+      setSessionCheckpoint(null);
+      setView("library");
+    }
+  }, [sessionOwner, view, sessionStart]);
 
   // ---------- hardware/gesture back button (Android) ----------
   // Whatever's on top of the backHandler stack (a modal, a drilled-down
@@ -577,7 +625,31 @@ export default function FlashcardCatalog() {
     sessionDrillRef.current = { drill: chosen, content: content || {} };
     sessionQueueRef.current = drillsLib.buildQueue(chosen, cards, content || {}, currentDataRef.current.cards);
     sessionOriginRef.current = origin;
+    setSessionStart({
+      id: uid(), ownerUid: sessionOwner, origin, drillId: chosen.id,
+      content: content || {}, initialQueue: sessionQueueRef.current,
+      queue: sessionQueueRef.current, index: 0, missed: [], correctCount: 0,
+      round: 1, gradedIds: [], answerLog: [], exerciseState: null,
+    });
     setView("session");
+  };
+
+  const resumeSession = () => {
+    // Reconcile again at click time: a sync update may have edited or deleted
+    // cards since the offer was drawn.
+    const restored = savedStudy.readSession(currentDataRef.current.cards, sessionOwner);
+    if (!restored) { setPausedSession(null); return; }
+    sessionQueueRef.current = restored.initialQueue;
+    sessionDrillRef.current = { drill: drillsLib.drillById(restored.drillId), content: restored.content };
+    sessionOriginRef.current = restored.origin;
+    setSessionStart(restored);
+    setView("session");
+  };
+
+  const discardSession = () => {
+    savedStudy.clearSession();
+    setPausedSession(null);
+    setSessionCheckpoint(null);
   };
 
   // Retry rounds and "study again" rebuild their queue through the same drill,
@@ -598,14 +670,17 @@ export default function FlashcardCatalog() {
   const gradeCard = (cardId, correct, opts = {}) => {
     const settings = normalizeSettings(currentDataRef.current.game?.srs);
     const before = currentDataRef.current.cards.find(c => c.id === cardId);
-    setCards(cs => cs.map(c => (c.id === cardId ? applyGrade(c, correct, { ...opts, settings }) : c)));
-    if (!before) return;
+    if (!before) return null;
+    const after = applyGrade(before, correct, { ...opts, settings });
+    setCards(cs => cs.map(c => (c.id === cardId ? after : c)));
     const now = Date.now();
     const last = before.fsrsLastReview || null;
+    const reviewId = uid();
     setGame(g => ({
       ...g,
       reviewLog: G.appendReviewLog(g, {
         at: now,
+        id: reviewId,
         correct: typeof opts.confidence === "number"
           ? fsrs.gradeFromConfidence(opts.confidence) !== fsrs.AGAIN
           : !!correct,
@@ -616,6 +691,36 @@ export default function FlashcardCatalog() {
         ms: opts.ms,
       }),
     }));
+    return { before, after, reviewId };
+  };
+
+  const undoGrade = (receipts, undoAward = false) => {
+    // If another device has since reviewed/edited a card, leave that newer
+    // state intact. Undo restores scheduling fields only, never card content.
+    const byId = new Map(receipts.filter(Boolean).map(receipt => [receipt.before.id, receipt]));
+    const restoredGame = undoAward ? savedStudy.restoreAward(currentDataRef.current.game, finishReceiptRef.current) : null;
+    if (undoAward && !restoredGame) {
+      setError("Your progress changed since this session finished, so its newer result was kept.");
+      return false;
+    }
+    if ([...byId.values()].some(receipt => !savedStudy.restoreGrade(currentDataRef.current.cards.find(card => card.id === receipt.before.id), receipt))) {
+      setError("That card changed since your answer, so its newer progress was kept.");
+      return false;
+    }
+    setCards(current => current.map(card => {
+      const receipt = byId.get(card.id);
+      return receipt ? savedStudy.restoreGrade(card, receipt) || card : card;
+    }));
+    const ids = new Set(receipts.filter(Boolean).map(receipt => receipt.reviewId));
+    setGame(g => ({ ...(undoAward ? savedStudy.restoreAward(g, finishReceiptRef.current) || g : g),
+      reviewLog: (g.reviewLog || []).filter(entry => !ids.has(entry.id)) }));
+    if (restoredGame) {
+      publishProfile(restoredGame);
+      reminders.sync(restoredGame, restoredGame.reminder, currentDataRef.current.cards)
+        .catch(e => report("reminders.syncAfterUndo", e));
+      syncWidget(restoredGame);
+    }
+    return true;
   };
 
   // ---------- scheduler settings ----------
@@ -643,7 +748,11 @@ export default function FlashcardCatalog() {
   // what the reward screen renders — no second source of truth.
   const finishSession = (result) => {
     const { game: nextGame, award } = G.recordSession(currentDataRef.current.game, currentDataRef.current.cards, result);
-    setGame(nextGame);
+    finishReceiptRef.current = { before: currentDataRef.current.game, after: nextGame };
+    // The final grade and the award are batched together. Preserve the review
+    // log from those queued grades rather than replacing it with the ref's
+    // previous render (which would drop the last answer, or a match group).
+    setGame(g => ({ ...nextGame, reviewLog: g.reviewLog }));
     publishProfile(nextGame);
     // Today is done, so today's reminder should stop being pending.
     reminders.sync(nextGame, nextGame.reminder, currentDataRef.current.cards)
@@ -918,6 +1027,9 @@ export default function FlashcardCatalog() {
           nudgeCount={nudges.length}
           onOpenSheet={setSheet}
           onQuickStudy={quickStudy}
+          pausedSession={pausedSession?.ownerUid === sessionOwner ? pausedSession : null}
+          onResumeSession={resumeSession}
+          onDiscardSession={discardSession}
           goStudy={(nodeId) => { setStudyNodeId(nodeId || "all"); setView("study"); }}
           startReview={(queue) => startSession(queue, "library")}
           googleUser={googleUser}
@@ -990,6 +1102,8 @@ export default function FlashcardCatalog() {
       )}
       {view === "study" && (
         <StudySetup
+          pausedSession={pausedSession?.ownerUid === sessionOwner ? pausedSession : null}
+          onResumeSession={resumeSession}
           subjects={subjects} cards={cards}
           initialNodeId={studyNodeId}
           onBack={() => setView("library")}
@@ -998,6 +1112,11 @@ export default function FlashcardCatalog() {
       )}
       {view === "session" && (
         <Session
+          key={sessionStart?.id}
+          initialState={sessionStart}
+          onCheckpoint={setSessionCheckpoint}
+          onUndo={undoGrade}
+          shortcutsEnabled={!settingsOpen && !sheet && !intro && !extra && !usernameNotice}
           initialQueue={sessionQueueRef.current}
           rebuildQueue={rebuildQueue}
           game={game}
@@ -1369,6 +1488,7 @@ function IconBtn({ onClick, title, children, danger }) {
 // ---------- LIBRARY ----------
 function Library({
   rootRequest,
+  pausedSession, onResumeSession, onDiscardSession,
   subjects, setSubjects, cards, setCards, game, nudgeCount, onOpenSheet, onQuickStudy,
   goStudy, startReview, googleUser, onOpenSettings,
   extra, setExtra, setMessage, srsSettings, onUnsuspend, onForgive, onPublishDeck, onOpenTest,
@@ -1653,6 +1773,9 @@ function Library({
 
         {totalCards > 0 && (
           <TodayCard
+            pausedSession={pausedSession}
+            onResume={onResumeSession}
+            onDiscard={onDiscardSession}
             game={game}
             dueCount={dueCards.length}
             totalCards={totalCards}
@@ -3920,7 +4043,7 @@ const readSessionSize = () => {
   }
 };
 
-function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
+function StudySetup({ subjects, cards, initialNodeId, onBack, onStart, pausedSession, onResumeSession }) {
   const [nodeId, setNodeId] = useState(() =>
     initialNodeId && flattenTree(subjects).some(f => f.id === initialNodeId) ? initialNodeId : "all"
   );
@@ -3965,6 +4088,11 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart }) {
       <h2 style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 24, color: "var(--accent)", margin: "0 0 18px" }}>
         Pick your deck
       </h2>
+
+      {pausedSession && <div className="fc-resume-note">
+        <span>{pausedSession.index} of {pausedSession.queue.length} exercises done · saved on this device</span>
+        <button onClick={onResumeSession}>Resume session</button>
+      </div>}
 
       <Label>Subject / subcategory</Label>
       <select value={nodeId} onChange={e => setNodeId(e.target.value)} style={selectStyle}>
@@ -4192,21 +4320,30 @@ const selectStyle = {
 };
 
 // ---------- SESSION ----------
-function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish, onExit }) {
-  const [queue, setQueue] = useState(initialQueue);
-  const [index, setIndex] = useState(0);
-  const [missed, setMissed] = useState([]);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [round, setRound] = useState(1);
+function Session({ initialQueue, initialState, rebuildQueue, game, subjects, onGrade, onFinish, onExit, onCheckpoint, onUndo, shortcutsEnabled }) {
+  const [queue, setQueue] = useState(initialState?.queue || initialQueue);
+  const [index, setIndex] = useState(initialState?.index || 0);
+  const [missed, setMissed] = useState(initialState?.missed || []);
+  const [correctCount, setCorrectCount] = useState(initialState?.correctCount || 0);
+  const [round, setRound] = useState(initialState?.round || 1);
+  const [exerciseState, setExerciseState] = useState(initialState?.exerciseState || null);
+  const [undo, setUndo] = useState(null);
+  const [exerciseEpoch, setExerciseEpoch] = useState(0);
   // The reward screen needs one award object computed exactly once, when the
   // round ends. Recomputing it on every render would hand out XP repeatedly.
   const [award, setAward] = useState(null);
   // Only a card's FIRST answer this session moves it through the review
   // schedule — retry rounds are practice, not proof it'll stick tomorrow.
-  const gradedIds = useRef(new Set());
+  const gradedIds = useRef(new Set(initialState?.gradedIds || []));
   // Every answer of the round, in order, for the XP calculation.
-  const answerLog = useRef([]);
+  const answerLog = useRef(initialState?.answerLog || []);
   const current = queue[index];
+  const handledStep = useRef(null);
+  useEffect(() => { handledStep.current = null; }, [index, queue, exerciseEpoch]);
+  useLayoutEffect(() => {
+    onCheckpoint?.({ ...initialState, initialQueue, queue, index, missed, correctCount,
+      round, gradedIds: [...gradedIds.current], answerLog: [...answerLog.current], exerciseState });
+  }, [queue, index, missed, correctCount, round, exerciseState]);
 
   // One step can cover several cards — matching pairs grades a whole group at
   // once — so everything downstream works from a list of verdicts rather than
@@ -4218,13 +4355,17 @@ function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish
   useEffect(() => { shownAt.current = Date.now(); }, [index]);
 
   const gradeAll = (verdicts, opts = {}) => {
+    if (!current || handledStep.current === current.key) return;
+    handledStep.current = current.key;
+    const previous = { index, missed, correctCount, gradedIds: [...gradedIds.current], answerLog: [...answerLog.current] };
+    const receipts = [];
     let anyWrong = false;
     const ms = Date.now() - shownAt.current;
     verdicts.forEach(({ card, correct }) => {
       const firstTime = !gradedIds.current.has(card.id);
       if (onGrade && firstTime) {
         gradedIds.current.add(card.id);
-        onGrade(card.id, correct, { ...opts, ms });
+        receipts.push(onGrade(card.id, correct, { ...opts, ms }));
       }
       answerLog.current.push({
         correct,
@@ -4236,6 +4377,8 @@ function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish
       if (correct) setCorrectCount(n => n + 1);
       else { anyWrong = true; setMissed(m => [...m, card]); }
     });
+    setUndo({ ...previous, receipts });
+    setExerciseState(null);
 
     if (index + 1 < queue.length) {
       setIndex(index + 1);
@@ -4248,14 +4391,35 @@ function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish
     }
   };
 
+  const undoLast = () => {
+    flushSync(() => {
+      if (!undo) return;
+      if (onUndo?.(undo.receipts, !!award) === false) return;
+      setIndex(undo.index);
+      setMissed(undo.missed);
+      setCorrectCount(undo.correctCount);
+      gradedIds.current = new Set(undo.gradedIds);
+      answerLog.current = undo.answerLog;
+      setExerciseState(null);
+      setAward(null);
+      setExerciseEpoch(n => n + 1);
+      setUndo(null);
+    });
+  };
+  useStudyKeys({ undo: undo ? undoLast : null, Escape: current ? onExit : null }, shortcutsEnabled);
+
   // What the single-card exercises call: this step's one card, right or wrong.
   // `opts` carries a confidence rating when the exercise collected one.
-  const handleResult = (wasCorrect, opts) => gradeAll([{ card: current.cards[0], correct: wasCorrect }], opts);
+  const handleResult = (wasCorrect, opts) => {
+    // Finish the grade and checkpoint effects within this user action. A
+    // reload immediately after a key press must see the new cursor and grade.
+    flushSync(() => gradeAll([{ card: current.cards[0], correct: wasCorrect }], opts));
+  };
 
   // What matching calls: a verdict per card in the group.
   const handleGroupResult = (results) => {
     const byId = new Map(current.cards.map(c => [c.id, c]));
-    gradeAll(results.filter(r => byId.has(r.cardId)).map(r => ({ card: byId.get(r.cardId), correct: r.correct })));
+    flushSync(() => gradeAll(results.filter(r => byId.has(r.cardId)).map(r => ({ card: byId.get(r.cardId), correct: r.correct }))));
   };
 
   const retryMissed = () => {
@@ -4264,6 +4428,8 @@ function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish
     setIndex(0);
     setCorrectCount(0);
     setAward(null);
+    setExerciseState(null);
+    setUndo(null);
     answerLog.current = [];
     setRound(r => r + 1);
   };
@@ -4277,6 +4443,8 @@ function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish
     setIndex(0);
     setCorrectCount(0);
     setAward(null);
+    setExerciseState(null);
+    setUndo(null);
     answerLog.current = [];
     setRound(1);
   };
@@ -4325,6 +4493,10 @@ function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish
             "Keep going" replays the {missed.length} card{missed.length !== 1 ? "s" : ""} you missed.
           </p>
         )}
+        {undo && <div className="fc-session-tools">
+          <button onClick={undoLast}>Undo last grade<KeyHint>⌘/Ctrl Z</KeyHint></button>
+          <p>Returns to the last exercise and updates this session's result.</p>
+        </div>}
       </div>
     );
   }
@@ -4335,20 +4507,27 @@ function Session({ initialQueue, rebuildQueue, game, subjects, onGrade, onFinish
         <button onClick={onExit} style={{
           background: "none", border: "none", color: "var(--on-shell-muted)", display: "flex", alignItems: "center",
           gap: 6, fontFamily: "Inter, sans-serif", fontSize: 14, padding: "10px 4px", minHeight: 44, WebkitTapHighlightColor: "transparent",
-        }}><ArrowLeft size={15} /> Exit</button>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--on-shell-muted)" }}>
+        }}><ArrowLeft size={15} /> Pause session</button>
+        <span className="fc-session-counter" role="status" aria-label="Study progress" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--on-shell-muted)" }}>
           {index + 1} / {queue.length}
         </span>
       </div>
       <ProgressBar value={(index) / queue.length} />
       <div style={{ height: 20 }} />
       <Exercise
-        key={current.key}
+        key={`${current.key}:${exerciseEpoch}`}
+        initialState={exerciseState?.stepKey === current.key ? exerciseState.data : null}
+        onStateChange={data => setExerciseState({ stepKey: current.key, data })}
+        shortcutsEnabled={shortcutsEnabled}
         step={current}
         subject={subjectOf(subjects, current.cards[0])}
         onResult={handleResult}
         onGroupResult={handleGroupResult}
       />
+      <div className="fc-session-tools">
+        <button onClick={undoLast} disabled={!undo}>Undo last grade<KeyHint>⌘/Ctrl Z</KeyHint></button>
+        <p>Progress saves on this device. Pause whenever you need.</p>
+      </div>
     </div>
   );
 }
@@ -4363,9 +4542,11 @@ function ProgressBar({ value }) {
 
 
 
-function FlipCard({ card, onResult, subject }) {
-  const [flipped, setFlipped] = useState(false);
+function FlipCard({ card, onResult, subject, initialState, onStateChange, shortcutsEnabled }) {
+  const [flipped, setFlipped] = useState(!!initialState?.flipped);
   const [tutorMode, setTutorMode] = useState(null);
+  useExerciseSnapshot({ flipped }, onStateChange);
+  useStudyKeys({ " ": () => setFlipped(true), "1": () => onResult(false), "2": () => onResult(true) }, shortcutsEnabled && !tutorMode);
   const frontSpeech = ttsLib.speechFor(card, subject, "front");
   const backSpeech = ttsLib.speechFor(card, subject, "back");
   // The flip drill grades itself with one binary call, before and after the
@@ -4393,6 +4574,8 @@ function FlipCard({ card, onResult, subject }) {
     <>
       <div
         className="fc-flip"
+        role="button" tabIndex={0} aria-label={flipped ? "Hide answer" : "Reveal answer"} aria-expanded={flipped}
+        onKeyDown={event => { if (event.key === "Enter" && !event.repeat) { event.preventDefault(); setFlipped(f => !f); } }}
         onClick={() => setFlipped(f => !f)}
         style={{ cursor: "pointer", animation: "popIn 0.25s ease-out" }}>
         <div className="fc-flip-inner" style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
@@ -4402,7 +4585,7 @@ function FlipCard({ card, onResult, subject }) {
                 {occlusionLib.isOcclusionCard(card)
                   ? <OcclusionCard card={card} revealed={false} />
                   : <CardFace text={card.front} imageId={card.frontImageId} />}
-                <p style={caption}>Tap the card to reveal the answer</p>
+                <p style={caption}>Tap the card to reveal the answer<KeyHint>Space</KeyHint></p>
               </div>
             </CardShell>
           </div>
@@ -4433,14 +4616,14 @@ function FlipCard({ card, onResult, subject }) {
         </div>
       )}
       {tutorMode && (
-        <TutorPanel card={card} subject={subject?.name} mode={tutorMode} onClose={() => setTutorMode(null)} />
+        <div className="fc-study-overlay"><TutorPanel card={card} subject={subject?.name} mode={tutorMode} onClose={() => setTutorMode(null)} /></div>
       )}
 
       {/* Deliberately outside the card: these stay put while it turns, so you
           can grade a card you already know without revealing it first. */}
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it</GhostButton>
-        <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it</PrimaryButton>
+        <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it<KeyHint>1</KeyHint></GhostButton>
+        <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it<KeyHint>2</KeyHint></PrimaryButton>
       </div>
     </>
   );
@@ -4448,21 +4631,22 @@ function FlipCard({ card, onResult, subject }) {
 
 // One step in, one exercise out. Everything a step needs was worked out when
 // the queue was built, so nothing here has to know about drills or the model.
-function Exercise({ step, subject, onResult, onGroupResult }) {
+function Exercise({ step, subject, onResult, onGroupResult, initialState, onStateChange, shortcutsEnabled }) {
   const card = step.cards[0];
+  const controls = { initialState, onStateChange, shortcutsEnabled };
   switch (step.type) {
     case drillsLib.EXERCISES.MCQ:
-      return <McqCard card={card} options={step.payload.options} onResult={onResult} />;
+      return <McqCard {...controls} card={card} options={step.payload.options} onResult={onResult} />;
     case drillsLib.EXERCISES.WRITE:
-      return <WriteCard card={card} subject={subject} onResult={onResult} />;
+      return <WriteCard {...controls} card={card} subject={subject} onResult={onResult} />;
     case drillsLib.EXERCISES.CLOZE:
-      return <ClozeCard card={card} payload={step.payload} onResult={onResult} />;
+      return <ClozeCard {...controls} card={card} payload={step.payload} onResult={onResult} />;
     case drillsLib.EXERCISES.TRUEFALSE:
-      return <TrueFalseCard payload={step.payload} onResult={onResult} />;
+      return <TrueFalseCard {...controls} payload={step.payload} onResult={onResult} />;
     case drillsLib.EXERCISES.MATCH:
-      return <MatchCard payload={step.payload} onResult={onGroupResult} />;
+      return <MatchCard {...controls} payload={step.payload} onResult={onGroupResult} />;
     default:
-      return <FlipCard card={card} subject={subject} onResult={onResult} />;
+      return <FlipCard {...controls} card={card} subject={subject} onResult={onResult} />;
   }
 }
 
@@ -4485,9 +4669,13 @@ function subjectOf(subjects, card) {
 // The options are built by the drill now — from the wrong answers you wrote,
 // the ones the model wrote, and the rest of the deck, in that order — so this
 // only has to draw them.
-function McqCard({ card, options, onResult }) {
-  const [picked, setPicked] = useState(null);
+function McqCard({ card, options, onResult, initialState, onStateChange, shortcutsEnabled }) {
+  const [picked, setPicked] = useState(initialState?.picked ?? null);
   const answered = picked !== null;
+  useExerciseSnapshot({ picked }, onStateChange);
+  const next = () => onResult(normalize(picked) === normalize(card.back));
+  useStudyKeys(answered ? { " ": next, Enter: next }
+    : Object.fromEntries(options.map((option, i) => [String(i + 1), () => setPicked(option)])), shortcutsEnabled);
 
   return (
     <CardShell tabLabel="Multiple choice" tabColor="var(--highlight)">
@@ -4503,28 +4691,31 @@ function McqCard({ card, options, onResult }) {
             else if (opt === picked) { bg = "#B5533C"; border = "#B5533C"; color = "#FBF7EC"; }
           }
           return (
-            <button key={i} disabled={answered} onClick={() => setPicked(opt)} style={{
+            <button key={i} data-study-option disabled={answered} onClick={() => setPicked(opt)} style={{
               textAlign: "left", padding: "15px 16px", minHeight: 48, borderRadius: 8, border: `1px solid ${border}`,
               background: bg, color, fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 500,
               WebkitTapHighlightColor: "transparent",
-            }}>{opt}</button>
+            }}><KeyHint>{i + 1}</KeyHint> {opt}</button>
           );
         })}
       </div>
       {answered && (
         <PrimaryButton onClick={() => onResult(normalize(picked) === normalize(card.back))} style={{ width: "100%", marginTop: 16 }}>
-          Continue
+          Continue<KeyHint>Enter</KeyHint>
         </PrimaryButton>
       )}
     </CardShell>
   );
 }
 
-function WriteCard({ card, subject, onResult }) {
-  const [value, setValue] = useState("");
-  const [checked, setChecked] = useState(false);
+function WriteCard({ card, subject, onResult, initialState, onStateChange, shortcutsEnabled }) {
+  const [value, setValue] = useState(initialState?.value || "");
+  const [checked, setChecked] = useState(!!initialState?.checked);
   const [tutorOpen, setTutorOpen] = useState(false);
   const isCorrect = normalize(value) === normalize(card.back);
+  useExerciseSnapshot({ value, checked }, onStateChange);
+  useStudyKeys(checked ? { Enter: () => onResult(isCorrect), " ": () => onResult(isCorrect) }
+    : { Enter: value.trim() ? () => setChecked(true) : null }, shortcutsEnabled && !tutorOpen);
   const backSpeech = ttsLib.speechFor(card, subject, "back");
 
   return (
@@ -4533,6 +4724,12 @@ function WriteCard({ card, subject, onResult }) {
         <CardFace text={card.front} imageId={card.frontImageId} size={19} />
       </div>
       <TextField value={value} onChange={e => setValue(e.target.value)} placeholder="Type your answer…"
+        readOnly={checked}
+        onKeyDown={e => {
+          if (e.key !== "Enter" || e.repeat || e.isComposing || !shortcutsEnabled || !value.trim()) return;
+          e.preventDefault();
+          if (checked) onResult(isCorrect); else setChecked(true);
+        }}
         style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
       {checked && (
         <div style={{
@@ -4556,12 +4753,12 @@ function WriteCard({ card, subject, onResult }) {
         </div>
       )}
       {tutorOpen && (
-        <TutorPanel card={card} given={value} subject={subject?.name} mode="why" onClose={() => setTutorOpen(false)} />
+        <div className="fc-study-overlay"><TutorPanel card={card} given={value} subject={subject?.name} mode="why" onClose={() => setTutorOpen(false)} /></div>
       )}
       {checked ? (
-        <PrimaryButton onClick={() => onResult(isCorrect)} style={{ width: "100%" }}>Continue</PrimaryButton>
+        <PrimaryButton onClick={() => onResult(isCorrect)} style={{ width: "100%" }}>Continue<KeyHint>Enter</KeyHint></PrimaryButton>
       ) : (
-        <PrimaryButton onClick={() => setChecked(true)} disabled={!value.trim()} style={{ width: "100%" }}>Check answer</PrimaryButton>
+        <PrimaryButton onClick={() => setChecked(true)} disabled={!value.trim()} style={{ width: "100%" }}>Check answer<KeyHint>Enter</KeyHint></PrimaryButton>
       )}
     </CardShell>
   );

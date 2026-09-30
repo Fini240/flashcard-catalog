@@ -21,7 +21,7 @@
 // migration possible without touching the UI.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as firebaseSync from "./firebaseSync";
 import * as G from "./gamification";
 import { report, storageUsage } from "./report";
@@ -108,6 +108,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | error
 
   const saveTimer = useRef(null);
+  const saveLocalRef = useRef(null);
   const updatedAtRef = useRef(0);
   const skipNextPush = useRef(false);
   const currentDataRef = useRef({ subjects: [], cards: [], game: G.emptyGame() });
@@ -147,7 +148,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   const pushedRef = useRef({});
   const migratedAtRef = useRef(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     currentDataRef.current = { subjects, cards, game };
   }, [subjects, cards, game]);
 
@@ -156,7 +157,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   // updatedAt at all, which meant studying a card — the single most common
   // edit in the app — left its timestamp untouched and the progress was
   // dropped on the next load. See applyLocalEdits.
-  useEffect(() => {
+  useLayoutEffect(() => {
     cardMapRef.current = cardSync.applyLocalEdits(cardMapRef.current, cards, {
       perCardMode: perCardModeRef.current,
     });
@@ -443,7 +444,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   };
 
   // ---------- save (debounced) ----------
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const shouldPush = !skipNextPush.current;
@@ -492,7 +493,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       ...((emptiedSubjectsRef.current || clearedCardsRef.current)
         ? { clearedOnPurpose: updatedAtRef.current } : null),
     };
-    saveTimer.current = setTimeout(async () => {
+    const saveLocal = async () => {
       try {
         // Retry with progressively less baggage rather than giving up on the
         // whole write: a payload that won't fit must still be able to persist
@@ -517,10 +518,16 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
           report("sync.saveLocal.shed", new Error(`saved at shed level ${level}`));
           setError("Storage is nearly full — your study history was trimmed to keep your cards saved.");
         } else setError("");
+        return saved;
       } catch (e) {
         report("sync.saveLocal", e);
         setError("Couldn't save — your last change may not persist.");
+        return false;
       }
+    };
+    saveLocalRef.current = saveLocal;
+    saveTimer.current = setTimeout(async () => {
+      await saveLocal();
       // Only push to Firestore if this data is actually attributed to the
       // signed-in account — otherwise a leftover local copy from a previous
       // account could get written into someone else's document.
@@ -795,6 +802,10 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     ownerUidRef,
     updatedAtRef,
     skipNextPush,
+    // Session checkpoints flush this same stamped payload before saving their
+    // cursor. A reload inside the 400ms debounce must not advance the cursor
+    // while losing the grade. Cloud writes retain their usual debounce.
+    flushLocal: () => saveLocalRef.current?.() ?? Promise.resolve(false),
     signIn: handleSignIn,
     signOut: handleSignOut,
   };

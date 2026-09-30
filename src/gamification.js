@@ -139,6 +139,7 @@ export function appendReviewLog(game, entry) {
     ...log,
     {
       at: entry.at || Date.now(),
+      ...(entry.id ? { id: entry.id } : {}),
       correct: !!entry.correct,
       // The stability the card had *going in* — what the prediction was made
       // from. Recording the post-review value instead would make every

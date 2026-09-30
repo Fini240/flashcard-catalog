@@ -89,6 +89,52 @@ describe("the app starts", () => {
   });
 });
 
+describe("study checkpoints and undo in the real app", () => {
+  it("keeps an immediate-reload grade, resumes at the next card and undoes the following grade", async () => {
+    const { default: FlashcardCatalog } = await import("./FlashcardCatalog");
+    const { APP_VERSION } = await import("./whatsNew");
+    window.localStorage.clear();
+    window.localStorage.setItem("flashcard-catalog-seen-version", APP_VERSION);
+    window.localStorage.setItem("flashcard-catalog-apk-banner-dismissed", "1");
+    window.localStorage.setItem("flashcard-catalog-data", JSON.stringify({
+      subjects: [{ id: "s", name: "Spanish", children: [] }],
+      cards: Array.from({ length: 3 }, (_, i) => ({ id: `checkpoint-${i}`, nodeId: "s", subjectId: "s", front: `Question ${i}`, back: `Answer ${i}` })),
+    }));
+    const button = label => [...container.querySelectorAll("button")].find(b => b.textContent.trim() === label);
+    const click = element => act(() => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const key = (value, extra = {}) => act(() => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, ...extra })));
+    const settle = () => act(async () => { await Promise.resolve(); });
+    const data = () => JSON.parse(localStorage.getItem("flashcard-catalog-data"));
+    render(<FlashcardCatalog />); await settle();
+    click(button("Study 3 cards"));
+    key("2"); await settle();
+    expect(data().game.reviewLog).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem("flashcard-study-session-v1")).index).toBe(1);
+    act(() => root.unmount()); root = createRoot(container);
+    render(<FlashcardCatalog />); await settle();
+    click(button("Resume session")); await settle();
+    expect(container.querySelector(".fc-session-counter").textContent).toContain("2 / 3");
+    key("2"); await settle();
+    expect(data().game.reviewLog).toHaveLength(2);
+    key("z", { metaKey: true }); await settle();
+    expect(data().game.reviewLog).toHaveLength(1);
+    expect(container.querySelector(".fc-session-counter").textContent).toContain("2 / 3");
+    key("2"); await settle();
+    key("2"); await settle();
+    expect(data().game.reviewLog).toHaveLength(3);
+    expect(localStorage.getItem("flashcard-study-session-v1")).toBeNull();
+    const earned = data().game.xp;
+    key("z", { ctrlKey: true }); await settle();
+    expect(data().game.reviewLog).toHaveLength(2);
+    expect(data().game.xp).toBe(0);
+    expect(JSON.parse(localStorage.getItem("flashcard-study-session-v1")).index).toBe(2);
+    key("2"); await settle();
+    expect(data().game.reviewLog).toHaveLength(3);
+    expect(data().game.xp).toBe(earned);
+    expect(errors).toEqual([]);
+  });
+});
+
 describe("the new screens render", () => {
   const cards = [
     { id: "a", front: "Hund", back: "dog", nodeId: "n1", tags: ["exam"], fsrsStability: 10, fsrsDifficulty: 5, fsrsLastReview: Date.now() - 5 * 86400000, srsDue: Date.now() + 5 * 86400000 },

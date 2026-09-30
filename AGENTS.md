@@ -64,6 +64,8 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/aiImport.js` | AI card generation; owner-free-tier vs BYOK routing |
 | `src/drills.js` | **How a deck gets studied.** The drill catalogue, which drills a given deck can sustain, offline generation of cloze blanks / distractors / false statements, and `buildQueue()`, which turns cards into the *steps* a session runs. Pure and unit-tested. |
 | `src/aiDrills.js` | The model's version of the same content, plus deck-tuned drill suggestions. Strictly optional — every failure path falls back to `drills.js`, so no study flow may ever depend on it. Cached in `localStorage` against a fingerprint of the card text. |
+| `src/studySession.js` | Device-local session checkpoints: compact card references, owner/content validation, and guarded scheduler/award undo. Checkpoints flush the stamped catalog before saving the cursor, so an immediate reload preserves both. |
+| `src/studyShortcuts.jsx` | Desktop study keys and exercise answer snapshots. Ignores typing, held keys, composition, and open tutor/modals; preserves native button activation. |
 | `src/drillUI.jsx` | The cloze, true/false and match-pairs exercises. Match grades a whole group of cards at once. |
 | `src/cardUI.jsx` | The shared visual vocabulary — buttons, fields, the index card itself. Extracted from `FlashcardCatalog.jsx` so `drillUI.jsx` can use it without a circular import. |
 | `src/desktopUI.jsx`, `src/desktop.css` | Desktop web navigation and progress rail, enabled at 1100px. The subject grid becomes two columns at 1320px. Native Capacitor screens keep the single-column shell; `.fc-web-shell` scopes the desktop layout. |
