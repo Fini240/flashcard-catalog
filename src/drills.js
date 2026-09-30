@@ -115,7 +115,6 @@ export function availableDrills(cards, pool) {
   const candidatePool = pool && pool.length ? pool : usable;
   return DRILLS.filter((d) => {
     if (usable.length < d.minCards) return false;
-    if (d.id === "pairs") return usable.filter(hasText).length >= MATCH_GROUP;
     // Flipping asks nothing of a card, so a drill made only of it always
     // works. For the rest, count the cards that can actually carry one of the
     // drill's formats — otherwise a deck of picture answers would be offered
@@ -123,8 +122,16 @@ export function availableDrills(cards, pool) {
     // drill wearing a different name.
     const meaty = d.types.filter((t) => t !== EXERCISES.FLIP);
     if (!meaty.length) return true;
-    const playable = usable.filter((c) => meaty.some((t) => supports(t, c, candidatePool)));
-    return playable.length >= d.minCards;
+    // Only the minimum matters here. Checking every card against the entire
+    // library made the All setting spend seconds on a quadratic scan before
+    // React could paint the study screen.
+    let playable = 0;
+    for (const card of usable) {
+      const canPlay = d.id === "pairs" ? hasText(card)
+        : meaty.some((t) => supports(t, card, candidatePool));
+      if (canPlay && ++playable >= d.minCards) return true;
+    }
+    return false;
   });
 }
 
@@ -249,6 +256,20 @@ function relevantCandidates(card, pool) {
     .filter((c) => c.tier < 2);
 }
 
+// Format eligibility needs one or two neighbours, not a list of every wrong
+// answer. Keep the same relevance rules as content generation, but stop once
+// the format can be played and normalise the target answer only once.
+function hasRelevantCandidates(card, pool, needed) {
+  if (needed <= 0) return true;
+  const answer = normalizeish(card.back);
+  let count = 0;
+  for (const other of pool) {
+    if (other.id === card.id || !hasText(other) || tierOf(card, other) >= 2) continue;
+    if (normalizeish(other.back) !== answer && ++count >= needed) return true;
+  }
+  return false;
+}
+
 // Among equally relevant answers, the ones shaped like the real one are the
 // ones worth second-guessing: same sort of length, same use of numbers, some
 // shared vocabulary. A one-word answer next to a full sentence gives itself
@@ -365,10 +386,10 @@ function supports(type, card, pool) {
       // credible wrong answer is better asked some other way than padded out
       // with something from an unrelated deck.
       const manual = (card.manualOptions || []).filter((o) => normalizeish(o) !== normalizeish(card.back));
-      return manual.length + relevantCandidates(card, pool).length >= 2;
+      return hasRelevantCandidates(card, pool, 2 - manual.length);
     }
     // Without a neighbouring answer to corrupt, every statement would be true.
-    case EXERCISES.TRUEFALSE: return hasText(card) && relevantCandidates(card, pool).length > 0;
+    case EXERCISES.TRUEFALSE: return hasText(card) && hasRelevantCandidates(card, pool, 1);
     default: return true;
   }
 }

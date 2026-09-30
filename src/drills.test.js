@@ -36,6 +36,41 @@ describe("availableDrills", () => {
   it("never returns an empty list for a deck with a single card", () => {
     expect(D.availableDrills([deck[0]]).length).toBeGreaterThan(0);
   });
+
+  it("does not scan the entire library once enough cards support each drill", () => {
+    let answerReads = 0;
+    const large = Array.from({ length: 2889 }, (_, i) => ({
+      id: `large-${i}`, front: `Question ${i}`, subjectId: "s", nodeId: "n",
+      get back() { answerReads++; return `Meaningful answer ${i}`; },
+    }));
+    expect(D.availableDrills(large, large).map(d => d.id)).toEqual(
+      ["speed", "gaps", "pairs", "weak", "classic"]
+    );
+    // Count work rather than wall time: independent of CPU speed and system
+    // load, and catches both exhaustive card and exhaustive neighbour scans.
+    expect(answerReads).toBeLessThan(500);
+  });
+
+  it("continues past unplayable cards to find the minimum at the end", () => {
+    const pictures = Array.from({ length: 80 }, (_, i) =>
+      card(`picture-${i}`, "Picture?", "", { backImageId: `img-${i}` }));
+    expect(D.availableDrills([...pictures, ...deck.slice(0, 4)]).map(d => d.id))
+      .toContain("speed");
+    expect(D.availableDrills([...pictures, ...deck.slice(0, 3)]).map(d => d.id))
+      .not.toContain("speed");
+  });
+
+  it("does not count unrelated or equivalent answers towards the neighbour minimum", () => {
+    const identical = Array.from({ length: 4 }, (_, i) =>
+      card(`same-${i}`, "Question?", "Answer.", { subjectId: "s", nodeId: "n" }));
+    const library = [...identical,
+      card("punctuation", "Question?", "answer!", { subjectId: "s", nodeId: "n" }),
+      card("unrelated", "Question?", "Different", { subjectId: "other", nodeId: "other" }),
+    ];
+    expect(D.availableDrills(identical, library).map(d => d.id)).not.toContain("speed");
+    library.push(card("neighbour", "Question?", "Another answer", { subjectId: "s", nodeId: "n" }));
+    expect(D.availableDrills(identical, library).map(d => d.id)).toContain("speed");
+  });
 });
 
 describe("localCloze", () => {
