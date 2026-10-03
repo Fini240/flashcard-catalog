@@ -475,9 +475,24 @@ Play Store compatibility problem).
   (`seenRef`); an edit owed to the cloud stays owed across reschedules
   (`pendingPushRef`); a restored session that really is newer pushes from the
   restore effect, as sign-in does. `syncLaunch.test.jsx` drives the hook
-  through a stale launch. The subject tree is still whole-document
-  last-writer-wins between two devices *both editing* — this closed the case
-  where one of them was merely opened.
+  through a stale launch.
+- **The tree has its own clock, and only an edited tree is pushed (1.7.2).**
+  Same report, two more routes to it found in the audit that followed: the
+  per-minute day-rollover tick (fires at launch and on resume, before any
+  snapshot) and simply studying — every grade pushed the parent doc, and the
+  parent push always carried the whole subject tree under the one shared
+  `updatedAt`. Now: `subjectsUpdatedAt` is the tree's own stamp,
+  `pushPerCard` writes `subjects` only while `subjectsDirtyRef` is set, and
+  `adoptNewerParts` judges tree and game separately. Every write also sets
+  `parentStamp = updatedAt`; a 1.7.1-or-older client merges `subjects` +
+  `updatedAt` without touching either, so a mismatch means "last writer was
+  old, trust its `updatedAt`" (`remoteSubjectsAt`). The rollover tick moved
+  into `useSyncEngine` and sets `derivedGameRef` so it is never an edit.
+  And: **no state update may be built from a captured `subjects`/`cards`**
+  — use the functional form or `currentDataRef` read *after* any await;
+  spreading a stale `cards` tombstones every card it lacks in per-card mode.
+  Still open: two devices *both editing the tree* within the same sync window
+  is whole-tree last-writer-wins; only a per-node merge would close that.
 - **2026-09-15: an account had been quietly un-migrated, and was losing a
   folder at a time.** The fourth wipe, and the slowest. `cardsMigratedAt` on
   the parent doc is how every client decides whether cards travel as documents

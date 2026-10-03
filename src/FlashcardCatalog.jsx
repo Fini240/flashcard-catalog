@@ -397,21 +397,8 @@ export default function FlashcardCatalog() {
     if (sheet) return pushBackHandler(() => setSheet(null));
   }, [sheet]);
 
-  // An app left open across midnight would otherwise keep showing yesterday's
-  // goal ring and yesterday's quests. Checked once a minute — cheap, and it
-  // also catches a phone whose clock jumped after a timezone change.
-  useEffect(() => {
-    if (!loaded) return;
-    const tick = () => {
-      setGame(g => {
-        const rolled = G.ensureQuests(G.rollOver(g));
-        return rolled === g ? g : rolled;
-      });
-    };
-    tick();
-    const id = setInterval(tick, 60000);
-    return () => clearInterval(id);
-  }, [loaded]);
+  // The once-a-minute day rollover lives in useSyncEngine: it must not count
+  // as an edit, and only the engine can tell it apart from one.
 
   // ---------- walkthrough / what's new ----------
   // Decided once, the moment local data has been read — before any cloud
@@ -882,10 +869,11 @@ export default function FlashcardCatalog() {
   // doesn't match what anyone else sees.
   const setUsername = async (name) => {
     if (!googleUser) return { ok: false, error: "Sign in first." };
-    const current = currentDataRef.current.game;
-    const res = await social.claimUsername(googleUser.uid, name, current.username);
+    const res = await social.claimUsername(googleUser.uid, name, currentDataRef.current.game.username);
     if (!res.ok) return res;
-    const next = { ...current, username: res.username };
+    // Read after the await, not before: a snapshot adopted while the claim was
+    // in flight would otherwise be written over with the game as it was.
+    const next = { ...currentDataRef.current.game, username: res.username };
     setGame(next);
     publishProfile(next);
     return { ok: true };
@@ -918,7 +906,9 @@ export default function FlashcardCatalog() {
     }
     const res = await reminders.enable(next, reminder, currentDataRef.current.cards);
     if (!res.ok && res.reason === "denied") {
-      setGame({ ...next, reminder: { ...reminder, enabled: false } });
+      // After the permission prompt, which can sit on screen for a while:
+      // re-read rather than write back the game as it was before it.
+      setGame(g => ({ ...g, reminder: { ...reminder, enabled: false } }));
       return "Notifications are blocked for this app. Turn them on in Android settings, then try again.";
     }
     return "";
@@ -1539,13 +1529,16 @@ function Library({
 
   const addSubject = () => {
     if (!newSubjectName.trim()) return;
-    setSubjects([...subjects, { id: uid(), name: newSubjectName.trim(), children: [] }]);
+    const name = newSubjectName.trim();
+    setSubjects(ss => [...ss, { id: uid(), name, children: [] }]);
     setNewSubjectName(""); setAddingSubject(false);
   };
   const addSubcategory = () => {
     if (!newSubcategoryName.trim() || !currentNode) return;
-    setSubjects(mapTree(subjects, currentNode.id, n => ({
-      ...n, children: [...(n.children || []), { id: uid(), name: newSubcategoryName.trim(), children: [] }],
+    const name = newSubcategoryName.trim();
+    const child = { id: uid(), name, children: [] };
+    setSubjects(ss => mapTree(ss, currentNode.id, n => ({
+      ...n, children: [...(n.children || []), child],
     })));
     setNewSubcategoryName(""); setAddingSubcategory(false);
   };
@@ -1567,10 +1560,12 @@ function Library({
   // this render closed over. A remote snapshot can land between the render and
   // the tap — the sync engine calls setCards from its own listeners — and the
   // closed-over array would then put every card it did not know about back.
+  // The tree too: filtering the closed-over `subjects` wrote back an older
+  // tree, dropping any folder another device had made in the meantime.
   const deleteNode = (id) => {
     const node = findNodeById(subjects, id);
     const idsToRemove = node ? collectIds(node) : [id];
-    setSubjects(filterTree(subjects, id));
+    setSubjects(ss => filterTree(ss, id));
     cards.forEach(c => {
       if (idsToRemove.includes(c.nodeId)) {
         imageStore.removeImage(c.frontImageId);
@@ -1630,6 +1625,9 @@ function Library({
     const trimmedSubject = subjectName.trim();
     const trimmedCategory = categoryName.trim();
     if (!trimmedSubject || !trimmedCategory) return 0;
+    // The latest committed tree, not this render's: the import sheet stays
+    // open across snapshots from other devices.
+    const subjects = currentDataRef.current.subjects;
 
     let subject = subjects.find(s => s.name.toLowerCase() === trimmedSubject.toLowerCase());
     let nextSubjects = subjects;
@@ -1665,7 +1663,10 @@ function Library({
 
     if (newCards.length === 0) return 0;
     setSubjects(nextSubjects);
-    setCards([...cards, ...newCards]);
+    // Appended to the previous state. Spreading the closed-over `cards` would,
+    // in per-card mode, tombstone every card that arrived since that render —
+    // a deletion on every device.
+    setCards(cs => [...cs, ...newCards]);
     return newCards.length;
   };
 
@@ -1676,6 +1677,7 @@ function Library({
   const importAnkiDecks = (allDecks) => {
     // Drop anything already in the catalog before creating any folders, so a
     // re-import doesn't leave an empty subject behind either.
+    const { subjects, cards } = currentDataRef.current;
     const { decks, skipped } = ankiImport.dropDuplicateCards(allDecks, cards);
     let nextSubjects = subjects;
     const newCards = [];
@@ -1713,7 +1715,7 @@ function Library({
 
     if (!newCards.length) return { added: 0, skipped };
     setSubjects(nextSubjects);
-    setCards([...cards, ...newCards]);
+    setCards(cs => [...cs, ...newCards]); // see importCards
     return { added: newCards.length, skipped };
   };
 
@@ -2161,7 +2163,7 @@ function Library({
               would be a setting nobody would ever finish filling in. */}
           <SpeechSettings
             subject={trail[0]}
-            onChange={(speech) => setSubjects(mapTree(subjects, trail[0].id, (n) => ({ ...n, speech })))}
+            onChange={(speech) => setSubjects((ss) => mapTree(ss, trail[0].id, (n) => ({ ...n, speech })))}
           />
         </Sheet>
       )}
