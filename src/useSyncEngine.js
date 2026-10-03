@@ -147,6 +147,12 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   const cardMapRef = useRef({});
   const pushedRef = useRef({});
   const migratedAtRef = useRef(null);
+  // The data the save effect last ran against, and whether a real edit is
+  // still waiting to reach the cloud. See the save effect: a run caused only
+  // by `loaded` or `googleUser` changing is not an edit, and must neither
+  // stamp the clock nor push.
+  const seenRef = useRef(null);
+  const pendingPushRef = useRef(false);
 
   useLayoutEffect(() => {
     currentDataRef.current = { subjects, cards, game };
@@ -410,6 +416,12 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       ));
       ownerUidRef.current = uid;
       await enterPerCardMode(uid, current);
+      // pushPerCard does not compare timestamps, so this branch has to: a
+      // newer tree up there is adopted, not written over.
+      if ((current.updatedAt || 0) > payload.updatedAt) {
+        adoptParent(current);
+        return;
+      }
       await pushPerCard(uid, payload.subjects, payload.game);
       return;
     }
@@ -447,8 +459,28 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   useLayoutEffect(() => {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    const shouldPush = !skipNextPush.current;
-    skipNextPush.current = false;
+    // Only a change to the data is an edit. This effect also re-runs when
+    // `loaded` flips (the localStorage hydrate) and when `googleUser` arrives
+    // (the restored session), and it used to treat both as edits: stamp
+    // updatedAtRef with "now" and push. So merely *opening* a device that held
+    // an older tree made it look newer than the cloud — the restore effect and
+    // the listener then declined the real tree as stale, and the next push
+    // wrote the old one over it. Seen 2026-10-03: a folder created on one
+    // device vanished, and the cards just filed into it fell straight back
+    // into "Cards without a folder". skipNextPush is only consumed by a run
+    // whose data actually changed, which is the run it was set for.
+    const seen = seenRef.current;
+    seenRef.current = { subjects, cards, game };
+    const changed = seen !== null
+      && (seen.subjects !== subjects || seen.cards !== cards || seen.game !== game);
+    let shouldPush = false;
+    if (changed) {
+      shouldPush = !skipNextPush.current;
+      skipNextPush.current = false;
+    }
+    // Sticky until a push succeeds: a run that merely reschedules the timer
+    // (the session arriving mid-debounce) must not drop an edit still owed.
+    if (shouldPush) pendingPushRef.current = true;
     // Bump the local edit timestamp right away, not inside the debounced
     // callback below. Otherwise, for the whole 400ms debounce window after a
     // real edit, updatedAtRef still holds the *previous* edit's timestamp —
@@ -531,7 +563,8 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       // Only push to Firestore if this data is actually attributed to the
       // signed-in account — otherwise a leftover local copy from a previous
       // account could get written into someone else's document.
-      if (shouldPush && googleUser && ownerUidRef.current === googleUser.uid) {
+      if (pendingPushRef.current && googleUser && ownerUidRef.current === googleUser.uid) {
+        pendingPushRef.current = false;
         setSyncState("syncing");
         try {
           if (perCardModeRef.current) {
@@ -545,6 +578,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
           // back empty — the one path most likely to be reported is the one
           // that left no evidence.
           report("sync.push", e);
+          pendingPushRef.current = true;
           setSyncState("error");
         }
       }
@@ -687,6 +721,12 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
           // leave it sitting in its own emptiness.
           if (!healIfHoldingNothing(remote) && (remote.updatedAt || 0) > updatedAtRef.current) {
             adoptParent(remote);
+          } else if (updatedAtRef.current > (remote.updatedAt || 0)) {
+            // This device really is newer — an edit made offline in an earlier
+            // launch. Launching no longer pushes by itself (see the save
+            // effect), so send it up here, exactly as handleSignIn does.
+            const local = currentDataRef.current;
+            await pushPerCard(googleUser.uid, local.subjects, local.game);
           }
         }
       } catch (e) {

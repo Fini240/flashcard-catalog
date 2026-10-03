@@ -462,6 +462,22 @@ Play Store compatibility problem).
   permanent now, so **nothing may let `cards` state transiently drop a card
   while per-card mode is on** — `applyLocalEdits` reads that as a deletion and
   propagates it to every device.
+- **Opening the app is not an edit (2026-10-03).** The save effect in
+  `useSyncEngine` re-runs when `loaded` flips and when `googleUser` arrives,
+  and it used to stamp `updatedAtRef = Date.now()` and push on those runs too.
+  A device holding an older subject tree therefore looked newer than the cloud
+  the moment it launched: the restore effect and the listener declined the
+  real tree as stale, and the next push wrote the old tree back. Report: "I
+  file the loose cards into a folder, the folder deletes itself and they are
+  back in Cards without a folder" — the account had 28 cards refiled at 10:56
+  into a folder gone from the tree by 11:45. Only a run whose
+  `subjects`/`cards`/`game` identity changed counts as an edit now
+  (`seenRef`); an edit owed to the cloud stays owed across reschedules
+  (`pendingPushRef`); a restored session that really is newer pushes from the
+  restore effect, as sign-in does. `syncLaunch.test.jsx` drives the hook
+  through a stale launch. The subject tree is still whole-document
+  last-writer-wins between two devices *both editing* — this closed the case
+  where one of them was merely opened.
 - **2026-09-15: an account had been quietly un-migrated, and was losing a
   folder at a time.** The fourth wipe, and the slowest. `cardsMigratedAt` on
   the parent doc is how every client decides whether cards travel as documents
