@@ -493,6 +493,17 @@ Play Store compatibility problem).
   spreading a stale `cards` tombstones every card it lacks in per-card mode.
   Still open: two devices *both editing the tree* within the same sync window
   is whole-tree last-writer-wins; only a per-node merge would close that.
+- **Folder edits must not upload a captured game (1.7.3, 2026-10-04).**
+  Version 1.7.2 guarded the tree but `pushPerCard` still sent `game` on every
+  parent write. A device behind on XP could edit only a folder before its
+  listener delivered the newer game and overwrite that progress. `gameDirtyRef`
+  now makes game writes conditional, `gameUpdatedAt` preserves a local offline
+  edit across restarts, and `gameStamp` lets a new client recognize an older
+  app's subsequent game write. A folder-only merge omits `game` altogether;
+  after its echo, the writer adopts the server's game. `syncLaunch.test.jsx`
+  covers the held-snapshot race, real and offline game edits, older builds, and
+  account switching. An ambiguous 1.7.2 cache whose last edit was a folder
+  change defers to the account's game rather than publishing that cache's XP.
 - **2026-09-15: an account had been quietly un-migrated, and was losing a
   folder at a time.** The fourth wipe, and the slowest. `cardsMigratedAt` on
   the parent doc is how every client decides whether cards travel as documents

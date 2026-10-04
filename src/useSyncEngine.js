@@ -118,6 +118,17 @@ export function remoteSubjectsAt(remote) {
   return remote.updatedAt || 0;
 }
 
+// New clients stamp game writes separately. An older build writes `game` and
+// `updatedAt` without touching these fields, leaving gameStamp mismatched; in
+// that case its updatedAt is the only reliable game timestamp. A folder-only
+// write by this build also leaves gameStamp behind, conservatively making the
+// merged server game look new until this device adopts it.
+export function remoteGameAt(remote) {
+  if (!remote) return 0;
+  if (remote.gameUpdatedAt && remote.gameStamp === remote.updatedAt) return remote.gameUpdatedAt;
+  return remote.updatedAt || 0;
+}
+
 // `migrate` is { migrateSubjects, migrateCards } from the caller — they live
 // with the tree helpers because the UI needs them too.
 export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, setGame, setError, migrate }) {
@@ -176,6 +187,8 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
   // streak or an XP change pushes `game` alone.
   const subjectsAtRef = useRef(0);
   const subjectsDirtyRef = useRef(false);
+  const gameAtRef = useRef(0);
+  const gameDirtyRef = useRef(false);
   // Set by the day-rollover tick just before it updates `game`. Rolling over
   // is derived — every device computes the same thing from the date — so it is
   // not an edit, must not stamp the clock, and must not push.
@@ -221,6 +234,11 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
           setGame(G.rollOver(G.normalizeGame(parsed.game)));
           updatedAtRef.current = parsed.updatedAt || 0;
           subjectsAtRef.current = parsed.subjectsUpdatedAt || parsed.updatedAt || 0;
+          // Builds before this one stored only one clock. If its last write
+          // was a folder edit, that clock says nothing about game freshness;
+          // prefer the account's game when it is available.
+          gameAtRef.current = parsed.gameUpdatedAt
+            || (parsed.subjectsUpdatedAt === parsed.updatedAt ? 0 : parsed.updatedAt || 0);
           ownerUidRef.current = parsed.ownerUid || null;
         }
       } catch (e) {
@@ -281,6 +299,8 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     updatedAtRef.current = remote.updatedAt || Date.now();
     subjectsAtRef.current = remoteSubjectsAt(remote) || updatedAtRef.current;
     subjectsDirtyRef.current = false;
+    gameAtRef.current = remoteGameAt(remote) || updatedAtRef.current;
+    gameDirtyRef.current = false;
   };
 
   const acceptRemoteIfNewer = (remote, user) => {
@@ -315,8 +335,12 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
         cards: prevCountsRef.current.cards,
       };
     }
-    if (take.game && remote.game) setGame(G.rollOver(G.normalizeGame(remote.game)));
-    if (take.game) updatedAtRef.current = remote.updatedAt || Date.now();
+    if (take.game) {
+      if (remote.game) setGame(G.rollOver(G.normalizeGame(remote.game)));
+      updatedAtRef.current = remote.updatedAt || Date.now();
+      gameAtRef.current = remoteGameAt(remote) || updatedAtRef.current;
+      gameDirtyRef.current = false;
+    }
   };
 
   // The tree and the game are judged separately, each on its own clock. One
@@ -330,7 +354,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       subjects: remoteSubjectsAt(remote) > subjectsAtRef.current
         && !(keepNonEmptyTree && (remote.subjects || []).length === 0
              && currentDataRef.current.subjects.length > 0),
-      game: (remote.updatedAt || 0) > updatedAtRef.current,
+      game: remoteGameAt(remote) > gameAtRef.current,
     };
     if (take.subjects || take.game) adoptParts(remote, take);
     return take;
@@ -377,6 +401,9 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     // back with each one.
     const withSubjects = subjectsDirtyRef.current || emptiedSubjectsRef.current;
     const subjectsAt = subjectsAtRef.current;
+    const withGame = gameDirtyRef.current;
+    const gameAt = gameAtRef.current;
+    const parentAt = updatedAtRef.current;
     // About to write an empty subject tree: check what's up there first. Only
     // on this path, so the ordinary push stays a single write with no extra
     // read.
@@ -417,21 +444,22 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
     // them an empty array wipes those devices. See pushParentData.
     await firebaseSync.pushParentData(uid, {
       ...(withSubjects ? { subjects: subjectsPayload, subjectsUpdatedAt: subjectsAt } : null),
-      game: gamePayload,
-      updatedAt: updatedAtRef.current,
+      ...(withGame ? { game: gamePayload, gameUpdatedAt: gameAt, gameStamp: parentAt } : null),
+      updatedAt: parentAt,
       // See remoteSubjectsAt: how a later reader tells this build's writes
       // from an older build's.
-      parentStamp: updatedAtRef.current,
+      parentStamp: parentAt,
       ownerUid: uid,
       cardsMigratedAt: migratedAtRef.current,
       // Says out loud that this particular write is meant to leave the
       // catalog empty, and the security rule will accept nothing less. It
       // authorises this write only — the value has to equal this write's
       // updatedAt, so it can't linger as a permanent exemption.
-      ...(emptiedSubjectsRef.current ? { clearedOnPurpose: updatedAtRef.current } : null),
+      ...(emptiedSubjectsRef.current ? { clearedOnPurpose: parentAt } : null),
     });
     // Clean only if nothing edited the tree while the write was in flight.
     if (withSubjects && subjectsAtRef.current === subjectsAt) subjectsDirtyRef.current = false;
+    if (withGame && gameAtRef.current === gameAt) gameDirtyRef.current = false;
     // The exemption is spent. It authorises the write that just landed and
     // nothing after it — leaving the flag set meant every later push in the
     // session carried `clearedOnPurpose` too, so the rule that refuses to let
@@ -564,6 +592,10 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       subjectsAtRef.current = updatedAtRef.current;
       subjectsDirtyRef.current = true;
     }
+    if (shouldPush && seen && seen.game !== game) {
+      gameAtRef.current = updatedAtRef.current;
+      gameDirtyRef.current = true;
+    }
     // Watch the subject tree (and, for the legacy path, the cards) actually
     // become empty under a local edit. `shouldPush` is what makes this mean
     // "a person did this here": a change adopted from a remote snapshot sets
@@ -594,6 +626,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
       subjects, cards: stampedCards, cardTombstones, game,
       updatedAt: updatedAtRef.current, ownerUid: ownerUidRef.current,
       subjectsUpdatedAt: subjectsAtRef.current,
+      gameUpdatedAt: gameAtRef.current,
       // Same declaration the per-card path makes, for the legacy whole-doc
       // write — which can empty the cards array as well as the subjects.
       ...((emptiedSubjectsRef.current || clearedCardsRef.current)
@@ -827,7 +860,8 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
             // edit made offline in an earlier launch — goes up from here.
             // Launching no longer pushes by itself (see the save effect).
             if (!took.subjects && subjectsAtRef.current > remoteSubjectsAt(remote)) subjectsDirtyRef.current = true;
-            const gameNewer = !took.game && updatedAtRef.current > (remote.updatedAt || 0);
+            const gameNewer = !took.game && gameAtRef.current > remoteGameAt(remote);
+            if (gameNewer) gameDirtyRef.current = true;
             const cardsOwed = cardSync.diffDirty(cardMapRef.current, pushedRef.current).length > 0;
             if (subjectsDirtyRef.current || gameNewer || cardsOwed) {
               const local = currentDataRef.current;
@@ -875,6 +909,10 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
           setCards([]);
           setGame(G.emptyGame());
           updatedAtRef.current = 0;
+          subjectsAtRef.current = 0;
+          gameAtRef.current = 0;
+          subjectsDirtyRef.current = false;
+          gameDirtyRef.current = false;
         }
         await enterPerCardMode(user.uid, remote);
       } else {
@@ -919,6 +957,7 @@ export function useSyncEngine({ subjects, cards, game, setSubjects, setCards, se
             || (remote.subjects || []).length === 0) {
           subjectsDirtyRef.current = subjectsToPush.length > 0 || subjectsDirtyRef.current;
         }
+        if (!remote || gameAtRef.current > remoteGameAt(remote)) gameDirtyRef.current = true;
         await enterPerCardMode(user.uid, remote);
         // Parent doc (subjects/game) still goes through the timestamp-guarded
         // push; cards now flow through the dirty-set push inside pushPerCard.
