@@ -15,14 +15,31 @@
 // ---------------------------------------------------------------------------
 
 import { report } from "./report";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { toPlainText } from "./richText";
 import { automaticSpeechLanguage } from "./speechLanguage";
 
 const synth = () => (typeof window !== "undefined" ? window.speechSynthesis : null);
 const native = () => Capacitor.isNativePlatform();
 let nativePlugin;
-const nativeTts = async () => (nativePlugin ??= (await import("@capacitor-community/text-to-speech")).TextToSpeech);
+const android = () => Capacitor.getPlatform() === "android";
+const nativeTts = async () => {
+  nativePlugin ??= android() ? registerPlugin("CatalogSpeech")
+    : (await import("@capacitor-community/text-to-speech")).TextToSpeech;
+  // Capacitor proxies synthesize every property, including `then`. Returning
+  // one directly from async makes Promise resolution call plugin.then forever.
+  return { plugin: nativePlugin };
+};
+
+const nativeReason = error => ({ CANCELED: "canceled", NO_VOICE: "no-voice",
+  ENGINE_UNAVAILABLE: "engine-unavailable", PLAYBACK_TIMEOUT: "timeout" }[error?.code] || "error");
+
+export const canOpenVoiceSettings = () => native() && android();
+export async function openVoiceSettings() {
+  if (!canOpenVoiceSettings()) return false;
+  try { const { plugin } = await nativeTts(); await plugin.openInstall(); return true; }
+  catch (e) { report("tts.settings", e); return false; }
+}
 
 export const isSupported = () => native() || !!synth();
 
@@ -31,7 +48,7 @@ export const isSupported = () => native() || !!synth();
 // "no voices" to a user who has plenty.
 let voicesCache = null;
 export function voices() {
-  if (native()) return nativeTts().then(p => p.getSupportedVoices()).then(r => r.voices || []).catch(e => {
+  if (native()) return nativeTts().then(({ plugin }) => plugin.getSupportedVoices()).then(r => r.voices || []).catch(e => {
     report("tts.voices", e);
     return [];
   });
@@ -83,7 +100,7 @@ export const stop = () => {
   cancelActive?.({ ok: false, reason: "canceled" });
   cancelActive = null;
   try {
-    if (native()) return nativeTts().then(p => p.stop()).catch(e => report("tts.stop", e));
+    if (native()) return nativeTts().then(({ plugin }) => plugin.stop()).catch(e => report("tts.stop", e));
     synth()?.cancel();
   } catch {
     // Cancelling something that isn't speaking is not a failure.
@@ -107,7 +124,7 @@ export async function speak(text, opts = {}) {
   // Navigating away or tapping again while voices load cancels this request too.
   if (token !== request) return { ok: false, reason: "canceled" };
   const voice = pickVoice(list, opts.lang, opts.voiceName);
-  const plugin = native() ? await nativeTts() : null;
+  const { plugin } = native() ? await nativeTts() : { plugin: null };
   if (native()) {
     try {
       const { supported } = await plugin.isLanguageSupported({ lang: opts.lang || "en-US" });
@@ -115,7 +132,7 @@ export async function speak(text, opts = {}) {
       if (!supported) return { ok: false, reason: "no-voice" };
     } catch (e) {
       report("tts.language", e);
-      return { ok: false, reason: "no-voice" };
+      return { ok: false, reason: nativeReason(e) };
     }
   } else if (opts.strict && opts.lang && !voice) {
     return { ok: false, reason: "no-voice" };
@@ -137,10 +154,11 @@ export async function speak(text, opts = {}) {
         const pitch = Math.min(2, Math.max(0, opts.pitch ?? 1));
         if (native()) {
           plugin.speak({ text: body, lang: opts.lang || "en-US", rate, pitch,
-            ...(voice ? { voice: list.indexOf(voice) } : {}), queueStrategy: 0 })
+            ...(android() ? { voiceName: opts.voiceName } : voice ? { voice: list.indexOf(voice) } : {}),
+            volume: 1, queueStrategy: 0 })
             .then(() => finish({ ok: true })).catch(e => {
               report("tts.speak", e);
-              finish({ ok: false, reason: "error" });
+              finish({ ok: false, reason: nativeReason(e) });
             });
           return;
         }

@@ -15,6 +15,7 @@ public class MainActivity extends BridgeActivity {
         // exist at all.
         registerPlugin(AnkiDroidPlugin.class);
         registerPlugin(StreakWidgetPlugin.class);
+        registerPlugin(CatalogSpeechPlugin.class);
         super.onCreate(savedInstanceState);
 
         // For apps targeting SDK 33 and up, the WebView reports

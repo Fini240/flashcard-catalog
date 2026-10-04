@@ -49,7 +49,7 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/tags.js` | Tags — normalisation, hierarchical (`physics/optics`), filtering, rename/delete across the whole deck. |
 | `src/testMode.js` | The graded test: builds a mixed paper, grades it, and returns *only the failures* as scheduler updates. A measurement must not quietly rewrite what it measures. |
 | `src/noteToCards.js` | Notes → cards: `::`, `:::`, `Q:`/`A:`, dash lists, headings as folders, inline `#tags`. |
-| `src/tts.js`, `src/speechUI.jsx`, `src/speechLanguage.js` | Pronunciation through native Android TextToSpeech (`@capacitor-community/text-to-speech`) and Web Speech in browsers. Small speaker beside study words; offline language detection (`tinyld/light`) uses text, same-folder/subject side samples and subject hints, with Auto default. Per-side manual corrections live in the create/edit card form and use `frontLanguageMode`/`backLanguageMode` in each card's `speech` object (1.8.3). Card settings override inherited subject settings; explicit Auto clears a subject correction for that card. Study faces show the speaker only. Manual playback works independently of automatic answer reading; offline with installed system voices. Cancels active and pending playback on study navigation. |
+| `src/tts.js`, `src/speechUI.jsx`, `src/speechLanguage.js` | Pronunciation through native Android TextToSpeech (`CatalogSpeechPlugin.java`, registered in MainActivity; the community plugin is retained for other native platforms) and Web Speech in browsers. Small speaker beside study words; offline language detection (`tinyld/light`) uses text, same-folder/subject side samples and subject hints, with Auto default. Per-side manual corrections live in the create/edit card form and use `frontLanguageMode`/`backLanguageMode` in each card's `speech` object (1.8.3). Card settings override inherited subject settings; explicit Auto clears a subject correction for that card. Study faces show the speaker only. Manual playback works independently of automatic answer reading; offline with installed system voices. Cancels active and pending playback on study navigation. |
 | `src/tutor.js` | The AI *explaining* rather than generating: why an answer is right, what a wrong answer was confused with, or a hint. Cached; a hint containing the answer is treated as a failure. |
 | `src/exporters.js` | CSV and real Anki `.apkg` output (sql.js + jszip, both already dependencies). Includes a hand-written SHA-1 for Anki's field checksum. Round-trip tested by reading the package back. |
 | `src/deckShare.js` | Sharing a folder under a six-character code. Publishes a *copy*, never a subscription; strips every scheduling and personal field first. |
@@ -242,6 +242,22 @@ Play Store compatibility problem).
   snapshot can arrive and change the answer.
 
 ## Known hazards
+
+- **Android speech must wait for onInit and check speak's return status (1.8.4).**
+  Never return a Capacitor plugin proxy directly from async: its synthetic
+  `then` method traps Promise resolution. Return a plain wrapper instead. This
+  was the direct cause of APK speaker requests hanging before any native call.
+  The community bridge also treated default initialization status 0 as SUCCESS and
+  ignored immediate TextToSpeech.ERROR without a callback, leaving the stop
+  square stuck. Both faults are reproduced against its actual Android source.
+  `CatalogSpeechPlugin.java` now owns Android playback: readiness queues,
+  installed/local voice preference, media audio attributes, immediate error
+  handling, bounded no-start/finish timers, callback identity guards and settled
+  cancellation. JS selects `CatalogSpeech` only on Android; Web Speech remains
+  unchanged. Errors offer Android voice settings without adding study pickers.
+  Run `./gradlew :app:testDebugUnitTest` for the Robolectric bridge tests; they
+  control Android engine responses and are not a physical-device audio test.
+
 
 - **Editor/import completion must preserve committed data (1.8.2, 2026-10-04).**
   Basic-card saves merge with the latest existing card so a typo correction

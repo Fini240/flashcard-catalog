@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ native: false, plugin: {
-  getSupportedVoices: vi.fn(), isLanguageSupported: vi.fn(), speak: vi.fn(), stop: vi.fn(),
+const mocks = vi.hoisted(() => ({ native: false, platform: "android", plugin: {
+  getSupportedVoices: vi.fn(), isLanguageSupported: vi.fn(), speak: vi.fn(), stop: vi.fn(), openInstall: vi.fn(),
 } }));
-vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => mocks.native } }));
+vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => mocks.native, getPlatform: () => mocks.platform }, registerPlugin: () => new Proxy(mocks.plugin, { get(target, prop) { if (prop === "then") return () => new Promise(() => {}); return target[prop]; } }) }));
 vi.mock("@capacitor-community/text-to-speech", () => ({ TextToSpeech: mocks.plugin }));
 vi.mock("./report", () => ({ report: vi.fn() }));
 let tts, synth;
 const list = [{ name: "Spanish", lang: "es-ES" }, { name: "German", lang: "de-DE" }];
 const flush = async () => { for (let i = 0; i < 15; i++) await Promise.resolve(); };
 beforeEach(async () => {
-  vi.resetModules(); vi.clearAllMocks(); mocks.native = false;
+  vi.resetModules(); vi.clearAllMocks(); mocks.native = false; mocks.platform = "android";
   synth = { getVoices: vi.fn(() => list), speak: vi.fn(), cancel: vi.fn(),
     addEventListener: vi.fn(), removeEventListener: vi.fn() };
   vi.stubGlobal("speechSynthesis", synth);
@@ -87,8 +87,27 @@ describe("manual pronunciation", () => {
     mocks.native = true; vi.stubGlobal("speechSynthesis", undefined);
     expect(tts.isSupported()).toBe(true);
     expect(await tts.speak(card.front, { lang: "es-ES", strict: true })).toEqual({ ok: true });
-    expect(mocks.plugin.speak).toHaveBeenCalledWith(expect.objectContaining({ text: card.front, lang: "es-ES", voice: 0, queueStrategy: 0 }));
+    expect(mocks.plugin.speak).toHaveBeenCalledWith(expect.objectContaining({ text: card.front, lang: "es-ES", volume: 1, queueStrategy: 0 }));
     expect(synth.speak).not.toHaveBeenCalled();
+  });
+  it("releases Android requests on immediate failures and preserves useful error reasons", async () => {
+    mocks.native = true;
+    for (const [code, reason] of [["PLAYBACK_ERROR", "error"], ["NO_VOICE", "no-voice"], ["CANCELED", "canceled"], ["PLAYBACK_TIMEOUT", "timeout"]]) {
+      mocks.plugin.speak.mockRejectedValueOnce({ code });
+      expect(await tts.speak(card.front, { lang: "es-ES" })).toEqual({ ok: false, reason });
+    }
+    mocks.plugin.isLanguageSupported.mockRejectedValueOnce({ code: "ENGINE_UNAVAILABLE" });
+    expect(await tts.speak(card.front, { lang: "es-ES" })).toEqual({ ok: false, reason: "engine-unavailable" });
+  });
+  it("opens Android voice settings and leaves browser speech unchanged", async () => {
+    expect(tts.canOpenVoiceSettings()).toBe(false);
+    expect(await tts.openVoiceSettings()).toBe(false);
+    mocks.native = true;
+    expect(tts.canOpenVoiceSettings()).toBe(true);
+    expect(await tts.openVoiceSettings()).toBe(true);
+    expect(mocks.plugin.openInstall).toHaveBeenCalledTimes(1);
+    mocks.plugin.openInstall.mockRejectedValueOnce(new Error("settings unavailable"));
+    expect(await tts.openVoiceSettings()).toBe(false);
   });
   it("reports a missing Android language and settles stopped native calls", async () => {
     mocks.native = true; mocks.plugin.isLanguageSupported.mockResolvedValueOnce({ supported: false });

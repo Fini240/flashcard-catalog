@@ -6,7 +6,7 @@ import { PronounceFace } from "./speechUI";
 import * as tts from "./tts";
 
 vi.mock("./tts", async importOriginal => ({ ...await importOriginal(),
-  isSupported: () => true, availableLanguages: async () => [], speak: vi.fn(), stop: vi.fn(),
+  isSupported: () => true, availableLanguages: async () => [], speak: vi.fn(), stop: vi.fn(), canOpenVoiceSettings: vi.fn(() => false), openVoiceSettings: vi.fn(),
 }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host, root, flip;
@@ -46,4 +46,17 @@ it("offers stop during playback and shows actionable missing-voice feedback", as
 it("does not offer pronunciation for image-only cards", async () => {
   await render({}, { front: "", frontImageId: "photo" });
   expect(host.querySelector("button")).toBeNull();
+});
+
+it("releases the busy speaker on failure and opens Android voice settings without flipping", async () => {
+  tts.canOpenVoiceSettings.mockReturnValueOnce(true);
+  tts.speak.mockResolvedValueOnce({ ok: false, reason: "engine-unavailable" });
+  tts.openVoiceSettings.mockResolvedValueOnce(true);
+  await render(); await click(host.querySelector("button"));
+  expect(host.querySelector("button").title).toBe("Read aloud");
+  expect(host.querySelector('[role="status"]').textContent).toContain("speech engine");
+  await click([...host.querySelectorAll("button")].find(b => b.textContent === "Voice settings"));
+  expect(tts.openVoiceSettings).toHaveBeenCalledTimes(1);
+  expect(flip).not.toHaveBeenCalled();
+  expect(host.querySelector("select")).toBeNull();
 });

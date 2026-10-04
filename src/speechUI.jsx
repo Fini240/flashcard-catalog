@@ -34,7 +34,9 @@ export function PronounceFace({ card, subject, speechCards, side = "front", size
     if (!result.ok && !["canceled", "interrupted"].includes(result.reason)) {
       setError(result.reason === "no-voice"
         ? "No voice for this language. Install it in your device's text-to-speech settings."
-        : "Couldn't play pronunciation. Check your device's voice settings and try again.");
+        : result.reason === "engine-unavailable"
+          ? "Android's speech engine isn't ready. Check your text-to-speech settings and try again."
+          : "Couldn't play pronunciation. Check your media volume and voice settings, then try again.");
     }
   };
   const activate = event => {
@@ -57,6 +59,15 @@ export function PronounceFace({ card, subject, speechCards, side = "front", size
       </button>
     </div>
     {error && <p role="status" style={{ fontSize: 12, color: "var(--text-secondary)", margin: "6px 0 0", fontFamily: "Inter, sans-serif" }}>{error}</p>}
+    {error && tts.canOpenVoiceSettings() && <button type="button" tabIndex={inactive ? -1 : 0}
+      onClick={async event => {
+        event.stopPropagation();
+        if (!await tts.openVoiceSettings()) setError("Open Android Settings and search for text-to-speech.");
+      }} onKeyDown={event => event.stopPropagation()}
+      style={{ border: "1px solid var(--card-border)", borderRadius: 6, background: "transparent",
+        color: "var(--text-secondary)", minHeight: 44, marginTop: 6, padding: "6px 10px", cursor: "pointer" }}>
+      Voice settings
+    </button>}
   </div>;
 }
 
