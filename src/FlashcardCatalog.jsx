@@ -163,7 +163,7 @@ function expandSaved(cardData, form, existingCards) {
 
   if (cardData.occlusionMasks?.length && cardData.frontImageId) {
     const prior = form.editingId
-      ? siblings("frontImageId", cardData.frontImageId).filter((c) => c.occlusionMaskId)
+      ? siblings("frontImageId", existingCards.find((c) => c.id === form.editingId)?.frontImageId).filter((c) => c.occlusionMaskId)
       : [];
     const { occlusionMasks, occlusionMode, ...base } = cardData;
     return {
@@ -176,8 +176,12 @@ function expandSaved(cardData, form, existingCards) {
     };
   }
 
-  // An ordinary card. Editing keeps its id; a new one gets one from the caller.
-  return { cards: [form.editingId ? { id: form.editingId, ...cardData } : cardData], remove: [] };
+  // Keep learning history when changing content. Remove the old kind's fields
+  // when converting a cloze/occlusion card into an ordinary card.
+  const prior = existingCards.find((c) => c.id === form.editingId);
+  const preserved = { ...prior };
+  for (const key of ["clozeSource", "clozeIndex", "occlusionMaskId", "occlusionMasks", "occlusionMode", "occlusionIndex", "occlusionTotal"]) delete preserved[key];
+  return { cards: [form.editingId ? { ...preserved, ...cardData, id: form.editingId } : cardData], remove: [] };
 }
 
 function collectIds(node) {
@@ -470,14 +474,16 @@ export default function FlashcardCatalog() {
       const list = (cards || currentDataRef.current.cards).filter(c => !c.deletedAt);
       if (!list.length) return "There are no cards to export.";
       if (format === "csv") {
-        return await backup.deliver(
+        await backup.deliver(
           exporters.toCSV(list, { pathFor: (c) => folderPathOf(c).join(" / ") }),
           exporters.suggestFilename(name || "flashcards", "csv"),
           "text/csv"
         );
+        return "";
       }
       const blob = await exporters.toAnkiPackage(list, { pathFor: folderPathOf });
-      return await backup.deliverBlob(blob, exporters.suggestFilename(name || "flashcards", "apkg"));
+      await backup.deliverBlob(blob, exporters.suggestFilename(name || "flashcards", "apkg"));
+      return "";
     } catch (e) {
       report("export.cards", e);
       return `Export failed: ${e && e.message ? e.message : e}`;
@@ -511,11 +517,11 @@ export default function FlashcardCatalog() {
         let node = level.find(n => n.name === name);
         if (!node) {
           node = { id: uid(), name, children: [] };
-          if (parent) parent.children = [...(parent.children || []), node];
+          if (parent) tree = mapTree(tree, parent.id, (n) => ({ ...n, children: [...(n.children || []), node] }));
           else tree = [...tree, node];
         }
         parent = node;
-        level = node.children || (node.children = []);
+        level = node.children || [];
         id = node.id;
       }
       return id;
@@ -526,6 +532,7 @@ export default function FlashcardCatalog() {
       fresh.push({
         id: uid(),
         nodeId,
+        subjectId: findPathTo(tree, nodeId)?.[0],
         front: draft.front,
         back: draft.back,
         manualOptions: [],
@@ -576,20 +583,24 @@ export default function FlashcardCatalog() {
       const parsed = backup.parseBackup(text);
       if (!parsed.ok) return parsed.error;
       const now = Date.now();
+      // Finish every potentially failing migration before changing any state.
+      const nextSubjects = migrateSubjects(parsed.backup.subjects);
+      const nextCards = migrateCards(parsed.backup.cards).map(c => ({ ...c, updatedAt: now }));
+      const nextGame = parsed.backup.game ? G.rollOver(G.normalizeGame(parsed.backup.game)) : null;
       // A restore must always push. If a remote snapshot happened to land in
       // the moment between the user confirming and this running, skipNextPush
       // would still be set and the restore would be saved locally but never
       // sent — leaving the device and the cloud disagreeing until the next
       // unrelated edit.
       skipNextPush.current = false;
-      setSubjects(migrateSubjects(parsed.backup.subjects));
+      setSubjects(nextSubjects);
       // Re-stamp every restored card as edited *now*. The card in the backup
       // carries whatever updatedAt it had when exported, which per-card merge
       // would treat as older than the copy already on the server — the restore
       // would show on screen and then be merged away. Restoring is an explicit
       // "this file wins" action, so it has to win the timestamp comparison too.
-      setCards(migrateCards(parsed.backup.cards).map(c => ({ ...c, updatedAt: now })));
-      if (parsed.backup.game) setGame(G.rollOver(G.normalizeGame(parsed.backup.game)));
+      setCards(nextCards);
+      if (nextGame) setGame(nextGame);
       updatedAtRef.current = now;
       ownerUidRef.current = googleUser ? googleUser.uid : null;
       return "";
@@ -989,6 +1000,7 @@ export default function FlashcardCatalog() {
       )}
       {view === "library" && (
         <Library
+          currentDataRef={currentDataRef}
           rootRequest={libraryRootRequest}
           subjects={subjects} setSubjects={setSubjects}
           cards={cards} setCards={setCards}
@@ -1463,6 +1475,7 @@ function IconBtn({ onClick, title, children, danger }) {
 
 // ---------- LIBRARY ----------
 function Library({
+  currentDataRef,
   rootRequest,
   todayPlan, onExamDate,
   pausedSession, onResumeSession, onDiscardSession,
@@ -1489,6 +1502,22 @@ function Library({
   // already ticked. Cleared whenever the folder changes — a selection made in
   // one folder means nothing in the next.
   const [selection, setSelection] = useState(null);
+  const imageCleanupRef = useRef(new Set());
+  const queueImageCleanup = (previousCards) => {
+    for (const c of previousCards) {
+      if (c.frontImageId) imageCleanupRef.current.add(c.frontImageId);
+      if (c.backImageId) imageCleanupRef.current.add(c.backImageId);
+    }
+  };
+  // Clean up only after the card change commits, and only if no surviving
+  // card references the image (occlusion siblings share one diagram).
+  useEffect(() => {
+    const referenced = new Set(cards.flatMap(c => [c.frontImageId, c.backImageId]));
+    for (const id of imageCleanupRef.current) {
+      if (!referenced.has(id)) imageStore.removeImage(id);
+    }
+    imageCleanupRef.current.clear();
+  }, [cards]);
 
   // Hardware back button pops one folder level at a time, same as tapping
   // the parent breadcrumb. Only registered while actually inside a folder —
@@ -1561,25 +1590,16 @@ function Library({
   // The tree too: filtering the closed-over `subjects` wrote back an older
   // tree, dropping any folder another device had made in the meantime.
   const deleteNode = (id) => {
-    const node = findNodeById(subjects, id);
+    const node = findNodeById(currentDataRef.current.subjects, id);
     const idsToRemove = node ? collectIds(node) : [id];
     setSubjects(ss => filterTree(ss, id));
-    cards.forEach(c => {
-      if (idsToRemove.includes(c.nodeId)) {
-        imageStore.removeImage(c.frontImageId);
-        imageStore.removeImage(c.backImageId);
-      }
-    });
+    queueImageCleanup(currentDataRef.current.cards.filter(c => idsToRemove.includes(c.nodeId)));
     setCards(cs => cs.filter(c => !idsToRemove.includes(c.nodeId)));
     const idx = path.indexOf(id);
     if (idx !== -1) setPath(path.slice(0, idx));
   };
   const deleteCard = (id) => {
-    const card = cards.find(c => c.id === id);
-    if (card) {
-      imageStore.removeImage(card.frontImageId);
-      imageStore.removeImage(card.backImageId);
-    }
+    queueImageCleanup(currentDataRef.current.cards.filter(c => c.id === id));
     setCards(cs => cs.filter(c => c.id !== id));
   };
 
@@ -2134,8 +2154,9 @@ function Library({
             // yields several cards, so saving one form can add, update and
             // remove cards at once. expandSaved returns that whole set; an
             // ordinary card comes back as a list of one and takes the same path.
-            const expanded = expandSaved(cardData, cardForm, cards);
+            queueImageCleanup(currentDataRef.current.cards);
             setCards((cs) => {
+              const expanded = expandSaved(cardData, cardForm, cs);
               const removed = new Set(expanded.remove.map((c) => c.id));
               const updated = new Set(expanded.cards.filter((c) => c.id).map((c) => c.id));
               return [
@@ -2626,21 +2647,36 @@ function CardFormModal({ trail, form, existingCard, tagSuggestions, onClose, onS
   const [masks, setMasks] = useState(existingCard?.occlusionMasks || []);
   const [occlusionMode, setOcclusionMode] = useState(existingCard?.occlusionMode || occlusionLib.HIDE_ALL);
   const [tags, setTags] = useState(tagsLib.cardTags(existingCard));
+  const stagedImagesRef = useRef(new Set());
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      for (const id of stagedImagesRef.current) imageStore.removeImage(id);
+      stagedImagesRef.current.clear();
+    };
+  }, []);
+  const submit = (data) => {
+    onSave(data);
+    stagedImagesRef.current.delete(data.frontImageId);
+    stagedImagesRef.current.delete(data.backImageId);
+  };
 
   useEffect(() => pushBackHandler(onClose), []);
 
-  const pickImage = async (file, current, setId) => {
+  const pickImage = async (file, setId) => {
     try {
       const id = await imageStore.saveImage(file);
-      if (current) imageStore.removeImage(current);
+      if (!mountedRef.current) { imageStore.removeImage(id); return; }
+      stagedImagesRef.current.add(id);
       setId(id);
       setImageError("");
     } catch (e) {
       setImageError(e.message || "Couldn't save that picture.");
     }
   };
-  const removeImage = (current, setId) => {
-    if (current) imageStore.removeImage(current);
+  const removeImage = (setId) => {
     setId(null);
   };
 
@@ -2657,10 +2693,10 @@ function CardFormModal({ trail, form, existingCard, tagSuggestions, onClose, onS
   const save = () => {
     if (!canSave) return;
     if (kind === "cloze") {
-      return onSave({ nodeId: form.nodeId, clozeSource: clozeSource.trim(), manualOptions: [], tags });
+      return submit({ nodeId: form.nodeId, clozeSource: clozeSource.trim(), manualOptions: [], tags });
     }
     if (kind === "occlusion") {
-      return onSave({
+      return submit({
         nodeId: form.nodeId,
         frontImageId,
         occlusionMasks: occlusionLib.normalizeMasks(masks),
@@ -2669,15 +2705,7 @@ function CardFormModal({ trail, form, existingCard, tagSuggestions, onClose, onS
         tags,
       });
     }
-    // Dropped back to text after starting from a picture (or vice versa) —
-    // don't leave the old picture orphaned in device storage.
-    if (frontType === "text" && existingCard?.frontImageId && existingCard.frontImageId !== frontImageId) {
-      imageStore.removeImage(existingCard.frontImageId);
-    }
-    if (backType === "text" && existingCard?.backImageId && existingCard.backImageId !== backImageId) {
-      imageStore.removeImage(existingCard.backImageId);
-    }
-    onSave({
+    submit({
       nodeId: form.nodeId,
       front: front.trim(),
       back: back.trim(),
@@ -2745,8 +2773,8 @@ function CardFormModal({ trail, form, existingCard, tagSuggestions, onClose, onS
             <ImagePicker
               imageId={frontImageId}
               label="the diagram"
-              onPick={(file) => pickImage(file, frontImageId, setFrontImageId)}
-              onRemove={() => { removeImage(frontImageId, setFrontImageId); setMasks([]); }}
+              onPick={(file) => pickImage(file, setFrontImageId)}
+              onRemove={() => { removeImage(setFrontImageId); setMasks([]); }}
             />
             {frontImageId && (
               <OcclusionEditor
@@ -2770,8 +2798,8 @@ function CardFormModal({ trail, form, existingCard, tagSuggestions, onClose, onS
             style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
         ) : (
           <ImagePicker imageId={frontImageId} label="the front"
-            onPick={file => pickImage(file, frontImageId, setFrontImageId)}
-            onRemove={() => removeImage(frontImageId, setFrontImageId)} />
+            onPick={file => pickImage(file, setFrontImageId)}
+            onRemove={() => removeImage(setFrontImageId)} />
         )}
 
         <Label>Back (answer)</Label>
@@ -2781,8 +2809,8 @@ function CardFormModal({ trail, form, existingCard, tagSuggestions, onClose, onS
             style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
         ) : (
           <ImagePicker imageId={backImageId} label="the back"
-            onPick={file => pickImage(file, backImageId, setBackImageId)}
-            onRemove={() => removeImage(backImageId, setBackImageId)} />
+            onPick={file => pickImage(file, setBackImageId)}
+            onRemove={() => removeImage(setBackImageId)} />
         )}
 
         {imageError && (

@@ -103,7 +103,7 @@ const cases = [
   tc("clear my own marker", "/profiles/userAAA/friendAdds/userBBB", "delete", ME, null, "ALLOW"),
   tc("deleting someone else's marker blocked", "/profiles/userBBB/friendAdds/userAAA", "delete", ME, null, "DENY"),
 
-  tc("nudge a friend", "/profiles/userBBB/nudges/n1", "create", ME, NUDGE, "ALLOW"),
+  tc("nudge a friend", "/profiles/userBBB/nudges/userAAA", "create", ME, NUDGE, "ALLOW"),
   tc("forged nudge sender blocked", "/profiles/userBBB/nudges/n1", "create", ME, { ...NUDGE, from: FRIEND }, "DENY"),
   tc("nudge with payload blocked", "/profiles/userBBB/nudges/n1", "create", ME, { ...NUDGE, blob: "x".repeat(50) }, "DENY"),
   tc("read own nudges", "/profiles/userAAA/nudges/n1", "get", ME, null, "ALLOW"),
@@ -166,6 +166,27 @@ const cases = [
 
   tc("unknown collection blocked", "/whatever/doc1", "create", ME, { a: 1 }, "DENY"),
 ];
+
+
+// Validate replacement payloads as well as first writes. Ownership alone does
+// not keep an owner's own shared deck usable after an update.
+const SHARED = { byUid: ME, name: "Biology", cards: [CARD], cardCount: 1, description: "", byUsername: "finn", createdAt: 1, version: 1, code: "ABC234" };
+cases.push(
+  tc("valid shared deck creation", "/sharedDecks/ABC234", "create", ME, SHARED, "ALLOW"),
+  tcExisting("valid shared deck correction", "/sharedDecks/ABC234", "update", ME, { ...SHARED, name: "Cells" }, SHARED, "ALLOW"),
+  tcExisting("shared deck cards must remain a list", "/sharedDecks/ABC234", "update", ME, { ...SHARED, cards: "broken" }, SHARED, "DENY"),
+  tcExisting("shared deck field allowlist stays pinned", "/sharedDecks/ABC234", "update", ME, { ...SHARED, privateEmail: "owner@example.test" }, SHARED, "DENY"),
+  tcExisting("shared deck card limit survives update", "/sharedDecks/ABC234", "update", ME, { ...SHARED, cards: Array.from({ length: 2001 }, () => CARD), cardCount: 2001 }, SHARED, "DENY"),
+  tcExisting("another user cannot overwrite a shared deck", "/sharedDecks/ABC234", "update", FRIEND, { ...SHARED, byUid: FRIEND }, SHARED, "DENY"),
+  tcExisting("shared deck cannot change owners", "/sharedDecks/ABC234", "update", ME, { ...SHARED, byUid: FRIEND }, SHARED, "DENY"),
+  tcExisting("shared deck cannot become empty", "/sharedDecks/ABC234", "update", ME, { ...SHARED, cards: [], cardCount: 0 }, SHARED, "DENY"),
+  tcExisting("shared deck count matches its cards", "/sharedDecks/ABC234", "update", ME, { ...SHARED, cardCount: 10 }, SHARED, "DENY"),
+  tcExisting("shared deck description stays bounded", "/sharedDecks/ABC234", "update", ME, { ...SHARED, description: "x".repeat(201) }, SHARED, "DENY"),
+  tcExisting("catalog subjects must remain a list", "/users/userAAA", "update", ME, { subjects: "oops", cards: [CARD], updatedAt: 200 }, { subjects: [SUBJECT], cards: [CARD], updatedAt: 100 }, "DENY"),
+  tcExisting("clear exemption cannot bypass list types", "/users/userAAA", "update", ME, { subjects: "oops", cards: [CARD], updatedAt: 200, clearedOnPurpose: 200 }, { subjects: [SUBJECT], cards: [CARD], updatedAt: 100 }, "DENY"),
+  tc("new catalog cannot start with a string tree", "/users/userAAA", "create", ME, { subjects: "oops", cards: [] }, "DENY"),
+  tc("new catalog cannot start with malformed cards", "/users/userAAA", "create", ME, { subjects: [], cards: "oops" }, "DENY")
+);
 
 const res = await fetch(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`, {
   method: "POST",

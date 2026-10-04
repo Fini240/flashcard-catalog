@@ -243,6 +243,23 @@ Play Store compatibility problem).
 
 ## Known hazards
 
+- **Editor/import completion must preserve committed data (1.8.2, 2026-10-04).**
+  Basic-card saves merge with the latest existing card so a typo correction
+  cannot reset its SRS/FSRS history. Picture files created by an editor are
+  staged: cancel discards new files only, while successful card changes clean
+  old files after commit and only when no surviving card references them.
+  Occlusion image replacements match the original image group to preserve
+  mask identities and schedules. Backups validate their tree/cards/game and
+  finish all migrations before any state setter runs. Notes extend the tree
+  immutably (the sync engine detects tree edits by identity) and set each new
+  card's subjectId. Library receives currentDataRef explicitly for its paste
+  and Anki import callbacks. Export callbacks return message strings; delivery
+  objects must never be rendered as React children. `dataIntegrity.test.jsx`
+  drives these real-app flows, and `backup.test.js` covers legacy/current files
+  and malformed payloads. Cloud rules check catalog list types on create and
+  update, and apply the shared-deck validation to both operations; keep the
+  82 Rules API assertions in `scripts/test-rules.mjs`.
+
 - **Never do date arithmetic with `n * DAY_MS`.** A day is not 24 hours twice a
   year: the day the clocks go back is 25 hours long and the day they go forward
   is 23. `stats.js` originally stepped the heatmap back by `i * DAY_MS`, which

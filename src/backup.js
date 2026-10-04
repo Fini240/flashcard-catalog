@@ -15,6 +15,58 @@ import { Capacitor } from "@capacitor/core";
 
 export const BACKUP_FORMAT = "flashcard-catalog-backup@1";
 
+const record = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+const stringList = (value) => Array.isArray(value) && value.every(v => typeof v === "string");
+
+// Validate before the caller can apply any part of the replacement. Legacy
+// category trees and missing optional fields remain valid.
+function validSubjects(subjects) {
+  const pending = [...subjects];
+  const ids = new Set();
+  while (pending.length) {
+    const node = pending.pop();
+    if (!record(node) || typeof node.id !== "string" || !node.id || ids.has(node.id) || typeof node.name !== "string") return false;
+    ids.add(node.id);
+    for (const key of ["children", "categories"]) {
+      if (node[key] != null && !Array.isArray(node[key])) return false;
+    }
+    pending.push(...(node.children || node.categories || []));
+  }
+  return true;
+}
+
+function validCards(cards) {
+  const ids = new Set();
+  return cards.every(card => {
+    if (!record(card) || typeof card.id !== "string" || !card.id || ids.has(card.id)) return false;
+    ids.add(card.id);
+    for (const key of ["front", "back", "nodeId", "categoryId", "subjectId", "frontImageId", "backImageId", "clozeSource", "occlusionMaskId"]) {
+      if (card[key] != null && typeof card[key] !== "string") return false;
+    }
+    for (const key of ["tags", "manualOptions"]) {
+      if (card[key] != null && !stringList(card[key])) return false;
+    }
+    if (card.occlusionMasks != null && (!Array.isArray(card.occlusionMasks) || !card.occlusionMasks.every(record))) return false;
+    return true;
+  });
+}
+
+function validGame(game) {
+  if (game == null) return true;
+  if (!record(game)) return false;
+  for (const key of ["history", "achievements", "exams", "srs", "reminder"]) {
+    if (game[key] != null && !record(game[key])) return false;
+  }
+  for (const key of ["quests", "reviewLog"]) {
+    if (game[key] != null && (!Array.isArray(game[key]) || !game[key].every(record))) return false;
+  }
+  for (const key of ["friends", "frozenDays"]) {
+    if (game[key] != null && !stringList(game[key])) return false;
+  }
+  if (game.history && !Object.values(game.history).every(record)) return false;
+  return true;
+}
+
 export function buildBackupPayload({ subjects, cards, game }) {
   return {
     format: BACKUP_FORMAT,
@@ -34,7 +86,7 @@ export function parseBackup(text) {
   } catch (e) {
     return { ok: false, error: "That file isn't valid JSON." };
   }
-  if (!data || typeof data !== "object") {
+  if (!record(data)) {
     return { ok: false, error: "That file doesn't look like a backup." };
   }
   // Accept both tagged backups and a raw persisted payload (no format field)
@@ -45,6 +97,13 @@ export function parseBackup(text) {
   if (!Array.isArray(data.subjects) && !Array.isArray(data.cards)) {
     return { ok: false, error: "No subjects or cards found in that file." };
   }
+  if ((data.subjects !== undefined && !Array.isArray(data.subjects)) || !validSubjects(data.subjects || [])) {
+    return { ok: false, error: "That backup contains an invalid folder tree." };
+  }
+  if ((data.cards !== undefined && !Array.isArray(data.cards)) || !validCards(data.cards || [])) {
+    return { ok: false, error: "That backup contains an invalid card." };
+  }
+  if (!validGame(data.game)) return { ok: false, error: "That backup contains invalid study statistics." };
   return {
     ok: true,
     backup: {

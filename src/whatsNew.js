@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.8.1";
+export const APP_VERSION = "1.8.2";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,18 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.8.2",
+    date: "2026-10-04",
+    items: [
+      "Editing a card keeps its review schedule and learning progress.",
+      "Canceling a picture edit keeps the original, and deleting one diagram card preserves the picture used by its siblings.",
+      "Malformed backups are rejected before they can change your folders, cards or study statistics.",
+      "Folders created from notes sync with their cards, including new subfolders inside existing subjects.",
+      "CSV and Anki exports finish with a success message instead of closing the app.",
+      "Pasted and Anki imports use the current catalog, and cloud checks reject malformed catalogs and shared-deck updates.",
+    ],
+  },
   {
     version: "1.8.1",
     date: "2026-10-04",
