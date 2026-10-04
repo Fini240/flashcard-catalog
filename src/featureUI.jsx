@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // ---------------------------------------------------------------------------
 // Screens and controls for the 1.2.0 features.
 //
@@ -52,7 +53,7 @@ const caption = { fontSize: 12, color: "var(--text-muted)", marginTop: 2 };
 // dependency and 80KB for six bars; flex and a height percentage are enough.
 function Bars({ data, valueOf, labelOf, colorOf, height = 90, emptyText }) {
   const max = Math.max(1, ...data.map(valueOf));
-  if (!data.length) return <div style={caption}>{emptyText}</div>;
+  if (!data.length) return <div style={caption}>{t(emptyText)}</div>;
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height, overflowX: "auto" }}>
       {data.map((d, i) => {
@@ -88,7 +89,7 @@ function Heatmap({ data }) {
           {week.map((d) => (
             <div
               key={d.date}
-              title={`${d.date}: ${d.count} reviews`}
+              title={t("{0}: {1} reviews", [d.date, d.count])}
               style={{
                 width: 9,
                 height: 9,
@@ -114,12 +115,12 @@ export function StatsScreen({ cards, game, settings, onBack, onChangeSettings, o
   return (
     <div style={{ padding: 16, maxWidth: 720, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-        <GhostButton onClick={onBack}>← Back</GhostButton>
-        <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text-strong)" }}>Statistics</div>
+        <GhostButton onClick={onBack}>{t("← Back")}</GhostButton>
+        <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text-strong)" }}>{t("Statistics")}</div>
       </div>
 
       <div style={panel}>
-        <div style={sectionTitle}>Deck</div>
+        <div style={sectionTitle}>{t("Deck")}</div>
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
           {[
             ["New", data.maturity.new],
@@ -129,79 +130,69 @@ export function StatsScreen({ cards, game, settings, onBack, onChangeSettings, o
           ].map(([label, n]) => (
             <div key={label}>
               <div style={bigNumber}>{n}</div>
-              <div style={caption}>{label}</div>
+              <div style={caption}>{t(label)}</div>
             </div>
           ))}
         </div>
         {data.maturity.suspended > 0 && (
-          <button onClick={onOpenLeeches} style={{ ...caption, marginTop: 10, background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "var(--text-muted)" }}>
-            {data.maturity.suspended} card{data.maturity.suspended === 1 ? "" : "s"} set aside — review them
-          </button>
+          <button onClick={onOpenLeeches} style={{ ...caption, marginTop: 10, background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "var(--text-muted)" }}>{t("{0} card{1} set aside — review them", [data.maturity.suspended, data.maturity.suspended === 1 ? "" : "s"])}</button>
         )}
       </div>
 
       <div style={panel}>
-        <div style={sectionTitle}>Due over the next 30 days</div>
+        <div style={sectionTitle}>{t("Due over the next 30 days")}</div>
         <Bars
           data={data.forecast}
           valueOf={(d) => d.due}
           labelOf={(d) => d.date}
           colorOf={(d) => (d.overdue > 0 ? "var(--brand)" : "var(--accent)")}
-          emptyText="Nothing scheduled yet."
+          emptyText={t("Nothing scheduled yet.")}
         />
-        <div style={caption}>
-          About {data.dailyLoad < 1 ? data.dailyLoad.toFixed(1) : Math.round(data.dailyLoad)} reviews a day once this
-          deck settles. {data.forecast[0].overdue > 0 && `${data.forecast[0].overdue} overdue.`}
-        </div>
+        <div style={caption}>{t("About {0} reviews a day once this deck settles. {1}", [data.dailyLoad < 1 ? data.dailyLoad.toFixed(1) : Math.round(data.dailyLoad), data.forecast[0].overdue > 0 && t("{0} overdue.", [data.forecast[0].overdue])])}</div>
       </div>
 
       <div style={panel}>
-        <div style={sectionTitle}>Retention</div>
+        <div style={sectionTitle}>{t("Retention")}</div>
         {data.retention ? (
           <>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
               <div>
                 <div style={bigNumber}>{pct(data.retention.overall)}</div>
-                <div style={caption}>last 30 days</div>
+                <div style={caption}>{t("last 30 days")}</div>
               </div>
               <div>
                 <div style={bigNumber}>{pct(data.retention.mature)}</div>
-                <div style={caption}>mature cards</div>
+                <div style={caption}>{t("mature cards")}</div>
               </div>
               <div>
                 <div style={bigNumber}>{pct(data.retention.young)}</div>
-                <div style={caption}>young cards</div>
+                <div style={caption}>{t("young cards")}</div>
               </div>
             </div>
             {/* The comparison that makes the number actionable: if what you
                 actually recall is far from what you asked for, the schedule is
                 miscalibrated and the dial below is the fix. */}
-            <div style={{ ...caption, marginTop: 8 }}>
-              You asked for {pct(s.desiredRetention)}.{" "}
-              {data.retention.mature != null &&
+            <div style={{ ...caption, marginTop: 8 }}>{t("You asked for {0}.{1}{2}", [pct(s.desiredRetention), " ", data.retention.mature != null &&
                 (Math.abs(data.retention.mature - s.desiredRetention) < 0.05
-                  ? "The schedule is well calibrated."
+                  ? t("The schedule is well calibrated.")
                   : data.retention.mature < s.desiredRetention
-                    ? "Reviews are coming too late — raise the target."
-                    : "You recall more than you asked for — you could lower the target and study less.")}
-            </div>
+                    ? t("Reviews are coming too late — raise the target.")
+                    : t("You recall more than you asked for — you could lower the target and study less."))])}</div>
           </>
         ) : (
-          <div style={caption}>Not enough reviews yet. This fills in after a few days of studying.</div>
+          <div style={caption}>{t("Not enough reviews yet. This fills in after a few days of studying.")}</div>
         )}
       </div>
 
       <div style={panel}>
-        <div style={sectionTitle}>Study history</div>
+        <div style={sectionTitle}>{t("Study history")}</div>
         <Heatmap data={data.heatmap} />
-        <div style={caption}>
-          {data.streak.current} day streak · best {data.streak.best} · {data.streak.daysStudied} days studied
-        </div>
+        <div style={caption}>{t("{0} day streak · best {1} · {2} days studied", [data.streak.current, data.streak.best, data.streak.daysStudied])}</div>
       </div>
 
       <div style={panel}>
-        <div style={sectionTitle}>Schedule</div>
-        <Label>Target retention — {pct(s.desiredRetention)}</Label>
+        <div style={sectionTitle}>{t("Schedule")}</div>
+        <Label>{t("Target retention — {0}", [pct(s.desiredRetention)])}</Label>
         <input
           type="range"
           min={70}
@@ -211,13 +202,10 @@ export function StatsScreen({ cards, game, settings, onBack, onChangeSettings, o
           onChange={(e) => onChangeSettings({ ...s, desiredRetention: Number(e.target.value) / 100 })}
           style={{ width: "100%", accentColor: "var(--accent)" }}
         />
-        <div style={caption}>
-          Higher means you forget less and review more. 90% is the usual choice; below 80% you will forget
-          noticeably more, above 95% the workload climbs steeply.
-        </div>
+        <div style={caption}>{t("Higher means you forget less and review more. 90% is the usual choice; below 80% you will forget noticeably more, above 95% the workload climbs steeply.")}</div>
         <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
           <div style={{ flex: 1 }}>
-            <Label>New cards/day</Label>
+            <Label>{t("New cards/day")}</Label>
             <TextField
               value={String(s.newPerDay)}
               onChange={(v) => onChangeSettings({ ...s, newPerDay: Number(v.replace(/\D/g, "")) || 0 })}
@@ -225,7 +213,7 @@ export function StatsScreen({ cards, game, settings, onBack, onChangeSettings, o
             />
           </div>
           <div style={{ flex: 1 }}>
-            <Label>Reviews/day</Label>
+            <Label>{t("Reviews/day")}</Label>
             <TextField
               value={String(s.reviewsPerDay)}
               onChange={(v) => onChangeSettings({ ...s, reviewsPerDay: Number(v.replace(/\D/g, "")) || 0 })}
@@ -233,7 +221,7 @@ export function StatsScreen({ cards, game, settings, onBack, onChangeSettings, o
             />
           </div>
         </div>
-        <div style={caption}>0 means no limit.</div>
+        <div style={caption}>{t("0 means no limit.")}</div>
       </div>
     </div>
   );
@@ -247,8 +235,8 @@ export function LeechReview({ cards, allCards, settings, onClose, onEdit, onUnsu
   const s = normalizeSettings(settings);
   const list = leechLib.leeches(cards, s.leechThreshold);
   return (
-    <Sheet title="Cards you keep missing" onClose={onClose}>
-      {!list.length && <div style={caption}>Nothing here — no card has failed often enough to be set aside.</div>}
+    <Sheet title={t("Cards you keep missing")} onClose={onClose}>
+      {!list.length && <div style={caption}>{t("Nothing here — no card has failed often enough to be set aside.")}</div>}
       {list.map((c) => {
         const why = leechLib.diagnose(c, allCards);
         return (
@@ -259,17 +247,15 @@ export function LeechReview({ cards, allCards, settings, onClose, onEdit, onUnsu
             <div style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 2 }}>
               <RichText text={c.back} />
             </div>
-            <div style={{ ...caption, marginTop: 8 }}>
-              Missed {c.fsrsLapses} times. {why.message}
-            </div>
+            <div style={{ ...caption, marginTop: 8 }}>{t("Missed {0} times. {1}", [c.fsrsLapses, why.message])}</div>
             <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-              <GhostButton onClick={() => onEdit(c)}>Edit card</GhostButton>
+              <GhostButton onClick={() => onEdit(c)}>{t("Edit card")}</GhostButton>
               {leechLib.isSuspended(c) ? (
-                <GhostButton onClick={() => onUnsuspend(c)}>Bring it back</GhostButton>
+                <GhostButton onClick={() => onUnsuspend(c)}>{t("Bring it back")}</GhostButton>
               ) : (
-                <GhostButton onClick={() => onForgive(c)}>Reset its history</GhostButton>
+                <GhostButton onClick={() => onForgive(c)}>{t("Reset its history")}</GhostButton>
               )}
-              <GhostButton onClick={() => onDelete(c)}>Delete</GhostButton>
+              <GhostButton onClick={() => onDelete(c)}>{t("Delete")}</GhostButton>
             </div>
           </div>
         );
@@ -300,8 +286,8 @@ export function Sheet({ title, children, onClose, footer }) {
         }}
       >
         <div style={{ padding: "14px 16px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--on-shell-strong)" }}>{title}</div>
-          <GhostButton onClick={onClose}>Close</GhostButton>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--on-shell-strong)" }}>{t(title)}</div>
+          <GhostButton onClick={onClose}>{t("Close")}</GhostButton>
         </div>
         <div style={{ padding: "0 16px 16px", overflowY: "auto" }}>{children}</div>
         {footer && <div style={{ padding: 16, borderTop: "1px solid var(--shell-raised)" }}>{footer}</div>}
@@ -324,8 +310,8 @@ export function TagField({ value, onChange, suggestions = [] }) {
   const unused = suggestions.filter((s) => !(value || []).includes(s.tag)).slice(0, 6);
   return (
     <div>
-      <Label>Tags</Label>
-      <TextField value={text} onChange={commit} placeholder="#exam #formulas" />
+      <Label>{t("Tags")}</Label>
+      <TextField value={text} onChange={commit} placeholder={t("#exam #formulas")} />
       {unused.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
           {unused.map((s) => (
@@ -368,9 +354,7 @@ export function TagFilter({ cards, selected, onChange }) {
         </button>
       ))}
       {selected.length > 0 && (
-        <button onClick={() => onChange([])} style={{ ...chipStyle(false), textDecoration: "underline" }}>
-          clear
-        </button>
+        <button onClick={() => onChange([])} style={{ ...chipStyle(false), textDecoration: "underline" }}>{t("clear")}</button>
       )}
     </div>
   );
@@ -385,7 +369,7 @@ export function SpeakButton({ text, lang, rate, voiceName, style }) {
   if (!ttsLib.isSupported() || !text || !lang) return null;
   return (
     <button
-      title="Read aloud"
+      title={t("Read aloud")}
       onClick={(e) => {
         e.stopPropagation();
         setBusy(true);
@@ -411,15 +395,15 @@ export function SpeechSettings({ subject, onChange }) {
   const set = (patch) => onChange({ ...cfg, ...patch });
 
   if (!ttsLib.isSupported()) {
-    return <div style={caption}>This device has no speech synthesis available.</div>;
+    return <div style={caption}>{t("This device has no speech synthesis available.")}</div>;
   }
   if (!languages.length) {
-    return <div style={caption}>No voices are installed on this device yet. Android: Settings → Accessibility → Text-to-speech.</div>;
+    return <div style={caption}>{t("No voices are installed on this device yet. Android: Settings → Accessibility → Text-to-speech.")}</div>;
   }
 
   const picker = (side) => (
     <div style={{ flex: 1 }}>
-      <Label>{side === "front" ? "Front" : "Back"}</Label>
+      <Label>{side === "front" ? t("Front") : t("Back")}</Label>
       <select
         value={cfg[`${side}LanguageMode`] === "manual" ? cfg[`${side}Lang`] || "" : ""}
         onChange={(e) => set({ [`${side}Lang`]: e.target.value || null,
@@ -430,7 +414,7 @@ export function SpeechSettings({ subject, onChange }) {
           border: "1px solid var(--shell-raised)", fontSize: 14,
         }}
       >
-        <option value="">Automatic</option>
+        <option value="">{t("Automatic")}</option>
         {languages.map((l) => (
           <option key={l.lang} value={l.lang}>{l.lang} — {l.name}</option>
         ))}
@@ -442,7 +426,7 @@ export function SpeechSettings({ subject, onChange }) {
     <div>
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-        <span style={{ color: "var(--on-shell-strong)", fontSize: 14 }}>Read cards aloud</span>
+        <span style={{ color: "var(--on-shell-strong)", fontSize: 14 }}>{t("Read cards aloud")}</span>
       </label>
       {cfg.enabled && (
         <>
@@ -451,7 +435,7 @@ export function SpeechSettings({ subject, onChange }) {
             {picker("back")}
           </div>
           <div style={{ marginTop: 10 }}>
-            <Label>Speed — {(cfg.rate ?? 0.95).toFixed(2)}×</Label>
+            <Label>{t("Speed — {0}×", [(cfg.rate ?? 0.95).toFixed(2)])}</Label>
             <input
               type="range" min={50} max={150} step={5}
               value={Math.round((cfg.rate ?? 0.95) * 100)}
@@ -462,9 +446,7 @@ export function SpeechSettings({ subject, onChange }) {
           <GhostButton
             onClick={() => ttsLib.speak("Hallo — hello — bonjour", { lang: cfg.frontLang || cfg.backLang, rate: cfg.rate })}
             style={{ marginTop: 8 }}
-          >
-            Test
-          </GhostButton>
+          >{t("Test")}</GhostButton>
         </>
       )}
     </div>
@@ -483,7 +465,7 @@ const CONFIDENCE_LABELS = ["No idea", "Barely", "Shaky", "Solid", "Instant"];
 export function ConfidenceBar({ onRate }) {
   return (
     <div>
-      <div style={{ ...caption, textAlign: "center", marginBottom: 8 }}>How well did you know it?</div>
+      <div style={{ ...caption, textAlign: "center", marginBottom: 8 }}>{t("How well did you know it?")}</div>
       <div style={{ display: "flex", gap: 6 }}>
         {CONFIDENCE_LABELS.map((label, i) => (
           <button
@@ -498,7 +480,7 @@ export function ConfidenceBar({ onRate }) {
             }}
           >
             <span style={{ fontSize: 15, fontWeight: 600 }}>{i + 1}</span>
-            <span style={{ color: "var(--text-muted)" }}>{label}</span>
+            <span style={{ color: "var(--text-muted)" }}>{t(label)}</span>
           </button>
         ))}
       </div>
@@ -533,17 +515,16 @@ export function TutorPanel({ card, given, subject, mode = "explain", onClose }) 
     <div style={{ ...panel, marginTop: 12, background: "var(--shell-raised)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <div style={sectionTitle}>
-          {mode === "why" ? "Why that's wrong" : mode === "hint" ? "Hint" : "Explanation"}
+          {mode === "why" ? t("Why that's wrong") : mode === "hint" ? t("Hint") : t("Explanation")}
         </div>
-        <GhostButton onClick={onClose}>Close</GhostButton>
+        <GhostButton onClick={onClose}>{t("Close")}</GhostButton>
       </div>
       {message ? (
-        <div style={caption}>{message}</div>
+        <div style={caption}>{t(message)}</div>
       ) : (
         <>
           {state.confusedWith && (
-            <div style={{ fontSize: 13.5, color: "var(--text-strong)", marginBottom: 6 }}>
-              You wrote something that means: <strong>{state.confusedWith}</strong>
+            <div style={{ fontSize: 13.5, color: "var(--text-strong)", marginBottom: 6 }}>{t("You wrote something that means: ")}<strong>{state.confusedWith}</strong>
             </div>
           )}
           <div style={{ fontSize: 14, color: "var(--text-strong)", lineHeight: 1.5 }}>
@@ -580,13 +561,13 @@ export function ClozeEditor({ value, onChange }) {
 
   return (
     <div>
-      <Label>Text (select a word, then hide it)</Label>
+      <Label>{t("Text (select a word, then hide it)")}</Label>
       <textarea
         ref={ref}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={4}
-        placeholder="The {{c1::mitochondrion}} is the powerhouse of the cell."
+        placeholder={t("The {{c1::mitochondrion}} is the powerhouse of the cell.")}
         style={{
           width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 8,
           background: "var(--shell-raised)", color: "var(--on-shell-strong)",
@@ -595,14 +576,12 @@ export function ClozeEditor({ value, onChange }) {
         }}
       />
       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <GhostButton onClick={() => wrap(false)}>Hide selection</GhostButton>
-        {numbers.length > 0 && <GhostButton onClick={() => wrap(true)}>Hide with previous</GhostButton>}
+        <GhostButton onClick={() => wrap(false)}>{t("Hide selection")}</GhostButton>
+        {numbers.length > 0 && <GhostButton onClick={() => wrap(true)}>{t("Hide with previous")}</GhostButton>}
       </div>
       {numbers.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={caption}>
-            {numbers.length} card{numbers.length === 1 ? "" : "s"} from this text:
-          </div>
+          <div style={caption}>{t("{0} card{1} from this text:", [numbers.length, numbers.length === 1 ? "" : "s"])}</div>
           {numbers.map((n) => (
             <div key={n} style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
               {n}. <RichText text={clozeLib.render(value, n).question} />
@@ -673,7 +652,7 @@ export function OcclusionEditor({ imageId, masks, mode, onChange, onChangeMode }
     if (occlusionLib.isUsableMask(mask)) onChange([...list, mask]);
   };
 
-  if (!src) return <div style={caption}>Pick an image first.</div>;
+  if (!src) return <div style={caption}>{t("Pick an image first.")}</div>;
 
   return (
     <div>
@@ -696,7 +675,7 @@ export function OcclusionEditor({ imageId, masks, mode, onChange, onChangeMode }
             <div
               key={m.id}
               onClick={(e) => { e.stopPropagation(); onChange(list.filter((x) => x.id !== m.id)); }}
-              title={m.label ? `${m.label} — tap to remove` : "Tap to remove"}
+              title={m.label ? t("{0} — tap to remove", [m.label]) : t("Tap to remove")}
               style={{
                 position: "absolute", left: r.x, top: r.y, width: r.w, height: r.h,
                 background: clashing ? "rgba(148,63,44,0.75)" : "var(--accent)",
@@ -725,21 +704,18 @@ export function OcclusionEditor({ imageId, masks, mode, onChange, onChangeMode }
         )}
       </div>
 
-      <div style={{ ...caption, marginTop: 8 }}>
-        Drag across the picture to cover something. Tap a box to remove it.
-        {clashes.length > 0 && " Boxes shown in red overlap — they may produce cards with the same answer."}
-      </div>
+      <div style={{ ...caption, marginTop: 8 }}>{t("Drag across the picture to cover something. Tap a box to remove it.{0}", [clashes.length > 0 && t(" Boxes shown in red overlap — they may produce cards with the same answer.")])}</div>
 
       {list.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={caption}>{list.length} card{list.length === 1 ? "" : "s"} · label them so the answers mean something:</div>
+          <div style={caption}>{t("{0} card{1} · label them so the answers mean something:", [list.length, list.length === 1 ? "" : "s"])}</div>
           {list.map((m, i) => (
             <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
               <span style={{ ...caption, width: 18 }}>{i + 1}</span>
               <TextField
                 value={m.label || ""}
                 onChange={(v) => onChange(list.map((x) => (x.id === m.id ? { ...x, label: v } : x)))}
-                placeholder="What's under this box?"
+                placeholder={t("What's under this box?")}
                 style={{ flex: 1 }}
               />
             </div>
@@ -753,14 +729,14 @@ export function OcclusionEditor({ imageId, masks, mode, onChange, onChangeMode }
           [occlusionLib.HIDE_ONE, "Hide one"],
         ].map(([value, label]) => (
           <button key={value} onClick={() => onChangeMode(value)} style={chipStyle(mode === value)}>
-            {label}
+            {t(label)}
           </button>
         ))}
       </div>
       <div style={caption}>
         {mode === occlusionLib.HIDE_ONE
-          ? "Only the asked box is covered — easier, good for learning a diagram."
-          : "Every box is covered, so the others give nothing away."}
+          ? t("Only the asked box is covered — easier, good for learning a diagram.")
+          : t("Every box is covered, so the others give nothing away.")}
       </div>
     </div>
   );
@@ -784,7 +760,7 @@ export function OcclusionCard({ card, revealed }) {
   // Only once the read has actually come back: saying the picture isn't here
   // while it is still being fetched would put that message on every card.
   if (src === undefined) return null;
-  if (!src) return <div style={caption}>This picture isn't on this device.</div>;
+  if (!src) return <div style={caption}>{t("This picture isn't on this device.")}</div>;
   const hidden = occlusionLib.visibleMasks(card, revealed);
   const active = occlusionLib.activeMask(card);
 
@@ -824,7 +800,7 @@ export function NotesImport({ onClose, onImport }) {
 
   return (
     <Sheet
-      title="Write notes, get cards"
+      title={t("Write notes, get cards")}
       onClose={onClose}
       footer={
         <PrimaryButton
@@ -832,27 +808,16 @@ export function NotesImport({ onClose, onImport }) {
           disabled={!preview.cards.length}
           style={{ width: "100%" }}
         >
-          {preview.cards.length ? `Add ${preview.cards.length} card${preview.cards.length === 1 ? "" : "s"}` : "Nothing to add yet"}
+          {preview.cards.length ? t("Add {0} card{1}", [preview.cards.length, preview.cards.length === 1 ? "" : "s"]) : t("Nothing to add yet")}
         </PrimaryButton>
       }
     >
-      <div style={caption}>
-        Type or paste notes. Any line with <code>::</code> becomes a card; <code>:::</code> makes one in each
-        direction. Headings (<code>## Cells</code>) become folders, <code>#tags</code> become tags, and{" "}
-        <code>{"{{c1::hidden}}"}</code> makes a fill-in-the-blank. Prose is left alone.
-      </div>
+      <div style={caption}>{t("Type or paste notes. Any line with ")}<code>::</code>{t(" becomes a card; ")}<code>:::</code>{t(" makes one in each direction. Headings (")}<code>{t("## Cells")}</code>{t(") become folders, ")}<code>{t("#tags")}</code>{t(" become tags, and{0}", [" "])}<code>{t("{{c1::hidden}}")}</code>{t(" makes a fill-in-the-blank. Prose is left alone.")}</div>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={12}
-        placeholder={`## Cells
-mitochondrion :: powerhouse of the cell
-ribosome :: makes proteins #exam
-
-## Vocabulary
-der Hund ::: the dog
-
-The heart pumps {{c1::blood}} around the body.`}
+        placeholder={t("## Cells\nmitochondrion :: powerhouse of the cell\nribosome :: makes proteins #exam\n\n## Vocabulary\nder Hund ::: the dog\n\nThe heart pumps {{c1::blood}} around the body.", [])}
         style={{
           width: "100%", boxSizing: "border-box", marginTop: 10, padding: "10px 12px", borderRadius: 8,
           background: "var(--shell-raised)", color: "var(--on-shell-strong)",
@@ -862,14 +827,14 @@ The heart pumps {{c1::blood}} around the body.`}
       />
       {preview.cards.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={sectionTitle}>Preview</div>
+          <div style={sectionTitle}>{t("Preview")}</div>
           {preview.cards.slice(0, 8).map((c, i) => (
             <div key={i} style={{ fontSize: 13, marginTop: 5, color: "var(--text-muted)" }}>
               {c.path?.length > 0 && <span style={{ color: "var(--text-faint)" }}>{c.path.join(" › ")} · </span>}
               <span style={{ color: "var(--on-shell-strong)" }}><RichText text={c.front} /></span> → <RichText text={c.back} />
             </div>
           ))}
-          {preview.cards.length > 8 && <div style={caption}>…and {preview.cards.length - 8} more</div>}
+          {preview.cards.length > 8 && <div style={caption}>{t("…and {0} more", [preview.cards.length - 8])}</div>}
         </div>
       )}
     </Sheet>
@@ -891,9 +856,9 @@ export function ShareDeckModal({ deckName, cards, owner, onClose, onPublish }) {
   };
 
   return (
-    <Sheet title="Share this folder" onClose={onClose}>
+    <Sheet title={t("Share this folder")} onClose={onClose}>
       {!owner?.username && (
-        <div style={caption}>Pick a username first (Friends → your profile) — it's what the deck is credited to.</div>
+        <div style={caption}>{t("Pick a username first (Friends → your profile) — it's what the deck is credited to.")}</div>
       )}
       {!preview.ok && <div style={caption}>{preview.error}</div>}
 
@@ -903,34 +868,28 @@ export function ShareDeckModal({ deckName, cards, owner, onClose, onPublish }) {
               Statistics; this one is on the navy sheet, where --text-strong is
               near-black and the count simply was not there. */}
           <div style={{ ...bigNumber, color: "var(--on-shell-strong)", marginBottom: 2 }}>{preview.payload.cardCount}</div>
-          <div style={caption}>cards will be shared, credited to {owner?.username || "you"}.</div>
+          <div style={caption}>{t("cards will be shared, credited to {0}.", [owner?.username || "you"])}</div>
           {preview.skipped.length > 0 && (
-            <div style={{ ...caption, marginTop: 8 }}>
-              {preview.skipped.length} card{preview.skipped.length === 1 ? "" : "s"} can't be shared
-              {preview.skipped.some((s) => s.reason === "image") && " (pictures stay on your device)"}.
-            </div>
+            <div style={{ ...caption, marginTop: 8 }}>{t("{0} card{1} can't be shared{2}.", [preview.skipped.length, preview.skipped.length === 1 ? "" : "s", preview.skipped.some((s) => s.reason === "image") && t(" (pictures stay on your device)")])}</div>
           )}
-          <div style={{ ...caption, marginTop: 8 }}>
-            Anyone with the code can add a copy. Your progress isn't shared, and later edits won't reach
-            the copies people already have.
-          </div>
+          <div style={{ ...caption, marginTop: 8 }}>{t("Anyone with the code can add a copy. Your progress isn't shared, and later edits won't reach the copies people already have.")}</div>
           <PrimaryButton
             onClick={publish}
             disabled={state.phase === "working" || !owner?.username}
             style={{ width: "100%", marginTop: 14 }}
           >
-            {state.phase === "working" ? "Publishing…" : "Publish"}
+            {state.phase === "working" ? t("Publishing…") : t("Publish")}
           </PrimaryButton>
         </>
       )}
 
       {state.phase === "done" && (
         <div style={{ textAlign: "center", padding: "10px 0" }}>
-          <div style={caption}>Share this code:</div>
+          <div style={caption}>{t("Share this code:")}</div>
           <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: 5, color: "var(--on-shell-strong)", fontFamily: "'IBM Plex Mono', monospace", margin: "8px 0" }}>
             {state.code}
           </div>
-          <GhostButton onClick={() => navigator.clipboard?.writeText(state.code)}>Copy code</GhostButton>
+          <GhostButton onClick={() => navigator.clipboard?.writeText(state.code)}>{t("Copy code")}</GhostButton>
         </div>
       )}
       {state.phase === "error" && <div style={caption}>{state.error}</div>}
@@ -950,14 +909,14 @@ export function ImportDeckModal({ onClose, onFetch, onImport }) {
   };
 
   return (
-    <Sheet title="Add a shared deck" onClose={onClose}>
+    <Sheet title={t("Add a shared deck")} onClose={onClose}>
       {state.phase !== "found" && (
         <>
-          <Label>Deck code</Label>
+          <Label>{t("Deck code")}</Label>
           <TextField
             value={code}
             onChange={setCode}
-            placeholder="ABC234"
+            placeholder={t("ABC234")}
             style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 20, letterSpacing: 3, textTransform: "uppercase" }}
           />
           <PrimaryButton
@@ -965,7 +924,7 @@ export function ImportDeckModal({ onClose, onFetch, onImport }) {
             disabled={!deckShareLib.isValidCode(clean) || state.phase === "working"}
             style={{ width: "100%", marginTop: 12 }}
           >
-            {state.phase === "working" ? "Looking…" : "Find deck"}
+            {state.phase === "working" ? t("Looking…") : t("Find deck")}
           </PrimaryButton>
           {state.phase === "error" && <div style={{ ...caption, marginTop: 8 }}>{state.error}</div>}
         </>
@@ -974,9 +933,7 @@ export function ImportDeckModal({ onClose, onFetch, onImport }) {
       {state.phase === "found" && (
         <>
           <div style={{ fontSize: 17, fontWeight: 600, color: "var(--on-shell-strong)" }}>{state.deck.name}</div>
-          <div style={caption}>
-            {state.deck.cardCount} cards{state.deck.byUsername ? ` · by ${state.deck.byUsername}` : ""}
-          </div>
+          <div style={caption}>{t("{0} cards{1}", [state.deck.cardCount, state.deck.byUsername ? ` · by ${state.deck.byUsername}` : ""])}</div>
           <div style={{ marginTop: 10 }}>
             {state.deck.cards.slice(0, 5).map((c, i) => (
               <div key={i} style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
@@ -984,9 +941,7 @@ export function ImportDeckModal({ onClose, onFetch, onImport }) {
               </div>
             ))}
           </div>
-          <PrimaryButton onClick={() => onImport(state.deck)} style={{ width: "100%", marginTop: 14 }}>
-            Add these cards
-          </PrimaryButton>
+          <PrimaryButton onClick={() => onImport(state.deck)} style={{ width: "100%", marginTop: 14 }}>{t("Add these cards")}</PrimaryButton>
         </>
       )}
     </Sheet>
@@ -1009,16 +964,13 @@ export function TestRunner({ cards, onExit, onFinish }) {
     return (
       <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-          <GhostButton onClick={onExit}>← Back</GhostButton>
-          <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text-strong)" }}>Test yourself</div>
+          <GhostButton onClick={onExit}>{t("← Back")}</GhostButton>
+          <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text-strong)" }}>{t("Test yourself")}</div>
         </div>
         <div style={panel}>
-          <div style={caption}>
-            A fixed set of questions, mixed types, no feedback until the end — a measurement rather than
-            practice. Only the ones you get wrong are fed back into your schedule.
-          </div>
+          <div style={caption}>{t("A fixed set of questions, mixed types, no feedback until the end — a measurement rather than practice. Only the ones you get wrong are fed back into your schedule.")}</div>
           <div style={{ marginTop: 12 }}>
-            <Label>Questions — {count}</Label>
+            <Label>{t("Questions — {0}", [count])}</Label>
             <input
               type="range" min={5} max={Math.max(5, Math.min(50, cards.length))} step={5}
               value={count}
@@ -1030,10 +982,8 @@ export function TestRunner({ cards, onExit, onFinish }) {
             onClick={() => setTest(testModeLib.buildTest(cards, { count }))}
             disabled={cards.length < 4}
             style={{ width: "100%", marginTop: 12 }}
-          >
-            Start test
-          </PrimaryButton>
-          {cards.length < 4 && <div style={caption}>You need at least four cards to build a test.</div>}
+          >{t("Start test")}</PrimaryButton>
+          {cards.length < 4 && <div style={caption}>{t("You need at least four cards to build a test.")}</div>}
         </div>
       </div>
     );
@@ -1045,26 +995,21 @@ export function TestRunner({ cards, onExit, onFinish }) {
       <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
         <div style={{ ...panel, textAlign: "center" }}>
           <div style={{ fontSize: 44, fontWeight: 700, color: "var(--text-strong)" }}>{result.percent}%</div>
-          <div style={caption}>{result.correct} of {result.total} correct</div>
+          <div style={caption}>{t("{0} of {1} correct", [result.correct, result.total])}</div>
           <div style={{ marginTop: 8, color: "var(--text-strong)", fontSize: 14 }}>{v.text}</div>
         </div>
-        <div style={sectionTitle}>Every question</div>
+        <div style={sectionTitle}>{t("Every question")}</div>
         {result.rows.map((row, i) => (
           <div key={i} style={{ ...panel, marginBottom: 8, borderLeft: `3px solid ${row.correct ? "var(--accent)" : "var(--brand)"}` }}>
             <div style={{ color: "var(--text-strong)", fontSize: 14 }}><RichText text={row.question.prompt} /></div>
             {!row.correct && (
-              <div style={{ ...caption, marginTop: 4 }}>
-                You said: {String(row.response ?? "—") || "—"}
-              </div>
+              <div style={{ ...caption, marginTop: 4 }}>{t("You said: {0}", [String(row.response ?? "—") || "—"])}</div>
             )}
-            <div style={{ ...caption, marginTop: 2 }}>
-              Answer: <RichText text={row.question.type === "trueFalse" ? (row.question.expected ? "True" : "False") : row.question.answer} />
+            <div style={{ ...caption, marginTop: 2 }}>{t("Answer: ")}<RichText text={row.question.type === "trueFalse" ? (row.question.expected ? "True" : "False") : row.question.answer} />
             </div>
           </div>
         ))}
-        <PrimaryButton onClick={() => onFinish(result)} style={{ width: "100%", marginTop: 8 }}>
-          Done
-        </PrimaryButton>
+        <PrimaryButton onClick={() => onFinish(result)} style={{ width: "100%", marginTop: 8 }}>{t("Done")}</PrimaryButton>
       </div>
     );
   }
@@ -1082,7 +1027,7 @@ export function TestRunner({ cards, onExit, onFinish }) {
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <GhostButton onClick={onExit}>Give up</GhostButton>
+        <GhostButton onClick={onExit}>{t("Give up")}</GhostButton>
         <div style={caption}>{index + 1} / {test.questions.length}</div>
       </div>
       <div style={{ ...panel, minHeight: 120 }}>
@@ -1090,17 +1035,16 @@ export function TestRunner({ cards, onExit, onFinish }) {
           <RichText text={q.prompt} />
         </div>
         {q.type === "trueFalse" && (
-          <div style={{ marginTop: 14, fontSize: 15, color: "var(--text-muted)" }}>
-            Claim: <RichText text={q.claim} />
+          <div style={{ marginTop: 14, fontSize: 15, color: "var(--text-muted)" }}>{t("Claim: ")}<RichText text={q.claim} />
           </div>
         )}
       </div>
 
       {q.type === "typed" && (
         <>
-          <TextField value={draft} onChange={setDraft} placeholder="Your answer" />
+          <TextField value={draft} onChange={setDraft} placeholder={t("Your answer")} />
           <PrimaryButton onClick={() => answer(draft)} style={{ width: "100%", marginTop: 10 }}>
-            {last ? "Finish" : "Next"}
+            {last ? t("Finish") : t("Next")}
           </PrimaryButton>
         </>
       )}
@@ -1125,8 +1069,8 @@ export function TestRunner({ cards, onExit, onFinish }) {
 
       {q.type === "trueFalse" && (
         <div style={{ display: "flex", gap: 10 }}>
-          <PrimaryButton onClick={() => answer(true)} style={{ flex: 1 }}>True</PrimaryButton>
-          <PrimaryButton onClick={() => answer(false)} style={{ flex: 1 }}>False</PrimaryButton>
+          <PrimaryButton onClick={() => answer(true)} style={{ flex: 1 }}>{t("True")}</PrimaryButton>
+          <PrimaryButton onClick={() => answer(false)} style={{ flex: 1 }}>{t("False")}</PrimaryButton>
         </div>
       )}
     </div>

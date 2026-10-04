@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // ---------------------------------------------------------------------------
 // Gamification UI — the streak bar, goal ring, quests, leaderboard, mastery
 // pips and the session reward screen.
@@ -54,7 +55,7 @@ export function MasteryPips({ card, showLabel, size = 5 }) {
       </span>
       {showLabel && (
         <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: m.color, fontWeight: 600 }}>
-          {m.short}
+          {t(m.short)}
         </span>
       )}
     </span>
@@ -70,7 +71,7 @@ export function MasteryBar({ cards, height = 7, showLegend }) {
     <div>
       <div style={{ display: "flex", height, borderRadius: height / 2, overflow: "hidden", background: "var(--card-border)" }}>
         {bd.map(b => b.count > 0 && (
-          <div key={b.id} title={`${b.count} ${b.label}`} style={{
+          <div key={b.id} title={`${b.count} ${t(b.label)}`} style={{
             width: `${(b.count / total) * 100}%`,
             background: b.box === 0 ? "var(--card-border)" : b.color,
             transition: "width 0.4s",
@@ -82,7 +83,7 @@ export function MasteryBar({ cards, height = 7, showLegend }) {
           {bd.filter(b => b.count > 0).map(b => (
             <span key={b.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "Inter, sans-serif", fontSize: 12, color: "var(--text-secondary)" }}>
               <span style={{ width: 9, height: 9, borderRadius: 2, background: b.box === 0 ? "var(--card-border)" : b.color }} />
-              {b.count} {b.label.toLowerCase()}
+              {b.count} {t(b.label).toLowerCase()}
             </span>
           ))}
         </div>
@@ -103,17 +104,17 @@ export function StatusBar({ game, onOpenStreak, onOpenFriends, nudgeCount }) {
       <button onClick={onOpenStreak} style={{ ...chipStyle, flex: 1, borderColor: atRisk && game.streak > 0 ? "rgba(242,197,114,0.5)" : "rgba(255,255,255,0.12)" }}>
         <Flame size={16} color={game.streak > 0 ? "var(--accent-warm)" : "var(--on-shell-faint)"} fill={game.streak > 0 && !atRisk ? "var(--accent-warm)" : "none"} />
         <span style={chipValue}>{game.streak}</span>
-        <span style={chipLabel}>day{game.streak !== 1 ? "s" : ""}</span>
+        <span style={chipLabel}>{t("day{0}", [game.streak !== 1 ? "s" : ""])}</span>
       </button>
       <button onClick={onOpenStreak} style={{ ...chipStyle, flex: 1 }}>
         <Zap size={16} color="var(--accent)" />
         <span style={chipValue}>{game.xp}</span>
-        <span style={chipLabel}>lvl {lvl.level}</span>
+        <span style={chipLabel}>{t("lvl {0}", [lvl.level])}</span>
       </button>
       <button onClick={onOpenFriends} style={{ ...chipStyle, flex: 1, position: "relative" }}>
         <Trophy size={16} color={rank.color} />
         <span style={chipValue}>{wk}</span>
-        <span style={chipLabel}>{rank.name}</span>
+        <span style={chipLabel}>{t(rank.name)}</span>
         {nudgeCount > 0 && (
           <span style={{
             position: "absolute", top: 4, right: 6, minWidth: 16, height: 16, borderRadius: 8,
@@ -138,14 +139,14 @@ const chipLabel = { fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, co
 // ---------- today's goal + the single most important button in the app ----------
 
 export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, pausedSession, onResume, onDiscard, plan }) {
-  const t = G.todayStats(game);
-  const pct = Math.min(1, t.cards / game.goalCards);
-  const done = t.cards >= game.goalCards;
-  const remaining = Math.max(0, game.goalCards - t.cards);
+  const today = G.todayStats(game);
+  const pct = Math.min(1, today.cards / game.goalCards);
+  const done = today.cards >= game.goalCards;
+  const remaining = Math.max(0, game.goalCards - today.cards);
 
   const headline = done
     ? "Daily goal done"
-    : t.cards > 0
+    : today.cards > 0
       ? `${remaining} more card${remaining !== 1 ? "s" : ""} to go`
       : dueCount > 0
         ? `${dueCount} card${dueCount !== 1 ? "s" : ""} ready for you`
@@ -164,23 +165,23 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, 
       background: "var(--card-bg)", borderRadius: 12, padding: 16, marginBottom: 16,
       boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
     }}>
-      <p className="fc-continue-label">Continue studying</p>
+      <p className="fc-continue-label">{t("Continue studying")}</p>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <button onClick={onOpenGoal} title="Change your daily goal" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+        <button onClick={onOpenGoal} title={t("Change your daily goal")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
           <Ring value={pct} size={56} stroke={6} color={done ? "var(--success)" : "var(--accent)"} track="var(--card-border)">
             {done
               ? <Check size={22} color="var(--success)" />
               : <span style={{ fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 700, color: "var(--text-strong)" }}>
-                  {t.cards}<span style={{ fontSize: 10, color: "var(--text-faint)" }}>/{game.goalCards}</span>
+                  {today.cards}<span style={{ fontSize: 10, color: "var(--text-faint)" }}>/{game.goalCards}</span>
                 </span>}
           </Ring>
         </button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15.5, fontWeight: 700, color: "var(--text-strong)", margin: 0 }}>
-            {pausedSession ? "Pick up where you left off" : plan ? `${plan.name}${plan.cards.length ? ` · about ${Math.max(1, Math.ceil(plan.seconds / 60))} min` : ''}` : headline}
+            {pausedSession ? t("Pick up where you left off") : plan ? `${plan.subjectId ? plan.name : t(plan.name)}${plan.cards.length ? ` · ${t('about {0} min', [Math.max(1, Math.ceil(plan.seconds / 60))])}` : ''}` : t(headline)}
           </p>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "3px 0 0", lineHeight: 1.35 }}>
-            {pausedSession ? `${pausedSession.index} of ${pausedSession.queue.length} exercises done · saved on this device` : plan ? planDescription(plan) || plan.reason : sub}
+            {pausedSession ? t("{0} of {1} exercises done · saved on this device", [pausedSession.index, pausedSession.queue.length]) : plan ? planDescription(plan).split(" · ").map(text => t(text)).join(" · ") || t(plan.reason) : t(sub)}
           </p>
         </div>
       </div>
@@ -191,12 +192,12 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, 
           fontWeight: 700, fontSize: 16.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           WebkitTapHighlightColor: "transparent", boxShadow: "0 2px 10px rgba(242,197,114,0.25)",
         }}>
-          <Sparkles size={18} /> {pausedSession ? "Resume session" : plan ? plan.cards.length ? `Study today · ${plan.cards.length} cards` : 'Choose extra practice' : dueCount > 0 ? `Study ${Math.min(dueCount, 20)} cards` : "Practice now"}
+          <Sparkles size={18} /> {pausedSession ? t("Resume session") : plan ? plan.cards.length ? t("Study today · {0} cards", [plan.cards.length]) : t("Choose extra practice") : dueCount > 0 ? t("Study {0} cards", [Math.min(dueCount, 20)]) : t("Practice now")}
         </button>
       )}
-      {pausedSession && <button className="fc-discard-session" onClick={onDiscard}>Discard paused session</button>}
-      {!pausedSession && plan?.cards.length > 0 && <p className="fc-plan-reason">{plan.reason}</p>}
-      <p className="fc-habit-note">{G.habitMet(game) ? 'Streak safe for today.' : 'Complete one short session to keep your streak.'} {done ? 'Daily goal complete.' : `${remaining} cards left for your daily goal bonus.`}</p>
+      {pausedSession && <button className="fc-discard-session" onClick={onDiscard}>{t("Discard paused session")}</button>}
+      {!pausedSession && plan?.cards.length > 0 && <p className="fc-plan-reason">{plan.exam && plan.exam.days >= 0 ? t("This subject's exam is {0}. Its due reviews come first.", [plan.exam.days === 0 ? t("today") : t("in {0} days", [plan.exam.days])]) : t(plan.reason)}</p>}
+      <p className="fc-habit-note">{G.habitMet(game) ? t("Streak safe for today.") : t("Complete one short session to keep your streak.")} {done ? t("Daily goal complete.") : t("{0} cards left for your daily goal bonus.", [remaining])}</p>
     </div>
   );
 }
@@ -208,9 +209,7 @@ export function QuestList({ game }) {
   if (!quests.length) return null;
   return (
     <div style={{ background: "var(--card-bg)", borderRadius: 12, padding: "14px 16px", marginBottom: 16, boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }}>
-      <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: 0.8, margin: "0 0 10px" }}>
-        Today's quests
-      </p>
+      <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: 0.8, margin: "0 0 10px" }}>{t("Today's quests")}</p>
       {quests.map(({ q, def }, i) => {
         const pct = Math.min(1, q.progress / def.target);
         const done = q.progress >= def.target;
@@ -229,10 +228,8 @@ export function QuestList({ game }) {
                   fontFamily: "Inter, sans-serif", fontSize: 13.5, fontWeight: 500,
                   color: done ? "var(--text-faint)" : "var(--text-strong)",
                   textDecoration: done ? "line-through" : "none",
-                }}>{def.label}</span>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: done ? "var(--success)" : "var(--text-faint)", flexShrink: 0 }}>
-                  +{def.xp} XP
-                </span>
+                }}>{t(def.label)}</span>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: done ? "var(--success)" : "var(--text-faint)", flexShrink: 0 }}>{t("+{0} XP", [def.xp])}</span>
               </div>
               <div style={{ height: 4, background: "var(--card-border)", borderRadius: 2, marginTop: 5, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${pct * 100}%`, background: done ? "var(--success)" : "var(--accent)", transition: "width 0.4s" }} />
@@ -263,7 +260,7 @@ function ModalShell({ title, onClose, children, wide }) {
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <h3 style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 21, color: "var(--text-strong)", margin: 0 }}>
-            {title}
+            {t(title)}
           </h3>
           <button onClick={onClose} style={{
             background: "none", border: "none", padding: 10, minWidth: 44, minHeight: 44,
@@ -284,18 +281,14 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
   const earned = ACHIEVEMENTS_SORTED(game);
 
   return (
-    <ModalShell title="Your progress" onClose={onClose}>
+    <ModalShell title={t("Your progress")} onClose={onClose}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
         <div style={{ textAlign: "center" }}>
           <Flame size={34} color={game.streak > 0 ? "var(--accent-warm)" : "var(--on-shell-muted)"} fill={game.streak > 0 ? "var(--accent-warm)" : "none"} />
         </div>
         <div>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 26, fontWeight: 800, color: "var(--text-strong)", margin: 0, lineHeight: 1 }}>
-            {game.streak} day{game.streak !== 1 ? "s" : ""}
-          </p>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-            Best: {game.bestStreak || 0} · {game.freezes} freeze{game.freezes !== 1 ? "s" : ""} banked
-          </p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 26, fontWeight: 800, color: "var(--text-strong)", margin: 0, lineHeight: 1 }}>{t("{0} day{1}", [game.streak, game.streak !== 1 ? "s" : ""])}</p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "4px 0 0" }}>{t("Best: {0} · {1} freeze{2} banked", [game.bestStreak || 0, game.freezes, game.freezes !== 1 ? "s" : ""])}</p>
         </div>
       </div>
 
@@ -317,36 +310,30 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
           </div>
         ))}
       </div>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "0 0 18px" }}>
-        Complete one short session to extend your streak. Your full daily goal earns an extra bonus. A banked freeze covers a missed day automatically.
-      </p>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "0 0 18px" }}>{t("Complete one short session to extend your streak. Your full daily goal earns an extra bonus. A banked freeze covers a missed day automatically.")}</p>
 
-      <SectionLabel>Level {lvl.level}</SectionLabel>
+      <SectionLabel>{t("Level {0}", [lvl.level])}</SectionLabel>
       <div style={{ height: 8, background: "var(--card-border)", borderRadius: 4, overflow: "hidden", marginBottom: 5 }}>
         <div style={{ height: "100%", width: `${(lvl.into / lvl.span) * 100}%`, background: "var(--accent)", transition: "width 0.5s" }} />
       </div>
-      <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "0 0 18px" }}>
-        {lvl.into} / {lvl.span} XP to level {lvl.level + 1}
-      </p>
+      <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "0 0 18px" }}>{t("{0} / {1} XP to level {2}", [lvl.into, lvl.span, lvl.level + 1])}</p>
 
-      <SectionLabel>Daily goal</SectionLabel>
+      <SectionLabel>{t("Daily goal")}</SectionLabel>
       <button onClick={onOpenGoal} style={{
         width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
         background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 10,
         padding: "13px 14px", minHeight: 48, marginBottom: 18, cursor: "pointer",
       }}>
-        <span style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--text-strong)" }}>
-          {game.goalCards} cards a day
-        </span>
+        <span style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--text-strong)" }}>{t("{0} cards a day", [game.goalCards])}</span>
         <ChevronRight size={16} color="var(--text-faint)" />
       </button>
 
-      <SectionLabel>Last 18 weeks</SectionLabel>
+      <SectionLabel>{t("Last 18 weeks")}</SectionLabel>
       <div style={{ display: "flex", gap: 3, marginBottom: 6, overflowX: "auto" }} className="fc-scroll">
         {weeks.map((col, i) => (
           <div key={i} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {col.map(d => (
-              <div key={d.key} title={`${d.key}: ${d.cards} cards`} style={{
+              <div key={d.key} title={t("{0}: {1} cards", [d.key, d.cards])} style={{
                 width: 11, height: 11, borderRadius: 2,
                 background: d.future ? "transparent"
                   : d.frozen ? "var(--info)"
@@ -358,26 +345,24 @@ export function StreakModal({ game, cards, onClose, onOpenGoal }) {
           </div>
         ))}
       </div>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "0 0 18px" }}>
-        {totals.cards} cards answered over {totals.days} day{totals.days !== 1 ? "s" : ""} · {totals.accuracy}% correct
-      </p>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "0 0 18px" }}>{t("{0} cards answered over {1} day{2} · {3}% correct", [totals.cards, totals.days, totals.days !== 1 ? "s" : "", totals.accuracy])}</p>
 
-      <SectionLabel>Collection strength</SectionLabel>
+      <SectionLabel>{t("Collection strength")}</SectionLabel>
       <div style={{ marginBottom: 18 }}>
         <MasteryBar cards={cards} height={9} showLegend />
       </div>
 
-      <SectionLabel>Achievements ({earned.filter(a => a.earned).length}/{G.ACHIEVEMENTS.length})</SectionLabel>
+      <SectionLabel>{t("Achievements ({0}/{1})", [earned.filter(a => a.earned).length, G.ACHIEVEMENTS.length])}</SectionLabel>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))", gap: 8 }}>
         {earned.map(a => (
-          <div key={a.id} title={a.blurb} style={{
+          <div key={a.id} title={t(a.blurb)} style={{
             background: a.earned ? "var(--input-bg)" : "transparent",
             border: `1px solid ${a.earned ? "var(--card-border)" : "var(--card-border-light)"}`,
             borderRadius: 10, padding: "10px 6px", textAlign: "center", opacity: a.earned ? 1 : 0.4,
           }}>
             <div style={{ fontSize: 20, filter: a.earned ? "none" : "grayscale(1)" }}>{a.icon}</div>
             <div style={{ fontFamily: "Inter, sans-serif", fontSize: 10.5, fontWeight: 600, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.2 }}>
-              {a.name}
+              {t(a.name)}
             </div>
           </div>
         ))}
@@ -401,11 +386,8 @@ function SectionLabel({ children }) {
 
 export function GoalModal({ game, onClose, onPick }) {
   return (
-    <ModalShell title="Daily goal" onClose={onClose}>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 16px", lineHeight: 1.45 }}>
-        Hit this many cards in a day and your streak is safe. Pick something you'd
-        still manage on a bad day — a goal you keep beats a goal you admire.
-      </p>
+    <ModalShell title={t("Daily goal")} onClose={onClose}>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 16px", lineHeight: 1.45 }}>{t("Hit this many cards in a day and your streak is safe. Pick something you'd still manage on a bad day — a goal you keep beats a goal you admire.")}</p>
       {G.DAILY_GOALS.map(g => {
         const active = g.cards === game.goalCards;
         return (
@@ -417,10 +399,10 @@ export function GoalModal({ game, onClose, onPick }) {
           }}>
             <span style={{ textAlign: "left" }}>
               <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 600, color: active ? "var(--accent)" : "var(--text-strong)" }}>
-                {g.label}
+                {t(g.label)}
               </span>
               <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
-                {g.blurb}
+                {t(g.blurb)}
               </span>
             </span>
             {active && <Check size={18} color="var(--accent)" />}
@@ -453,16 +435,14 @@ function BoardRow({ row, onRemove }) {
           display: "block", fontFamily: "Inter, sans-serif", fontSize: 14,
           fontWeight: row.isMe ? 700 : 500, color: "var(--text-strong)",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        }}>{row.isMe ? "You" : row.username}</span>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)" }}>
-          🔥 {row.streak} · lvl {row.level}
-        </span>
+        }}>{row.isMe ? t("You") : row.username}</span>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)" }}>{t("🔥 {0} · lvl {1}", [row.streak, row.level])}</span>
       </div>
       <span style={{ fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 700, color: "var(--text-strong)" }}>
         {row.weekXp}
       </span>
       {onRemove && !row.isMe && (
-        <button onClick={() => onRemove(row.uid)} title="Remove friend" style={{
+        <button onClick={() => onRemove(row.uid)} title={t("Remove friend")} style={{
           background: "none", border: "none", padding: 8, minWidth: 36, minHeight: 36,
           display: "flex", alignItems: "center", cursor: "pointer",
         }}><X size={14} color="var(--text-faint)" /></button>
@@ -499,12 +479,12 @@ function UsernameRow({ username, editing, onEdit, onCancel, onSave, suggestion }
           <p style={{
             fontFamily: "Inter, sans-serif", fontSize: 10.5, letterSpacing: 1.2,
             textTransform: "uppercase", color: "var(--text-faint)", margin: 0,
-          }}>Your username</p>
+          }}>{t("Your username")}</p>
           <p style={{
             fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 600,
             color: username ? "var(--text-strong)" : "var(--text-faint)", margin: "2px 0 0",
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>{username || "Not set — tap Choose"}</p>
+          }}>{username || t("Not set — tap Choose")}</p>
         </div>
         <button onClick={onEdit} style={{
           background: username ? "transparent" : "var(--accent)",
@@ -512,7 +492,7 @@ function UsernameRow({ username, editing, onEdit, onCancel, onSave, suggestion }
           border: username ? "1px solid var(--card-border)" : "none",
           borderRadius: 8, padding: "0 14px", minHeight: 40, flexShrink: 0,
           fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 600, cursor: "pointer",
-        }}>{username ? "Change" : "Choose"}</button>
+        }}>{username ? t("Change") : t("Choose")}</button>
       </div>
     );
   }
@@ -525,12 +505,12 @@ function UsernameRow({ username, editing, onEdit, onCancel, onSave, suggestion }
       <p style={{
         fontFamily: "Inter, sans-serif", fontSize: 10.5, letterSpacing: 1.2,
         textTransform: "uppercase", color: "var(--text-faint)", margin: "0 0 8px",
-      }}>Your username</p>
+      }}>{t("Your username")}</p>
       <div style={{ display: "flex", gap: 8 }}>
         <input
           value={value}
           onChange={e => { setValue(e.target.value); setError(""); }}
-          placeholder="e.g. finn"
+          placeholder={t("e.g. finn")}
           maxLength={social.USERNAME_MAX}
           autoCapitalize="none"
           autoCorrect="off"
@@ -545,15 +525,15 @@ function UsernameRow({ username, editing, onEdit, onCancel, onSave, suggestion }
           padding: "0 16px", minHeight: 46, flexShrink: 0, whiteSpace: "nowrap",
           fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
           cursor: "pointer", opacity: saving ? 0.6 : 1,
-        }}>{saving ? "…" : "Save"}</button>
+        }}>{saving ? "…" : t("Save")}</button>
       </div>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 8 }}>
         <button onClick={onCancel} style={{
           background: "none", border: "none", padding: "2px 0", cursor: "pointer", flexShrink: 0,
           fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)",
-        }}>Cancel</button>
+        }}>{t("Cancel")}</button>
         <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: error ? "#B4553F" : "var(--text-faint)", margin: 0, lineHeight: 1.4 }}>
-          {error || `${social.USERNAME_MIN}–${social.USERNAME_MAX} characters. This replaces your real name everywhere.`}
+          {error || t("{0}–{1} characters. This replaces your real name everywhere.", [social.USERNAME_MIN, social.USERNAME_MAX])}
         </p>
       </div>
     </div>
@@ -646,23 +626,18 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
 
   if (!googleUser) {
     return (
-      <ModalShell title="Compete with friends" onClose={onClose}>
+      <ModalShell title={t("Compete with friends")} onClose={onClose}>
         <div style={{ textAlign: "center", padding: "20px 8px" }}>
           <Users size={34} color="var(--text-faint)" />
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14.5, color: "var(--text-strong)", margin: "12px 0 6px", fontWeight: 600 }}>
-            Sign in to add friends
-          </p>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
-            A weekly leaderboard needs an account to hang your score on. Your cards
-            stay private — friends only ever see your XP, streak and level.
-          </p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14.5, color: "var(--text-strong)", margin: "12px 0 6px", fontWeight: 600 }}>{t("Sign in to add friends")}</p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>{t("A weekly leaderboard needs an account to hang your score on. Your cards stay private — friends only ever see your XP, streak and level.")}</p>
         </div>
       </ModalShell>
     );
   }
 
   return (
-    <ModalShell title="This week" onClose={onClose}>
+    <ModalShell title={t("This week")} onClose={onClose}>
       {nudges && nudges.length > 0 && (
         <div style={{
           background: "rgba(242,197,114,0.14)", border: "1px solid rgba(242,197,114,0.4)",
@@ -670,17 +645,15 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
         }}>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-strong)", margin: 0, fontWeight: 600 }}>
             {nudges.length === 1
-              ? `${nudges[0].emoji} ${nudges[0].name} nudged you`
-              : `${nudges.length} friends nudged you`}
+              ? t("{0} {1} nudged you", [nudges[0].emoji, nudges[0].name])
+              : t("{0} friends nudged you", [nudges.length])}
           </p>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "3px 0 8px" }}>
-            They're waiting for you to keep the board honest.
-          </p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "3px 0 8px" }}>{t("They're waiting for you to keep the board honest.")}</p>
           <button onClick={onClearNudges} style={{
             background: "transparent", border: "1px solid var(--card-border)", borderRadius: 8,
             padding: "8px 12px", minHeight: 40, fontFamily: "Inter, sans-serif", fontSize: 12.5,
             color: "var(--text-secondary)", cursor: "pointer",
-          }}>Got it</button>
+          }}>{t("Got it")}</button>
         </div>
       )}
 
@@ -690,11 +663,9 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
       }}>
         <Trophy size={20} color={rank.color} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 700, color: "var(--text-strong)", margin: 0 }}>
-            {rank.name} · {wk} XP
-          </p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 700, color: "var(--text-strong)", margin: 0 }}>{t("{0} · {1} XP", [rank.name, wk])}</p>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "var(--text-secondary)", margin: "2px 0 0" }}>
-            {next ? `${next.min - wk} XP to ${next.name}` : "Top rank — hold it to Sunday."}
+            {next ? t("{0} XP to {1}", [next.min - wk, next.name]) : t("Top rank — hold it to Sunday.")}
           </p>
         </div>
       </div>
@@ -720,54 +691,41 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
             background: tab === id ? "rgba(242,197,114,0.16)" : "transparent",
             border: `1px solid ${tab === id ? "rgba(242,197,114,0.45)" : "var(--card-border)"}`,
             color: tab === id ? "var(--text-strong)" : "var(--text-secondary)",
-          }}>{label}</button>
+          }}>{t(label)}</button>
         ))}
       </div>
 
       {tab === "friends" ? (
         board === null ? (
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-faint)" }}>Loading…</p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-faint)" }}>{t("Loading…")}</p>
         ) : (
           <div style={{ marginBottom: 16 }}>
             {board.map(row => <BoardRow key={row.uid} row={row} onRemove={onRemoveFriend} />)}
             {board.length === 1 && (
-              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "6px 0 0", lineHeight: 1.45 }}>
-                It's quiet in here. Send someone your code and the board comes alive —
-                people who study with a friend show up far more often than people who don't.
-              </p>
+              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "6px 0 0", lineHeight: 1.45 }}>{t("It's quiet in here. Send someone your code and the board comes alive — people who study with a friend show up far more often than people who don't.")}</p>
             )}
           </div>
         )
       ) : (
         <div style={{ marginBottom: 16 }}>
           {global === null ? (
-            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-faint)" }}>Loading…</p>
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-faint)" }}>{t("Loading…")}</p>
           ) : globalError ? (
-            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>
-              Couldn't load the global board. Check your connection and try again.
-            </p>
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>{t("Couldn't load the global board. Check your connection and try again.")}</p>
           ) : !username ? (
-            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>
-              Pick a username above to join the global board. Until then you can look,
-              but nobody can see you.
-            </p>
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>{t("Pick a username above to join the global board. Until then you can look, but nobody can see you.")}</p>
           ) : global.length === 0 ? (
-            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>
-              Nobody has scored yet this week. Do a session and you're top of the board.
-            </p>
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.45 }}>{t("Nobody has scored yet this week. Do a session and you're top of the board.")}</p>
           ) : (
             <>
               {global.map(row => <BoardRow key={row.uid} row={row} />)}
-              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "8px 0 0", lineHeight: 1.45 }}>
-                Top {global.length} this week, resets Monday. You can hide yourself in
-                Settings — your friends board keeps working either way.
-              </p>
+              <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "8px 0 0", lineHeight: 1.45 }}>{t("Top {0} this week, resets Monday. You can hide yourself in Settings — your friends board keeps working either way.", [global.length])}</p>
             </>
           )}
         </div>
       )}
 
-      <SectionLabel>Your friend code</SectionLabel>
+      <SectionLabel>{t("Your friend code")}</SectionLabel>
       <button onClick={copyCode} style={{
         width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
         background: "var(--input-bg)", border: "1px dashed var(--card-border)", borderRadius: 10,
@@ -777,16 +735,16 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
           {myCode}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "Inter, sans-serif", fontSize: 12.5, color: copied ? "var(--success)" : "var(--text-secondary)" }}>
-          {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
+          {copied ? <><Check size={14} />{t(" Copied")}</> : <><Copy size={14} />{t(" Copy")}</>}
         </span>
       </button>
 
-      <SectionLabel>Add a friend</SectionLabel>
+      <SectionLabel>{t("Add a friend")}</SectionLabel>
       <div style={{ display: "flex", gap: 8 }}>
         <input
           value={codeInput}
           onChange={e => setCodeInput(social.normalizeCode(e.target.value))}
-          placeholder="ABC123"
+          placeholder={t("ABC123")}
           autoCapitalize="characters"
           style={{
             // minWidth 0 or the input's intrinsic width keeps it from shrinking
@@ -801,19 +759,14 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
           padding: "0 18px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 600,
           fontSize: 14.5, display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
           flexShrink: 0, whiteSpace: "nowrap", opacity: busy ? 0.6 : 1,
-        }}><UserPlus size={16} /> Add</button>
+        }}><UserPlus size={16} />{t(" Add")}</button>
       </div>
       {status && (
         <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "8px 0 0" }}>
           {status}
         </p>
       )}
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "12px 0 0", lineHeight: 1.5 }}>
-        Adding someone puts you on each other's board — they'll see you once they
-        next open the app. Friends see your username, streak, level and weekly XP,
-        never your cards, your subjects or your email. Removing someone takes them
-        off your board only.
-      </p>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)", margin: "12px 0 0", lineHeight: 1.5 }}>{t("Adding someone puts you on each other's board — they'll see you once they next open the app. Friends see your username, streak, level and weekly XP, never your cards, your subjects or your email. Removing someone takes them off your board only.")}</p>
     </ModalShell>
   );
 }
@@ -826,10 +779,8 @@ export function FriendsModal({ game, googleUser, onClose, onAddFriend, onRemoveF
 // never knew.
 export function UsernameNotice({ username, onChange, onKeep }) {
   return (
-    <ModalShell title="You're on the board" onClose={onKeep}>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--text-secondary)", margin: "0 0 12px", lineHeight: 1.5 }}>
-        Other players see you as
-      </p>
+    <ModalShell title={t("You're on the board")} onClose={onKeep}>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--text-secondary)", margin: "0 0 12px", lineHeight: 1.5 }}>{t("Other players see you as")}</p>
       <div style={{
         background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 10,
         padding: "14px 16px", marginBottom: 14,
@@ -839,20 +790,17 @@ export function UsernameNotice({ username, onChange, onKeep }) {
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
         }}>{username}</span>
       </div>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "0 0 16px", lineHeight: 1.5 }}>
-        Your real name is never shown — this is the only name anyone sees. Change
-        it whenever you like.
-      </p>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-faint)", margin: "0 0 16px", lineHeight: 1.5 }}>{t("Your real name is never shown — this is the only name anyone sees. Change it whenever you like.")}</p>
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onChange} style={{
           flex: 1, background: "var(--accent)", color: "var(--shell-bg)", border: "none", borderRadius: 8,
           minHeight: 48, fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
-        }}>Pick my own</button>
+        }}>{t("Pick my own")}</button>
         <button onClick={onKeep} style={{
           flex: 1, background: "transparent", color: "var(--text-secondary)",
           border: "1px solid var(--card-border)", borderRadius: 8, minHeight: 48,
           fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
-        }}>Keep this</button>
+        }}>{t("Keep this")}</button>
       </div>
     </ModalShell>
   );
@@ -877,11 +825,9 @@ export function SessionReward({ award, game, onDone, onExtra }) {
         {award.levelUp ? "🎉" : award.perfect ? "🎯" : award.goalMet ? "🔥" : "✅"}
       </div>
       <p style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 23, color: "var(--text-strong)", margin: "0 0 2px" }}>
-        {award.levelUp ? `Level ${award.levelUp}!` : award.streakUp ? `${award.streak}-day streak!` : award.perfect ? "Flawless" : "Nice work"}
+        {award.levelUp ? t("Level {0}!", [award.levelUp]) : award.streakUp ? t("{0}-day streak!", [award.streak]) : award.perfect ? t("Flawless") : t("Nice work")}
       </p>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 30, fontWeight: 800, color: "var(--accent)", margin: "8px 0 2px" }}>
-        +{award.total} XP
-      </p>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 30, fontWeight: 800, color: "var(--accent)", margin: "8px 0 2px" }}>{t("+{0} XP", [award.total])}</p>
 
       <div style={{ textAlign: "left", margin: "18px 0 6px" }}>
         {rows.map((r, i) => (
@@ -889,7 +835,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
             display: "flex", justifyContent: "space-between", alignItems: "center",
             padding: "7px 0", borderTop: i ? "1px solid var(--card-border-light)" : "none",
           }}>
-            <span style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-secondary)" }}>{r.label}</span>
+            <span style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-secondary)" }}>{t(r.label)}</span>
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, color: r.xp ? "var(--text-strong)" : "var(--text-faint)" }}>
               {r.xp ? `+${r.xp}` : "✓"}
             </span>
@@ -901,20 +847,15 @@ export function SessionReward({ award, game, onDone, onExtra }) {
         <div style={{ height: 8, background: "var(--card-border)", borderRadius: 4, overflow: "hidden" }}>
           <div style={{ height: "100%", width: `${(lvl.into / lvl.span) * 100}%`, background: "var(--accent)", transition: "width 0.8s ease-out" }} />
         </div>
-        <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "5px 0 0" }}>
-          Level {lvl.level} · {lvl.span - lvl.into} XP to go
-        </p>
+        <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "5px 0 0" }}>{t("Level {0} · {1} XP to go", [lvl.level, lvl.span - lvl.into])}</p>
       </div>
 
       {!award.goalMet && (
-        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "12px 0 0" }}>
-          {award.habitMet ? 'Streak safe for today. ' : ''}{award.goalCards - award.cardsToday} more card{award.goalCards - award.cardsToday !== 1 ? "s" : ""} for your daily goal bonus.
-        </p>
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "12px 0 0" }}>{t("{0}{1} more card{2} for your daily goal bonus.", [award.habitMet ? t('Streak safe for today. ') : '', award.goalCards - award.cardsToday, award.goalCards - award.cardsToday !== 1 ? "s" : ""])}</p>
       )}
       {award.freezeEarned && (
         <p style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--info)", margin: "10px 0 0" }}>
-          <Snowflake size={14} /> Streak freeze earned — one missed day is covered.
-        </p>
+          <Snowflake size={14} />{t(" Streak freeze earned — one missed day is covered.")}</p>
       )}
       {award.newAchievements.length > 0 && (
         <div style={{ marginTop: 14, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
@@ -924,7 +865,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
               border: "1px solid var(--card-border)", borderRadius: 20, padding: "7px 12px",
             }}>
               <span style={{ fontSize: 15 }}>{a.icon}</span>
-              <span style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--text-strong)" }}>{a.name}</span>
+              <span style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--text-strong)" }}>{t(a.name)}</span>
             </div>
           ))}
         </div>
@@ -936,13 +877,13 @@ export function SessionReward({ award, game, onDone, onExtra }) {
             flex: 1, background: "transparent", color: "var(--text-secondary)",
             border: "1px solid var(--card-border)", borderRadius: 10, padding: "13px 16px",
             minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: 15, cursor: "pointer",
-          }}>Keep going</button>
+          }}>{t("Keep going")}</button>
         )}
         <button onClick={onDone} style={{
           flex: 1, background: "var(--accent)", color: "var(--shell-bg)", border: "none", borderRadius: 10,
           padding: "13px 16px", minHeight: 48, fontFamily: "Inter, sans-serif", fontWeight: 600,
           fontSize: 15, cursor: "pointer",
-        }}>Done</button>
+        }}>{t("Done")}</button>
       </div>
     </div>
   );
@@ -962,18 +903,14 @@ export function RiskBanner({ game, onStudyNow }) {
     }}>
       <Flame size={18} color="var(--accent-warm)" />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, fontWeight: 600, color: "#EDE6D3", margin: 0 }}>
-          Your {game.streak}-day streak ends tonight
-        </p>
-        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#B8C6DC", margin: "2px 0 0" }}>
-          One short session saves it. Your daily goal is separate.
-        </p>
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, fontWeight: 600, color: "#EDE6D3", margin: 0 }}>{t("Your {0}-day streak ends tonight", [game.streak])}</p>
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#B8C6DC", margin: "2px 0 0" }}>{t("One short session saves it. Your daily goal is separate.")}</p>
       </div>
       <button onClick={onStudyNow} style={{
         background: "var(--accent-warm)", color: "var(--shell-bg)", border: "none", borderRadius: 8,
         padding: "9px 14px", minHeight: 40, fontFamily: "Inter, sans-serif",
         fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0,
-      }}>Save it</button>
+      }}>{t("Save it")}</button>
     </div>
   );
 }

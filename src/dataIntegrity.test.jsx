@@ -122,6 +122,45 @@ async function start(data = base, signedIn = false) {
 const openBiology = () => click([...container.querySelectorAll(".fc-node-open span")].find(e => e.textContent === "Biology")?.closest("button"));
 
 describe("catalog data integrity", () => {
+  it("switches the interface language immediately without changing cards, pronunciation or cloud data", async () => {
+    const speech = { frontLang: "es-ES", frontLanguageMode: "manual" };
+    await start({ ...base, subjects: [{ id: "s1", name: "Library", children: [] }],
+      cards: [{ ...base.cards[0], front: "Settings", back: "Answer", speech, fsrsReps: 12 }] }, true);
+    const before = JSON.parse(localStorage.getItem("flashcard-catalog-data"));
+    cloud.writes = [];
+    click(titled("Settings"));
+    const select = container.querySelector("#app-language");
+    act(() => { select.value = "de"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.textContent).toContain("Einstellungen");
+    expect(container.textContent).toContain("App-Sprache");
+    expect(container.textContent).toContain("CSV exportieren");
+    expect(document.documentElement.lang).toBe("de");
+    expect(localStorage.getItem("flashcard-catalog-language")).toBe("de");
+    click(titled("Schließen"));
+    const folder = [...container.querySelectorAll(".fc-node-open span")].find(e => e.textContent === "Library");
+    click(folder?.closest("button"));
+    expect(container.textContent).toContain("Settings");
+    click(titled("Bearbeiten"));
+    expect(container.querySelector("textarea").value).toBe("Settings");
+    expect(container.querySelector('select[aria-label="Aussprache der Vorderseite"]').value).toBe("es-ES");
+    click(button(/^Abbrechen$/));
+    await wait(650);
+    const after = JSON.parse(localStorage.getItem("flashcard-catalog-data"));
+    expect(after.cards).toEqual(before.cards);
+    expect(after.subjects).toEqual(before.subjects);
+    expect(after.game.xp).toBe(before.game.xp);
+    expect(cloud.writes).toEqual([]);
+    act(() => root.unmount()); root = createRoot(container);
+    const { default: App } = await import("./FlashcardCatalog");
+    render(<App />); await wait(80);
+    click(titled("Einstellungen"));
+    expect(container.querySelector("#app-language").value).toBe("de");
+    const language = container.querySelector("#app-language");
+    act(() => { language.value = "en"; language.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.textContent).toContain("Settings");
+    expect(document.documentElement.lang).toBe("en");
+  });
+
   it("correcting a basic card typo preserves its learned schedule", async () => {
     const learned = { ...base.cards[0], srsBox: 4, srsPeak: 4, srsDue: Date.now() + 86400000 * 10, fsrsStability: 15, fsrsDifficulty: 4, fsrsReps: 12, fsrsLapses: 1, fsrsLastReview: Date.now() - 86400000 };
     await start({ ...base, cards: [learned] }); openBiology(); click(titled("Edit"));

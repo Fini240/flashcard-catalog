@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // ---------------------------------------------------------------------------
 // The exercises a drill is made of, beyond the original three.
 //
@@ -64,7 +65,7 @@ export function ClozeCard({ card, payload, onResult, initialState, onStateChange
 
   return (
     <>
-      <CardShell tabLabel="Fill the gap" tabColor="#7B4B94">
+      <CardShell tabLabel={t("Fill the gap")} tabColor="#7B4B94">
         <p style={promptStyle}>{payload.prompt || card.front}</p>
         <div style={{
           fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 20, color: "var(--text-strong)",
@@ -95,7 +96,7 @@ export function ClozeCard({ card, payload, onResult, initialState, onStateChange
                 value={values[i]}
                 onChange={(e) => setValue(i, e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.repeat && !e.isComposing && allFilled) { e.preventDefault(); check(); } }}
-                placeholder={answers.length === 1 ? "The missing word" : `Missing word ${i + 1}`}
+                placeholder={answers.length === 1 ? t("The missing word") : t("Missing word {0}", [i + 1])}
                 style={{ textAlign: "center" }}
               />
             ))}
@@ -103,24 +104,20 @@ export function ClozeCard({ card, payload, onResult, initialState, onStateChange
         )}
 
         {verdict === "wrong" && (
-          <p style={{ ...captionStyle, color: "#B5533C", margin: "4px 0 0" }}>
-            You wrote {values.map((value) => `"${value.trim() || "nothing"}"`).join(" and ")}
-          </p>
+          <p style={{ ...captionStyle, color: "#B5533C", margin: "4px 0 0" }}>{t("You wrote {0}", [values.map((value) => `"${value.trim() || "nothing"}"`).join(" and ")])}</p>
         )}
         {verdict === "right" && (
-          <p style={{ ...captionStyle, color: "var(--success)", margin: "4px 0 0" }}>That's the word</p>
+          <p style={{ ...captionStyle, color: "var(--success)", margin: "4px 0 0" }}>{t("That's the word")}</p>
         )}
       </CardShell>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         {verdict
-          ? <PrimaryButton onClick={next} style={{ flex: 1 }}>Next<KeyHint>Enter</KeyHint></PrimaryButton>
+          ? <PrimaryButton onClick={next} style={{ flex: 1 }}>{t("Next")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
           : (
             <>
-              <GhostButton onClick={() => setVerdict("wrong")} style={{ flex: 1, color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
-                Show me
-              </GhostButton>
-              <PrimaryButton onClick={check} disabled={!allFilled} style={{ flex: 1 }}>Check<KeyHint>Enter</KeyHint></PrimaryButton>
+              <GhostButton onClick={() => setVerdict("wrong")} style={{ flex: 1, color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>{t("Show me")}</GhostButton>
+              <PrimaryButton onClick={check} disabled={!allFilled} style={{ flex: 1 }}>{t("Check")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
             </>
           )}
       </div>
@@ -140,7 +137,7 @@ export function TrueFalseCard({ card, subject, speechCards, payload, onResult, i
 
   return (
     <>
-      <CardShell tabLabel="True or false" tabColor="var(--highlight)">
+      <CardShell tabLabel={t("True or false")} tabColor="var(--highlight)">
         <div style={promptStyle}><PronounceFace card={card || { front: payload.prompt }} subject={subject} speechCards={speechCards} size={17} /></div>
         <div style={{
           flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
@@ -154,8 +151,8 @@ export function TrueFalseCard({ card, subject, speechCards, payload, onResult, i
         {answered && (
           <p style={{ ...captionStyle, color: wasRight ? "var(--success)" : "#B5533C" }}>
             {wasRight
-              ? (payload.isTrue ? "Right — that's the answer" : "Right — that's not it")
-              : (payload.isTrue ? "It was true" : "It was false")}
+              ? (payload.isTrue ? t("Right — that's the answer") : t("Right — that's not it"))
+              : (payload.isTrue ? t("It was true") : t("It was false"))}
           </p>
         )}
 
@@ -168,7 +165,7 @@ export function TrueFalseCard({ card, subject, speechCards, payload, onResult, i
             <p style={{
               fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: 0.6,
               textTransform: "uppercase", color: "var(--text-faint)", margin: "0 0 6px",
-            }}>The right answer</p>
+            }}>{t("The right answer")}</p>
             <p style={{
               fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 19,
               color: "var(--success)", margin: 0, lineHeight: 1.35,
@@ -179,14 +176,14 @@ export function TrueFalseCard({ card, subject, speechCards, payload, onResult, i
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         {answered ? (
-          <PrimaryButton onClick={next} style={{ flex: 1 }}>Next<KeyHint>Enter</KeyHint></PrimaryButton>
+          <PrimaryButton onClick={next} style={{ flex: 1 }}>{t("Next")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
         ) : (
           <>
             <GhostButton onClick={() => setPicked(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>
-              <X size={16} /> False<KeyHint>1</KeyHint>
+              <X size={16} />{t(" False")}<KeyHint>1</KeyHint>
             </GhostButton>
             <PrimaryButton onClick={() => setPicked(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>
-              <Check size={16} /> True<KeyHint>2</KeyHint>
+              <Check size={16} />{t(" True")}<KeyHint>2</KeyHint>
             </PrimaryButton>
           </>
         )}
@@ -235,8 +232,8 @@ export function MatchCard({ payload, onResult, initialState, onStateChange, shor
 
   return (
     <>
-      <CardShell tabLabel="Match the pairs" tabColor="var(--brand)">
-        <p style={hintStyle}>Tap a term, then tap what it means</p>
+      <CardShell tabLabel={t("Match the pairs")} tabColor="var(--brand)">
+        <p style={hintStyle}>{t("Tap a term, then tap what it means")}</p>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
             {pairs.map((p) => (
@@ -264,7 +261,7 @@ export function MatchCard({ payload, onResult, initialState, onStateChange, shor
 
       <div style={{ marginTop: 16 }}>
         <PrimaryButton onClick={finish} disabled={!done} style={{ width: "100%" }}>
-          {done ? <>Next<KeyHint>Enter</KeyHint></> : `${Object.keys(solved).length} of ${pairs.length} paired`}
+          {done ? <>{t("Next")}<KeyHint>{t("Enter")}</KeyHint></> : t("{0} of {1} paired", [Object.keys(solved).length, pairs.length])}
         </PrimaryButton>
       </div>
     </>

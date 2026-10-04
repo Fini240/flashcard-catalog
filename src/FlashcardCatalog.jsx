@@ -1,3 +1,4 @@
+import { t, useAppLanguage, LANGUAGE_CHOICES, appLocale } from "./i18n";
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { flushSync } from "react-dom";
 import { Capacitor } from "@capacitor/core";
@@ -242,6 +243,7 @@ function migrateCards(rawCards) {
 }
 
 export default function FlashcardCatalog() {
+  useAppLanguage();
   const [subjects, setSubjects] = useState([]);
   const [cards, setCards] = useState([]);
   const [game, setGame] = useState(G.emptyGame);
@@ -962,9 +964,7 @@ export default function FlashcardCatalog() {
   if (!loaded) {
     return (
       <Shell darkMode={darkMode}>
-        <div style={{ padding: 48, textAlign: "center", color: "#EDE6D3", fontFamily: "Inter, sans-serif" }}>
-          Opening the catalog…
-        </div>
+        <div style={{ padding: 48, textAlign: "center", color: "#EDE6D3", fontFamily: "Inter, sans-serif" }}>{t("Opening the catalog…")}</div>
       </Shell>
     );
   }
@@ -984,7 +984,7 @@ export default function FlashcardCatalog() {
       }}
     >
       {error && (
-        <div style={bannerStyle}>{error}</div>
+        <div style={bannerStyle}>{t(error)}</div>
       )}
       {/* Above the "get the app" banner and shown on every screen, not just the
           library: this one is about the app being out of date, which is true
@@ -1191,14 +1191,14 @@ function UpdateBanner({ offer, onDismiss }) {
         <p style={{
           margin: 0, fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600,
           color: "var(--text-strong)",
-        }}>Version {offer.version} is out</p>
+        }}>{t("Version {0} is out", [offer.version])}</p>
         <p style={{
           margin: "2px 0 0", fontFamily: "Inter, sans-serif", fontSize: 12,
           color: "var(--text-muted)", lineHeight: 1.35,
         }}>
           {downloading
-            ? `You have ${APP_VERSION}. Updates are not automatic \u2014 download and open it to install.`
-            : `You have ${APP_VERSION}. Reload to pick it up.`}
+            ? t("You have {0}. Updates are not automatic — download and open it to install.", [APP_VERSION])
+            : t("You have {0}. Reload to pick it up.", [APP_VERSION])}
         </p>
       </div>
       {downloading ? (
@@ -1209,18 +1209,16 @@ function UpdateBanner({ offer, onDismiss }) {
           onClick={onDismiss}
           style={updateActionStyle}
         >
-          <Download size={15} /> Download
-        </a>
+          <Download size={15} />{t(" Download")}</a>
       ) : (
         <button onClick={() => window.location.reload()} style={{ ...updateActionStyle, cursor: "pointer" }}>
-          <RefreshCw size={15} /> Reload
-        </button>
+          <RefreshCw size={15} />{t(" Reload")}</button>
       )}
       {/* Dismissing hides this version and only this version — the next
           release asks again. See updateCheck.updateOffer. */}
       <button
         onClick={onDismiss}
-        aria-label="Not now"
+        aria-label={t("Not now")}
         style={{
           position: "absolute", top: 6, right: 6, width: 28, height: 28,
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -1259,11 +1257,11 @@ function AppDownloadBanner({ onDismiss }) {
         <p style={{
           margin: 0, fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600,
           color: "var(--text-strong)",
-        }}>Get the Android app</p>
+        }}>{t("Get the Android app")}</p>
         <p style={{
           margin: "2px 0 0", fontFamily: "Inter, sans-serif", fontSize: 12,
           color: "var(--text-muted)", lineHeight: 1.35,
-        }}>Reminders, the widget, offline cards.</p>
+        }}>{t("Reminders, the widget, offline cards.")}</p>
       </div>
       <a
         href={appDownload.APK_URL}
@@ -1277,14 +1275,13 @@ function AppDownloadBanner({ onDismiss }) {
           WebkitTapHighlightColor: "transparent",
         }}
       >
-        <Download size={15} /> Install
-      </a>
+        <Download size={15} />{t(" Install")}</a>
       {/* Small and quiet on purpose: dismissing is available, but it should
           not be the thing your eye lands on first. Its 28dp box is the touch
           target — the glyph inside it is 13dp. */}
       <button
         onClick={onDismiss}
-        aria-label="Not now"
+        aria-label={t("Not now")}
         style={{
           position: "absolute", top: 3, right: 3, width: 28, height: 28,
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -1386,19 +1383,19 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
           <span style={{
             fontFamily: "Fraunces, serif", fontWeight: 700, fontStyle: "italic",
             fontSize: 26, color: "var(--accent)", letterSpacing: 0.2, flexShrink: 0,
-          }}>Catalog</span>
+          }}>{t("Catalog")}</span>
           <span className="fc-subtitle" style={{
             fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)",
             letterSpacing: 1.5, textTransform: "uppercase", whiteSpace: "nowrap",
-          }}>Flashcard drawer</span>
+          }}>{t("Flashcard drawer")}</span>
         </div>
         <div className="fc-desktop-title">
-          <h1>{titles[view] || titles.library}</h1>
-          <p>{subjects.length} subject{subjects.length !== 1 ? "s" : ""} · {cards.length} card{cards.length !== 1 ? "s" : ""}</p>
+          <h1>{t(titles[view] || titles.library)}</h1>
+          <p>{t("{0} subject{1} · {2} card{3}", [subjects.length, subjects.length !== 1 ? "s" : "", cards.length, cards.length !== 1 ? "s" : ""])}</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
           <SyncControl googleUser={googleUser} syncState={syncState} onSignIn={onSignIn} onSignOut={onSignOut} />
-          <IconBtn title="Settings" onClick={onOpenSettings}><Settings size={18} color="var(--on-shell-muted)" /></IconBtn>
+          <IconBtn title={t("Settings")} onClick={onOpenSettings}><Settings size={18} color="var(--on-shell-muted)" /></IconBtn>
         </div>
       </header>
       {onNavigate && <DesktopNavigation view={view} onNavigate={onNavigate}
@@ -1424,7 +1421,7 @@ function SyncControl({ googleUser, syncState, onSignIn, onSignOut }) {
         display: "flex", alignItems: "center", gap: 6, WebkitTapHighlightColor: "transparent",
         opacity: signingIn ? 0.6 : 1,
       }}>
-        <LogIn size={14} /> <span className="fc-signin-label">{signingIn ? "Signing in…" : "Sign in with Google"}</span>
+        <LogIn size={14} /> <span className="fc-signin-label">{signingIn ? t("Signing in…") : t("Sign in with Google")}</span>
       </button>
     );
   }
@@ -1437,9 +1434,9 @@ function SyncControl({ googleUser, syncState, onSignIn, onSignOut }) {
         fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
         color: syncState === "error" ? "var(--danger)" : "var(--on-shell-muted)",
       }}>
-        <Icon size={14} /> <span className="fc-signin-label">{label}</span>
+        <Icon size={14} /> <span className="fc-signin-label">{t(label)}</span>
       </span>
-      <button onClick={onSignOut} title={`Sign out of ${googleUser.email}`} style={{
+      <button onClick={onSignOut} title={t("Sign out of {0}", [googleUser.email])} style={{
         background: "transparent", border: "1px solid rgba(255,255,255,0.18)",
         borderRadius: 20, padding: "8px 12px", minHeight: 40, color: "var(--on-shell-muted)",
         fontFamily: "Inter, sans-serif", fontSize: 12.5, fontWeight: 600,
@@ -1455,7 +1452,7 @@ function SyncControl({ googleUser, syncState, onSignIn, onSignOut }) {
 
 function IconBtn({ onClick, title, children, danger }) {
   return (
-    <button onClick={onClick} title={title} style={{
+    <button onClick={onClick} title={t(title)} style={{
       background: "transparent", border: "none", padding: 10, borderRadius: 8,
       color: danger ? "var(--danger)" : "var(--on-shell-muted)", display: "flex", alignItems: "center",
       justifyContent: "center", minWidth: 44, minHeight: 44,
@@ -1798,11 +1795,11 @@ function Library({
             <Search size={15} color="var(--on-shell-muted)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
             <TextField
               value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search all cards…"
+              placeholder={t("Search all cards…")}
               style={{ paddingLeft: 36 }}
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery("")} title="Clear search" style={{
+              <button onClick={() => setSearchQuery("")} title={t("Clear search")} style={{
                 position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
                 background: "none", border: "none", padding: 10, minHeight: 40,
                 display: "flex", alignItems: "center", WebkitTapHighlightColor: "transparent", cursor: "pointer",
@@ -1813,9 +1810,7 @@ function Library({
 
         {query ? (
           searchResults.length === 0 ? (
-            <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>
-              No cards match "{searchQuery.trim()}".
-            </p>
+            <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>{t("No cards match \"{0}\".", [searchQuery.trim()])}</p>
           ) : (
             <div style={{ background: "var(--card-bg)", borderRadius: 10, padding: "4px 16px", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }}>
               {searchResults.map(c => {
@@ -1828,10 +1823,10 @@ function Library({
                     WebkitTapHighlightColor: "transparent", cursor: "pointer",
                   }}>
                     <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 14.5, fontWeight: 600, color: "var(--text-strong)" }}>
-                      {c.front || "(picture)"}
+                      {c.front || t("(picture)")}
                     </span>
                     <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
-                      {c.back || "(picture)"}
+                      {c.back || t("(picture)")}
                     </span>
                     <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
                       <MasteryPips card={c} showLabel />
@@ -1854,12 +1849,10 @@ function Library({
 
         {subjects.length > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" }}>
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)", letterSpacing: 0.8, textTransform: "uppercase" }}>
-              Your subjects
-            </span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)", letterSpacing: 0.8, textTransform: "uppercase" }}>{t("Your subjects")}</span>
             <div style={{ display: "flex", gap: 6 }}>
-              <SmallButton onClick={() => setImportOpen({ mode: "paste" })}><Upload size={14} /> Import</SmallButton>
-              <SmallButton onClick={() => setAddingSubject(true)}><Plus size={14} /> New</SmallButton>
+              <SmallButton onClick={() => setImportOpen({ mode: "paste" })}><Upload size={14} />{t(" Import")}</SmallButton>
+              <SmallButton onClick={() => setAddingSubject(true)}><Plus size={14} />{t(" New")}</SmallButton>
             </div>
           </div>
         )}
@@ -1887,7 +1880,7 @@ function Library({
             the tree. See orphans.js — it is a view, so it disappears by itself
             if the missing folder turns up in a later sync. */}
         {orphans.length > 0 && (
-          <NodeRow name="Cards without a folder" cards={orphans}
+          <NodeRow name={t("Cards without a folder")} cards={orphans}
             color="#B5533C" tabColor="#8C4230"
             onOpen={() => setExtra("orphans")}
             onStudy={() => goStudy(null)}
@@ -1900,10 +1893,10 @@ function Library({
           {addingSubject && (
             <div style={{ display: "flex", gap: 8 }}>
               <TextField value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)}
-                placeholder="Subject name (e.g. Biology)" autoFocus
+                placeholder={t("Subject name (e.g. Biology)")} autoFocus
                 onKeyDown={e => { if (e.key === "Enter") addSubject(); if (e.key === "Escape") setAddingSubject(false); }} />
-              <IconBtn title="Save" onClick={addSubject}><Check size={18} color="var(--success)" /></IconBtn>
-              <IconBtn title="Cancel" onClick={() => setAddingSubject(false)}><X size={18} color="#B5533C" /></IconBtn>
+              <IconBtn title={t("Save")} onClick={addSubject}><Check size={18} color="var(--success)" /></IconBtn>
+              <IconBtn title={t("Cancel")} onClick={() => setAddingSubject(false)}><X size={18} color="#B5533C" /></IconBtn>
             </div>
           )}
         </div>
@@ -1957,7 +1950,7 @@ function Library({
         </h2>
         <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
           <div style={{ position: "relative" }}>
-            <IconBtn title="Add" onClick={() => setAddMenuOpen(v => !v)}>
+            <IconBtn title={t("Add")} onClick={() => setAddMenuOpen(v => !v)}>
               <Plus size={16} color="#EDE6D3" />
             </IconBtn>
             {addMenuOpen && (
@@ -1973,70 +1966,55 @@ function Library({
                     onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                   >
-                    <Layers size={15} /> Add subcategory
-                  </button>
+                    <Layers size={15} />{t(" Add subcategory")}</button>
                   <button onClick={() => { setCardForm({ nodeId: currentNode.id }); setAddMenuOpen(false); }} style={addMenuItemStyle}
                     onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                   >
-                    <Plus size={15} /> Add card
-                  </button>
+                    <Plus size={15} />{t(" Add card")}</button>
                   <button onClick={() => { setExtra("notes"); setAddMenuOpen(false); }} style={addMenuItemStyle}
                     onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                   >
-                    <FileUp size={15} /> Write notes
-                  </button>
+                    <FileUp size={15} />{t(" Write notes")}</button>
                   <button onClick={() => { setExtra("speech"); setAddMenuOpen(false); }} style={addMenuItemStyle}
                     onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                   >
-                    <Volume2 size={15} /> Read aloud…
-                  </button>
+                    <Volume2 size={15} />{t(" Read aloud…")}</button>
                   <div style={{ height: 1, background: "var(--card-border)", margin: "2px 0" }} />
                   <button onClick={() => { setImportOpen({ mode: "file" }); setAddMenuOpen(false); }} style={addMenuItemStyle}
                     onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                   >
-                    <FileUp size={15} /> Import file
-                  </button>
+                    <FileUp size={15} />{t(" Import file")}</button>
                   <button onClick={() => { setImportOpen({ mode: "photo" }); setAddMenuOpen(false); }} style={addMenuItemStyle}
                     onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                   >
-                    <Camera size={15} /> Import photo
-                  </button>
+                    <Camera size={15} />{t(" Import photo")}</button>
                 </div>
               </>
             )}
           </div>
-          <IconBtn title={path.length === 1 ? "Rename subject" : "Rename folder"} onClick={() => beginRename(currentNode)}>
+          <IconBtn title={path.length === 1 ? t("Rename subject") : t("Rename folder")} onClick={() => beginRename(currentNode)}>
             <Pencil size={15} color="var(--on-shell-muted)" />
           </IconBtn>
-          <IconBtn title="Delete this folder" danger onClick={() => deleteNode(currentNode.id)}>
+          <IconBtn title={t("Delete this folder")} danger onClick={() => deleteNode(currentNode.id)}>
             <Trash2 size={16} color="var(--danger)" />
           </IconBtn>
         </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 20 }}>
-        <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13, margin: 0 }}>
-          {folderCards.length} card{folderCards.length !== 1 ? "s" : ""}
-          {folderDue > 0 && ` · ${folderDue} due`}
-        </p>
+        <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13, margin: 0 }}>{t("{0} card{1}{2}", [folderCards.length, folderCards.length !== 1 ? "s" : "", folderDue > 0 && t(" · {0} due", [folderDue])])}</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <GhostButton onClick={() => onOpenTest(currentNode.id)} disabled={folderCards.length < 4}>
-            Test
-          </GhostButton>
-          <GhostButton onClick={() => setExtra("share")} disabled={folderCards.length === 0}>
-            Share
-          </GhostButton>
+          <GhostButton onClick={() => onOpenTest(currentNode.id)} disabled={folderCards.length < 4}>{t("Test")}</GhostButton>
+          <GhostButton onClick={() => setExtra("share")} disabled={folderCards.length === 0}>{t("Share")}</GhostButton>
           <GhostButton onClick={() => setImportOpen({ mode: "paste" })}>
-            <Upload size={16} /> Import
-          </GhostButton>
+            <Upload size={16} />{t(" Import")}</GhostButton>
           <PrimaryButton onClick={() => goStudy(currentNode.id)} disabled={folderCards.length === 0}>
-            <BookOpen size={16} /> Study
-          </PrimaryButton>
+            <BookOpen size={16} />{t(" Study")}</PrimaryButton>
         </div>
       </div>
 
@@ -2066,23 +2044,20 @@ function Library({
 
       {addingSubcategory && (
         <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-          <TextField value={newSubcategoryName} onChange={e => setNewSubcategoryName(e.target.value)} placeholder="Subcategory name" />
-          <IconBtn title="Save" onClick={addSubcategory}><Check size={18} color="var(--success)" /></IconBtn>
-          <IconBtn title="Cancel" onClick={() => setAddingSubcategory(false)}><X size={18} color="#B5533C" /></IconBtn>
+          <TextField value={newSubcategoryName} onChange={e => setNewSubcategoryName(e.target.value)} placeholder={t("Subcategory name")} />
+          <IconBtn title={t("Save")} onClick={addSubcategory}><Check size={18} color="var(--success)" /></IconBtn>
+          <IconBtn title={t("Cancel")} onClick={() => setAddingSubcategory(false)}><X size={18} color="#B5533C" /></IconBtn>
         </div>
       )}
 
       <div style={{ margin: "4px 0 10px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: "var(--on-shell-muted)", letterSpacing: 0.5, textTransform: "uppercase" }}>
-          Cards in this folder ({visibleCards.length}
-          {tagFilter.length > 0 && ` of ${nodeCards.length}`})
-        </span>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: "var(--on-shell-muted)", letterSpacing: 0.5, textTransform: "uppercase" }}>{t("Cards in this folder ({0}{1})", [visibleCards.length, tagFilter.length > 0 && t(" of {0}", [nodeCards.length])])}</span>
         {/* Filing is something you do to several cards at once far more often
             than to one, so the list gets a picking mode rather than a "move"
             item hidden inside every card's editor. */}
         {visibleCards.length > 0 && (
           <SmallButton onClick={() => setSelection(selection ? null : new Set())}>
-            {selection ? "Cancel" : "Select"}
+            {selection ? t("Cancel") : t("Select")}
           </SmallButton>
         )}
       </div>
@@ -2090,8 +2065,8 @@ function Library({
       {visibleCards.length === 0 ? (
         <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13.5 }}>
           {tagFilter.length > 0
-            ? "No cards here carry all of those tags."
-            : "No cards here yet. Add one, or drop into a subcategory."}
+            ? t("No cards here carry all of those tags.")
+            : t("No cards here yet. Add one, or drop into a subcategory.")}
         </p>
       ) : (
         <div style={{ background: "var(--card-bg)", borderRadius: 10, padding: "4px 16px", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }}>
@@ -2173,7 +2148,7 @@ function Library({
       {leechSheet}
       {orphanSheet}
       {extra === "speech" && (
-        <Sheet title={`Read aloud — ${trail[0].name}`} onClose={() => setExtra(null)}>
+        <Sheet title={t("Read aloud — {0}", [trail[0].name])} onClose={() => setExtra(null)}>
           {/* Configured per subject, not per card: a vocabulary subject is one
               language on each side for all of its cards, and asking per card
               would be a setting nobody would ever finish filling in. */}
@@ -2231,19 +2206,13 @@ function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
   const target = folders.find((f) => f.nodeId === targetId) || null;
 
   return (
-    <Sheet title={`Cards without a folder (${orphans.length})`} onClose={onClose}>
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "0 0 14px" }}>
-        These cards are still here and still in your study queue, but the folder
-        they were filed in is gone, so no folder can show them. Put them
-        somewhere and they'll behave like any other card.
-      </p>
+    <Sheet title={t("Cards without a folder ({0})", [orphans.length])} onClose={onClose}>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "0 0 14px" }}>{t("These cards are still here and still in your study queue, but the folder they were filed in is gone, so no folder can show them. Put them somewhere and they'll behave like any other card.")}</p>
       {folders.length === 0 ? (
-        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", margin: "0 0 14px" }}>
-          Make a subject first, then come back and file them into it.
-        </p>
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", margin: "0 0 14px" }}>{t("Make a subject first, then come back and file them into it.")}</p>
       ) : (
         <div style={{ marginBottom: 18 }}>
-          <Label style={{ color: "var(--on-shell-muted)" }}>Put them in</Label>
+          <Label style={{ color: "var(--on-shell-muted)" }}>{t("Put them in")}</Label>
           <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={selectStyle}>
             {folders.map((f) => (
               <option key={f.nodeId} value={f.nodeId}>{"\u00a0".repeat(f.depth * 2)}{f.name}</option>
@@ -2257,20 +2226,14 @@ function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <div style={{ minWidth: 0 }}>
-              <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, color: "var(--on-shell-strong)" }}>
-                {group.cards.length} card{group.cards.length === 1 ? "" : "s"} from one folder
-              </span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>
-                last worked on {group.lastEdited ? new Date(group.lastEdited).toLocaleDateString() : "unknown"}
-              </span>
+              <span style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, color: "var(--on-shell-strong)" }}>{t("{0} card{1} from one folder", [group.cards.length, group.cards.length === 1 ? "" : "s"])}</span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>{t("last worked on {0}", [group.lastEdited ? new Date(group.lastEdited).toLocaleDateString(appLocale()) : t("unknown")])}</span>
             </div>
             {folders.length > 0 && (
               <GhostButton
                 onClick={() => onRehome(group.cards.map((c) => c.id), target)}
                 style={{ fontSize: 12.5, padding: "8px 12px", minHeight: 38, flexShrink: 0 }}
-              >
-                Move these
-              </GhostButton>
+              >{t("Move these")}</GhostButton>
             )}
           </div>
           {group.cards.slice(0, 4).map((c) => (
@@ -2279,21 +2242,17 @@ function LooseCardsSheet({ orphans, subjects, onClose, onRehome, onEdit }) {
               padding: "5px 0", cursor: "pointer", WebkitTapHighlightColor: "transparent",
             }}>
               <span style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
-                {c.front || "(picture)"}
+                {c.front || t("(picture)")}
               </span>
             </button>
           ))}
           {group.cards.length > 4 && (
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>
-              and {group.cards.length - 4} more
-            </span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>{t("and {0} more", [group.cards.length - 4])}</span>
           )}
         </div>
       ))}
       {folders.length > 0 && groups.length > 1 && (
-        <PrimaryButton onClick={() => onRehome(orphans.map((c) => c.id), target)}>
-          Move all {orphans.length} there
-        </PrimaryButton>
+        <PrimaryButton onClick={() => onRehome(orphans.map((c) => c.id), target)}>{t("Move all {0} there", [orphans.length])}</PrimaryButton>
       )}
     </Sheet>
   );
@@ -2311,9 +2270,7 @@ function MoveBar({ count, allSelected, onSelectAll, onClear, onMove }) {
       boxShadow: "0 -4px 18px rgba(0,0,0,0.3)", padding: "10px 12px",
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
     }}>
-      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--text-secondary)" }}>
-        {count} selected
-      </span>
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--text-secondary)" }}>{t("{0} selected", [count])}</span>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         {/* Themed tokens, not SmallButton: that one is painted for the dark
             shell (cream on translucent white) and this bar sits on a card,
@@ -2322,11 +2279,9 @@ function MoveBar({ count, allSelected, onSelectAll, onClear, onMove }) {
           onClick={allSelected ? onClear : onSelectAll}
           style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", fontSize: 12.5, padding: "8px 14px", minHeight: 38, flexShrink: 0 }}
         >
-          {allSelected ? "None" : "All"}
+          {allSelected ? t("None") : t("All")}
         </GhostButton>
-        <PrimaryButton onClick={onMove} disabled={count === 0}>
-          Move
-        </PrimaryButton>
+        <PrimaryButton onClick={onMove} disabled={count === 0}>{t("Move")}</PrimaryButton>
       </div>
     </div>
   );
@@ -2348,16 +2303,13 @@ function MoveCardsSheet({ cards, selectedIds, subjects, fromNodeId, onClose, onM
   const alongForTheRide = moving.length - selectedIds.length;
 
   return (
-    <Sheet title={`Move ${moving.length} card${moving.length === 1 ? "" : "s"}`} onClose={onClose}>
+    <Sheet title={t("Move {0} card{1}", [moving.length, moving.length === 1 ? "" : "s"])} onClose={onClose}>
       {folders.length === 0 ? (
-        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", margin: "0 0 14px" }}>
-          There is nowhere else to put them yet. Add another subject or
-          subcategory first.
-        </p>
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--on-shell-muted)", margin: "0 0 14px" }}>{t("There is nowhere else to put them yet. Add another subject or subcategory first.")}</p>
       ) : (
         <>
           <div style={{ marginBottom: 14 }}>
-            <Label style={{ color: "var(--on-shell-muted)" }}>Move to</Label>
+            <Label style={{ color: "var(--on-shell-muted)" }}>{t("Move to")}</Label>
             <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={selectStyle}>
               {folders.map((f) => (
                 <option key={f.nodeId} value={f.nodeId}>{"\u00a0".repeat(f.depth * 2)}{f.name}</option>
@@ -2373,19 +2325,14 @@ function MoveCardsSheet({ cards, selectedIds, subjects, fromNodeId, onClose, onM
           {alongForTheRide > 0 && (
             <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-strong)", lineHeight: 1.5, margin: "0 0 14px" }}>
               {alongForTheRide === 1
-                ? "One more card is coming too: it was made from the same fill-in-the-blank text or the same picture, and splitting the set up would break editing it."
-                : `${alongForTheRide} more cards are coming too: they were made from the same fill-in-the-blank texts or pictures, and splitting a set up would break editing it.`}
+                ? t("One more card is coming too: it was made from the same fill-in-the-blank text or the same picture, and splitting the set up would break editing it.")
+                : t("{0} more cards are coming too: they were made from the same fill-in-the-blank texts or pictures, and splitting a set up would break editing it.", [alongForTheRide])}
             </p>
           )}
 
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "0 0 16px" }}>
-            Everything a card has learned travels with it — the schedule, the
-            streak, the tags. Only the folder changes.
-          </p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "0 0 16px" }}>{t("Everything a card has learned travels with it — the schedule, the streak, the tags. Only the folder changes.")}</p>
 
-          <PrimaryButton onClick={() => onMove(moving, target)}>
-            Move {moving.length === 1 ? "it" : "them"} here
-          </PrimaryButton>
+          <PrimaryButton onClick={() => onMove(moving, target)}>{t("Move {0} here", [moving.length === 1 ? "it" : "them"])}</PrimaryButton>
         </>
       )}
     </Sheet>
@@ -2395,8 +2342,8 @@ function MoveCardsSheet({ cards, selectedIds, subjects, fromNodeId, onClose, onM
 function RenameNodeSheet({ initialName, isSubject, value, onChange, onClose, onSave }) {
   const label = isSubject ? "subject" : "folder";
   return (
-    <Sheet title={`Rename ${label}`} onClose={onClose}>
-      <Label style={{ color: "var(--on-shell-muted)" }}>Name</Label>
+    <Sheet title={t("Rename {0}", [label])} onClose={onClose}>
+      <Label style={{ color: "var(--on-shell-muted)" }}>{t("Name")}</Label>
       <TextField
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -2404,12 +2351,8 @@ function RenameNodeSheet({ initialName, isSubject, value, onChange, onClose, onS
         autoFocus
         placeholder={initialName}
       />
-      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "12px 0 16px" }}>
-        Cards and subfolders stay exactly where they are.
-      </p>
-      <PrimaryButton onClick={onSave} disabled={!value.trim()} style={{ width: "100%" }}>
-        Save name
-      </PrimaryButton>
+      <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "var(--on-shell-muted)", lineHeight: 1.5, margin: "12px 0 16px" }}>{t("Cards and subfolders stay exactly where they are.")}</p>
+      <PrimaryButton onClick={onSave} disabled={!value.trim()} style={{ width: "100%" }}>{t("Save name")}</PrimaryButton>
     </Sheet>
   );
 }
@@ -2448,21 +2391,19 @@ function NodeRow({ name, cards, color, tabColor, onOpen, onRename, renameTitle, 
                 textTransform: compact ? "uppercase" : "none",
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}>{name}</span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>
-                {count} card{count !== 1 ? "s" : ""}{due > 0 ? ` · ${due} due` : ""}
-              </span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)" }}>{t("{0} card{1}{2}", [count, count !== 1 ? "s" : "", due > 0 ? ` · ${due} due` : ""])}</span>
             </div>
           </button>
           <div className="fc-node-actions" style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
             {onStudy && (
-              <button onClick={onStudy} title={`Study ${name}`} style={{
+              <button onClick={onStudy} title={t("Study {0}", [name])} style={{
                 background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 8,
                 padding: "8px 12px", minHeight: 40, display: "flex", alignItems: "center", gap: 5,
                 fontFamily: "Inter, sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--text-strong)",
                 cursor: "pointer", WebkitTapHighlightColor: "transparent",
-              }}><BookOpen size={13} /> Study</button>
+              }}><BookOpen size={13} />{t(" Study")}</button>
             )}
-            {onRename && <IconBtn title={renameTitle || "Rename folder"} onClick={onRename}><Pencil size={14} color="var(--text-secondary)" /></IconBtn>}
+            {onRename && <IconBtn title={renameTitle || t("Rename folder")} onClick={onRename}><Pencil size={14} color="var(--text-secondary)" /></IconBtn>}
             <IconBtn title={deleteTitle} danger onClick={onDelete}><Trash2 size={14} color="#B5533C" /></IconBtn>
           </div>
         </div>
@@ -2473,20 +2414,18 @@ function NodeRow({ name, cards, color, tabColor, onOpen, onRename, renameTitle, 
           </div>
         )}
       </div>
-      {onExam && <button className="fc-exam-button" onClick={onExam} aria-label={`Set exam date for ${name}`}>
-        {exam ? `Exam ${exam.date} · ${exam.days < 0 ? 'update date' : exam.days === 0 ? 'today' : `${exam.days} days left`}` : 'Set exam date'}
-        {exam && exam.days >= 0 && <span>{exam.catchUp ? 'Extra time needed' : exam.finalReview ? 'Final review' : `${exam.newPerDay} new/day + due reviews`}</span>}
+      {onExam && <button className="fc-exam-button" onClick={onExam} aria-label={t("Set exam date for {0}", [name])}>
+        {exam ? t("Exam {0} · {1}", [exam.date, exam.days < 0 ? 'update date' : exam.days === 0 ? t('today') : `${exam.days} days left`]) : t("Set exam date")}
+        {exam && exam.days >= 0 && <span>{exam.catchUp ? t("Extra time needed") : exam.finalReview ? t("Final review") : t("{0} new/day + due reviews", [exam.newPerDay])}</span>}
       </button>}
-      {!compact && <IndexCardTab color={tabColor} label="Tap to open" />}
+      {!compact && <IndexCardTab color={tabColor} label={t("Tap to open")} />}
     </div>
   );
 }
 
 function LearningSummary({ cards }) {
   const summary = studyPlan.learningSummary(cards);
-  return <p className="fc-learning-summary" title="Familiar means a review strength of at least 3; it is not a guarantee of exam readiness.">
-    {summary.familiar} familiar · {summary.learning} learning · {summary.unseen} unseen{summary.suspended ? ` · ${summary.suspended} set aside` : ''}
-  </p>;
+  return <p className="fc-learning-summary" title={t("Familiar means a review strength of at least 3; it is not a guarantee of exam readiness.")}>{t("{0} familiar · {1} learning · {2} unseen{3}", [summary.familiar, summary.learning, summary.unseen, summary.suspended ? ` · ${summary.suspended} set aside` : ''])}</p>;
 }
 
 function SmallButton({ onClick, children }) {
@@ -2505,8 +2444,7 @@ function Breadcrumb({ trail, onJump }) {
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 2 }}>
       <button onClick={() => onJump(0)} style={crumbStyle}>
-        <Layers size={13} /> All subjects
-      </button>
+        <Layers size={13} />{t(" All subjects")}</button>
       {trail.map((n, i) => (
         <span key={n.id} style={{ display: "flex", alignItems: "center", gap: 2 }}>
           <ChevronRight size={12} color="#5A6E92" />
@@ -2532,16 +2470,11 @@ function EmptyState({ onAdd, onImport }) {
       border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 12, padding: "32px 20px",
       textAlign: "center", marginTop: 12,
     }}>
-      <p style={{ color: "#EDE6D3", fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 19, margin: "0 0 6px" }}>
-        Let's get your first cards in.
-      </p>
-      <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>
-        Snap a photo of a vocabulary list, drop in a PDF, or type a few by hand.
-        Your streak starts the day you answer your first card.
-      </p>
+      <p style={{ color: "#EDE6D3", fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 19, margin: "0 0 6px" }}>{t("Let's get your first cards in.")}</p>
+      <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>{t("Snap a photo of a vocabulary list, drop in a PDF, or type a few by hand. Your streak starts the day you answer your first card.")}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 260, margin: "0 auto" }}>
-        <PrimaryButton onClick={onImport}><Sparkles size={16} /> Import cards</PrimaryButton>
-        <GhostButton onClick={onAdd}><Plus size={16} /> Start a subject by hand</GhostButton>
+        <PrimaryButton onClick={onImport}><Sparkles size={16} />{t(" Import cards")}</PrimaryButton>
+        <GhostButton onClick={onAdd}><Plus size={16} />{t(" Start a subject by hand")}</GhostButton>
       </div>
     </div>
   );
@@ -2581,7 +2514,7 @@ function CardRow({ card, onEdit, onDelete, selectable, selected, onToggle }) {
           <span
             role="checkbox"
             aria-checked={!!selected}
-            aria-label={`Select ${card.front || "this card"}`}
+            aria-label={t("Select {0}", [card.front || t("this card")])}
             style={{
               width: 20, height: 20, borderRadius: 6, flexShrink: 0,
               border: `1.5px solid ${selected ? "var(--accent)" : "var(--card-border)"}`,
@@ -2601,13 +2534,13 @@ function CardRow({ card, onEdit, onDelete, selectable, selected, onToggle }) {
         )}
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--text-strong)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {leechLib.isSuspended(card) && <span title="Set aside — you keep missing this one">⚠︎ </span>}
-            {title}
+            {leechLib.isSuspended(card) && <span title={t("Set aside — you keep missing this one")}>⚠︎ </span>}
+            {card.frontImageId ? t(title) : title}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
             <MasteryPips card={card} showLabel />
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)" }}>
-              {G.describeDue(card)}
+              {t(G.describeDue(card))}
             </span>
             {tags.map((t) => (
               <span key={t} style={{ fontSize: 10.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif" }}>#{t}</span>
@@ -2617,8 +2550,8 @@ function CardRow({ card, onEdit, onDelete, selectable, selected, onToggle }) {
       </div>
       {!selectable && (
         <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-          <IconBtn title="Edit" onClick={onEdit}><Pencil size={13.5} color="var(--text-secondary)" /></IconBtn>
-          <IconBtn title="Delete" danger onClick={onDelete}><Trash2 size={13.5} color="#B5533C" /></IconBtn>
+          <IconBtn title={t("Edit")} onClick={onEdit}><Pencil size={13.5} color="var(--text-secondary)" /></IconBtn>
+          <IconBtn title={t("Delete")} danger onClick={onDelete}><Trash2 size={13.5} color="#B5533C" /></IconBtn>
         </div>
       )}
     </div>
@@ -2735,9 +2668,9 @@ function CardFormModal({ trail, subject, form, existingCard, tagSuggestions, onC
       }} className="fc-scroll">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 19, color: "var(--text-strong)", margin: 0 }}>
-            {existingCard ? "Edit card" : "New card"}
+            {existingCard ? t("Edit card") : t("New card")}
           </h3>
-          <IconBtn onClick={onClose}><X size={18} color="var(--text-secondary)" /></IconBtn>
+          <IconBtn onClick={onClose} title={t("Close")}><X size={18} color="var(--text-secondary)" /></IconBtn>
         </div>
         <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)", margin: "0 0 14px", textTransform: "uppercase", letterSpacing: 0.5 }}>
           {trail.map(n => n.name).join(" / ")}
@@ -2760,7 +2693,7 @@ function CardFormModal({ trail, subject, form, existingCard, tagSuggestions, onC
                   WebkitTapHighlightColor: "transparent",
                 }}
               >
-                {label}
+                {t(label)}
               </button>
             ))}
           </div>
@@ -2775,10 +2708,10 @@ function CardFormModal({ trail, subject, form, existingCard, tagSuggestions, onC
 
         {kind === "occlusion" && (
           <>
-            <Label>Picture</Label>
+            <Label>{t("Picture")}</Label>
             <ImagePicker
               imageId={frontImageId}
-              label="the diagram"
+              label={t("the diagram")}
               onPick={(file) => pickImage(file, setFrontImageId)}
               onRemove={() => { removeImage(setFrontImageId); setMasks([]); }}
             />
@@ -2797,49 +2730,45 @@ function CardFormModal({ trail, subject, form, existingCard, tagSuggestions, onC
 
         {kind === "basic" && (
         <>
-        <Label>Front (question / prompt)</Label>
+        <Label>{t("Front (question / prompt)")}</Label>
         <TypeToggle value={frontType} onChange={setFrontType} />
         {frontType === "text" ? (
-          <TextField value={front} onChange={e => setFront(e.target.value)} placeholder="e.g. What is the powerhouse of the cell?" area
+          <TextField value={front} onChange={e => setFront(e.target.value)} placeholder={t("e.g. What is the powerhouse of the cell?")} area
             style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
         ) : (
-          <ImagePicker imageId={frontImageId} label="the front"
+          <ImagePicker imageId={frontImageId} label={t("the front")}
             onPick={file => pickImage(file, setFrontImageId)}
             onRemove={() => removeImage(setFrontImageId)} />
         )}
 
-        <Label>Back (answer)</Label>
+        <Label>{t("Back (answer)")}</Label>
         <TypeToggle value={backType} onChange={setBackType} />
         {backType === "text" ? (
-          <TextField value={back} onChange={e => setBack(e.target.value)} placeholder="e.g. The mitochondria" area
+          <TextField value={back} onChange={e => setBack(e.target.value)} placeholder={t("e.g. The mitochondria")} area
             style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
         ) : (
-          <ImagePicker imageId={backImageId} label="the back"
+          <ImagePicker imageId={backImageId} label={t("the back")}
             onPick={file => pickImage(file, setBackImageId)}
             onRemove={() => removeImage(setBackImageId)} />
         )}
 
         {imageError && (
           <p style={{ fontSize: 12.5, color: "#B5533C", fontFamily: "Inter, sans-serif", margin: "-6px 0 12px", fontWeight: 600 }}>
-            {imageError}
+            {t(imageError)}
           </p>
         )}
 
         {backType === "image" && (
-          <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 12px" }}>
-            A picture answer can only be flipped — the drills that check what you typed need a text answer to compare against.
-          </p>
+          <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 12px" }}>{t("A picture answer can only be flipped — the drills that check what you typed need a text answer to compare against.")}</p>
         )}
 
         {backType === "text" && (
           <>
-            <Label>Extra wrong options (optional, comma-separated)</Label>
+            <Label>{t("Extra wrong options (optional, comma-separated)")}</Label>
             <TextField value={manualOptions} onChange={e => setManualOptions(e.target.value)}
-              placeholder="e.g. Ribosome, Golgi apparatus, Nucleus"
+              placeholder={t("e.g. Ribosome, Golgi apparatus, Nucleus")}
               style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 4 }} />
-            <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 12px" }}>
-              Used as the wrong answers whenever a drill asks you to choose. Leave it blank and they're drawn from your other cards, or written for you by {"AI"}.
-            </p>
+            <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 12px" }}>{t("Used as the wrong answers whenever a drill asks you to choose. Leave it blank and they're drawn from your other cards, or written for you by {0}.", ["AI"])}</p>
           </>
         )}
         </>
@@ -2852,9 +2781,8 @@ function CardFormModal({ trail, subject, form, existingCard, tagSuggestions, onC
 
         <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
           <PrimaryButton onClick={save} style={{ flex: 1 }} disabled={!canSave}>
-            <Check size={16} /> Save card
-          </PrimaryButton>
-          <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>Cancel</GhostButton>
+            <Check size={16} />{t(" Save card")}</PrimaryButton>
+          <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>{t("Cancel")}</GhostButton>
         </div>
       </div>
     </div>
@@ -2875,7 +2803,7 @@ function TypeToggle({ value, onChange }) {
           background: value === id ? "var(--brand)" : "transparent",
           color: value === id ? "#FBF7EC" : "var(--text-secondary)",
           display: "flex", alignItems: "center", gap: 5, WebkitTapHighlightColor: "transparent",
-        }}><Icon size={13} /> {label}</button>
+        }}><Icon size={13} /> {t(label)}</button>
       ))}
     </div>
   );
@@ -2908,16 +2836,15 @@ function ImagePicker({ imageId, onPick, onRemove, label }) {
           <img src={src} alt="" style={{ maxWidth: "100%", maxHeight: 180, borderRadius: 8, display: "block" }} />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <GhostButton onClick={() => inputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", fontSize: 13, padding: "9px 14px", minHeight: 38 }}>
-              <ImageIcon size={14} /> {busy ? "Saving…" : "Replace"}
+              <ImageIcon size={14} /> {busy ? t("Saving…") : t("Replace")}
             </GhostButton>
             <GhostButton onClick={onRemove} style={{ color: "#B5533C", borderColor: "#B5533C", fontSize: 13, padding: "9px 14px", minHeight: 38 }}>
-              <X size={14} /> Remove
-            </GhostButton>
+              <X size={14} />{t(" Remove")}</GhostButton>
           </div>
         </div>
       ) : (
         <GhostButton onClick={() => inputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }}>
-          <ImageIcon size={16} /> {busy ? "Saving picture…" : `Choose picture for ${label}`}
+          <ImageIcon size={16} /> {busy ? t("Saving picture…") : t("Choose picture for {0}", [label])}
         </GhostButton>
       )}
     </div>
@@ -3264,10 +3191,8 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
         padding: 22, animation: "popIn 0.15s ease-out", maxHeight: "88vh", overflowY: "auto",
       }} className="fc-scroll">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 19, color: "var(--text-strong)", margin: 0 }}>
-            Import cards
-          </h3>
-          <IconBtn onClick={onClose}><X size={18} color="var(--text-secondary)" /></IconBtn>
+          <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 19, color: "var(--text-strong)", margin: 0 }}>{t("Import cards")}</h3>
+          <IconBtn onClick={onClose} title={t("Close")}><X size={18} color="var(--text-secondary)" /></IconBtn>
         </div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
@@ -3280,7 +3205,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
               color: importMode === m.id ? "#FBF7EC" : "var(--text-secondary)",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
               WebkitTapHighlightColor: "transparent",
-            }}><m.icon size={16} />{m.label}</button>
+            }}><m.icon size={16} />{t(m.label)}</button>
           ))}
         </div>
 
@@ -3288,17 +3213,17 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             for one here would be asking the user to overrule their own decks. */}
         {!anki && (
           <>
-            <Label>Subject</Label>
+            <Label>{t("Subject")}</Label>
             <TextField value={subjectName} onChange={e => setSubjectName(e.target.value)}
-              placeholder="e.g. Biology (existing or new)" list="import-subjects"
+              placeholder={t("e.g. Biology (existing or new)")} list="import-subjects"
               style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
             <datalist id="import-subjects">
               {subjects.map(s => <option key={s.id} value={s.name} />)}
             </datalist>
 
-            <Label>Subcategory</Label>
+            <Label>{t("Subcategory")}</Label>
             <TextField value={categoryName} onChange={e => setCategoryName(e.target.value)}
-              placeholder="e.g. Cell structure (existing or new)" list="import-categories"
+              placeholder={t("e.g. Cell structure (existing or new)")} list="import-categories"
               style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
             <datalist id="import-categories">
               {(matchedSubject?.children || []).map(c => <option key={c.id} value={c.name} />)}
@@ -3308,12 +3233,11 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
 
         {importMode === "paste" && (
           <>
-            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px" }}>
-              Paste flashcards generated elsewhere. One card per line, front and back separated by a <strong>|</strong>.
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px" }}>{t("Paste flashcards generated elsewhere. One card per line, front and back separated by a ")}<strong>|</strong>.
             </p>
-            <Label>Cards</Label>
+            <Label>{t("Cards")}</Label>
             <TextField value={text} onChange={e => setText(e.target.value)} area
-              placeholder={"What is the powerhouse of the cell? | The mitochondria\nWhat pigment makes plants green? | Chlorophyll"}
+              placeholder={t("What is the powerhouse of the cell? | The mitochondria\nWhat pigment makes plants green? | Chlorophyll")}
               style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 4, minHeight: 160 }} />
           </>
         )}
@@ -3321,8 +3245,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
         {importMode === "file" && !pendingCards && !anki && !adDecks && (
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
-              <Sparkles size={13} color="var(--highlight)" /> AnkiDroid decks (.apkg) and .txt/.csv/.md files with "Front | Back" lines import instantly, no key needed. PDFs, Word docs, and anything else get read by {aiLabel}.
-            </p>
+              <Sparkles size={13} color="var(--highlight)" />{t(" AnkiDroid decks (.apkg) and .txt/.csv/.md files with \"Front | Back\" lines import instantly, no key needed. PDFs, Word docs, and anything else get read by {0}.", [aiLabel])}</p>
             {/* The trailing catch-all is load-bearing on Android: the WebView maps
                 these extensions to MIME types through
                 MimeTypeMap, and .apkg/.colpkg aren't registered there — without a
@@ -3331,22 +3254,19 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             <input ref={fileInputRef} type="file" accept=".apkg,.colpkg,.txt,.csv,.tsv,.md,.pdf,.docx,*/*" style={{ display: "none" }}
               onChange={e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ""; }} />
             <GhostButton onClick={() => fileInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", width: "100%" }} >
-              <FileUp size={16} /> {busy ? "Reading file…" : "Choose file"}
+              <FileUp size={16} /> {busy ? t("Reading file…") : t("Choose file")}
             </GhostButton>
 
             {adStatus?.installed && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "14px 0" }}>
                   <div style={{ flex: 1, height: 1, background: "var(--card-border)" }} />
-                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)", letterSpacing: 0.5 }}>OR</span>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--text-faint)", letterSpacing: 0.5 }}>{t("OR")}</span>
                   <div style={{ flex: 1, height: 1, background: "var(--card-border)" }} />
                 </div>
-                <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
-                  AnkiDroid is on this phone — take the decks straight from it, no
-                  export needed.
-                </p>
+                <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>{t("AnkiDroid is on this phone — take the decks straight from it, no export needed.")}</p>
                 <PrimaryButton onClick={openAnkiDroid} disabled={!!adBusy} style={{ width: "100%" }}>
-                  <Sparkles size={16} /> {adBusy || "Import from AnkiDroid"}
+                  <Sparkles size={16} /> {adBusy || t("Import from AnkiDroid")}
                 </PrimaryButton>
               </>
             )}
@@ -3358,10 +3278,8 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             <p style={{
               fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
               textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 8px",
-            }}>Your AnkiDroid decks</p>
-            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px", lineHeight: 1.45 }}>
-              Pick what to bring over. Only the ticked decks are read.
-            </p>
+            }}>{t("Your AnkiDroid decks")}</p>
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px", lineHeight: 1.45 }}>{t("Pick what to bring over. Only the ticked decks are read.")}</p>
             <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 12 }} className="fc-scroll">
               {adDecks.map(name => {
                 const on = adChosen.has(name);
@@ -3400,11 +3318,8 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
             <p style={{
               fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
               textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 8px",
-            }}>Decks found</p>
-            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px", lineHeight: 1.45 }}>
-              Each deck becomes a subject, and a nested deck becomes a subcategory
-              inside it. Untick anything you don't want.
-            </p>
+            }}>{t("Decks found")}</p>
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 12px", lineHeight: 1.45 }}>{t("Each deck becomes a subject, and a nested deck becomes a subcategory inside it. Untick anything you don't want.")}</p>
             <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }} className="fc-scroll">
               {anki.decks.map(deck => {
                 const on = ankiChosen.has(deck.name);
@@ -3426,9 +3341,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
                         display: "block", fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
                         color: "var(--text-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       }}>{deck.subject}</span>
-                      <span style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)" }}>
-                        {deck.category ? `${deck.category} · ` : ""}{deck.cards.length} card{deck.cards.length !== 1 ? "s" : ""}
-                      </span>
+                      <span style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)" }}>{t("{0}{1} card{2}", [deck.category ? `${deck.category} · ` : "", deck.cards.length, deck.cards.length !== 1 ? "s" : ""])}</span>
                     </span>
                   </button>
                 );
@@ -3446,8 +3359,8 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
           <>
             <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 5 }}>
               <Sparkles size={13} color="var(--highlight)" /> {ocr.isAvailable()
-                ? `Take or choose a photo of a book page or your notes. Your phone reads the text itself, then ${aiLabel} turns it into cards — offline you still get the text, and plain word lists become cards on their own.`
-                : `Take or choose a photo of a book page or your notes — ${aiLabel} reads it and builds the cards.`}
+                ? t("Take or choose a photo of a book page or your notes. Your phone reads the text itself, then {0} turns it into cards — offline you still get the text, and plain word lists become cards on their own.", [aiLabel])
+                : t("Take or choose a photo of a book page or your notes — {0} reads it and builds the cards.", [aiLabel])}
             </p>
             {needsApiKeyUpfront ? (
               <ApiKeyPrompt onOpenSettings={onOpenSettings} googleUser={googleUser} />
@@ -3456,12 +3369,12 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
                 <input ref={photoInputRef} type="file" accept={PHOTO_ACCEPT} capture="environment" style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
                 <GhostButton onClick={() => photoInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
-                  <Camera size={16} /> {busy ? photoBusyLabel : "Take photo"}
+                  <Camera size={16} /> {busy ? photoBusyLabel : t("Take photo")}
                 </GhostButton>
                 <input ref={galleryInputRef} type="file" accept={PHOTO_ACCEPT} style={{ display: "none" }}
                   onChange={e => { const f = e.target.files[0]; if (f) handlePhoto(f); e.target.value = ""; }} />
                 <GhostButton onClick={() => galleryInputRef.current?.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
-                  <ImageIcon size={16} /> {busy ? photoBusyLabel : "From gallery"}
+                  <ImageIcon size={16} /> {busy ? photoBusyLabel : t("From gallery")}
                 </GhostButton>
               </div>
             )}
@@ -3470,10 +3383,7 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
 
         {pendingCards && (
           <>
-            <Label>
-              Review ({pendingCards.length} card{pendingCards.length !== 1 ? "s" : ""})
-              {freeLeft != null && ` · ${freeLeft} free import${freeLeft !== 1 ? "s" : ""} left today`}
-            </Label>
+            <Label>{t("Review ({0} card{1}){2}", [pendingCards.length, pendingCards.length !== 1 ? "s" : "", freeLeft != null && ` · ${freeLeft} free import${freeLeft !== 1 ? "s" : ""} left today`])}</Label>
             <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 10 }} className="fc-scroll">
               {pendingCards.map((c, i) => (
                 <div key={i} style={{
@@ -3484,11 +3394,11 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
                     <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.front}</div>
                     <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.back}</div>
                   </div>
-                  <IconBtn title="Remove" onClick={() => removePendingCard(i)}><X size={14} color="#B5533C" /></IconBtn>
+                  <IconBtn title={t("Remove")} onClick={() => removePendingCard(i)}><X size={14} color="#B5533C" /></IconBtn>
                 </div>
               ))}
               {pendingCards.length === 0 && (
-                <p style={{ fontSize: 12.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif" }}>All cards removed.</p>
+                <p style={{ fontSize: 12.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif" }}>{t("All cards removed.")}</p>
               )}
             </div>
           </>
@@ -3497,37 +3407,34 @@ function ImportModal({ subjects, onClose, onImport, onImportAnki, googleUser, on
         {error === "NEEDS_KEY" && <ApiKeyPrompt onOpenSettings={onOpenSettings} googleUser={googleUser} />}
         {error && error !== "NEEDS_KEY" && (
           <p style={{ fontSize: 12.5, color: "#B5533C", fontFamily: "Inter, sans-serif", margin: "8px 0 4px", fontWeight: 600 }}>
-            {error}
+            {t(error)}
           </p>
         )}
         {result && (
           <p style={{ fontSize: 12.5, color: "var(--success)", fontFamily: "Inter, sans-serif", margin: "8px 0 4px", fontWeight: 600 }}>
-            {result}
+            {t(result)}
           </p>
         )}
 
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           {importMode === "paste" && (
             <PrimaryButton onClick={doPasteImport} style={{ flex: 1 }} disabled={!canPasteImport}>
-              <Upload size={16} /> Import cards
-            </PrimaryButton>
+              <Upload size={16} />{t(" Import cards")}</PrimaryButton>
           )}
           {(importMode === "file" || importMode === "photo") && pendingCards && (
             <PrimaryButton onClick={confirmPendingImport} style={{ flex: 1 }} disabled={!canUpload || pendingCards.length === 0}>
-              <Check size={16} /> Import {pendingCards.length} card{pendingCards.length !== 1 ? "s" : ""}
-            </PrimaryButton>
+              <Check size={16} />{t(" Import {0} card{1}", [pendingCards.length, pendingCards.length !== 1 ? "s" : ""])}</PrimaryButton>
           )}
           {anki && (
             <PrimaryButton onClick={confirmAnkiImport} style={{ flex: 1 }} disabled={ankiSelectedCards === 0}>
-              <Check size={16} /> Import {ankiSelectedCards} card{ankiSelectedCards !== 1 ? "s" : ""}
-            </PrimaryButton>
+              <Check size={16} />{t(" Import {0} card{1}", [ankiSelectedCards, ankiSelectedCards !== 1 ? "s" : ""])}</PrimaryButton>
           )}
           {adDecks && (
             <PrimaryButton onClick={loadAnkiDroidDecks} style={{ flex: 1 }} disabled={adChosen.size === 0 || !!adBusy}>
-              <Check size={16} /> {adBusy || `Read ${adChosen.size} deck${adChosen.size !== 1 ? "s" : ""}`}
+              <Check size={16} /> {adBusy || t("Read {0} deck{1}", [adChosen.size, adChosen.size !== 1 ? "s" : ""])}
             </PrimaryButton>
           )}
-          <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>Done</GhostButton>
+          <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>{t("Done")}</GhostButton>
         </div>
       </div>
     </div>
@@ -3551,11 +3458,10 @@ function ApiKeyPrompt({ onOpenSettings, googleUser }) {
   return (
     <div style={{ background: "var(--input-bg)", borderRadius: 10, padding: 16, textAlign: "center" }}>
       <p style={{ fontSize: 12.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", margin: "0 0 10px" }}>
-        {message}
+        {t(message)}
       </p>
       <GhostButton onClick={onOpenSettings} style={{ color: "var(--brand)", borderColor: "var(--brand)", margin: "0 auto" }}>
-        <Key size={15} /> Add API key in Settings
-      </GhostButton>
+        <Key size={15} />{t(" Add API key in Settings")}</GhostButton>
     </div>
   );
 }
@@ -3582,6 +3488,7 @@ function Switch({ checked, onChange }) {
 // them — that Google's free tier may train on what you import, and that an
 // API key never leaves the device.
 function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetMascot, onSetListed, onExport, onImport, onExportCards, onOpenStats, onAddSharedDeck, onReplayWalkthrough, diagInfo }) {
+  const { choice: languageChoice, setLanguage } = useAppLanguage();
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
   const mascotMood = widget.moodNow(game);
   const [reminderBusy, setReminderBusy] = useState(false);
@@ -3625,16 +3532,24 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
         padding: 22, animation: "popIn 0.15s ease-out", maxHeight: "88vh", overflowY: "auto",
       }} className="fc-scroll">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 19, color: "var(--text-strong)", margin: 0 }}>
-            Settings
-          </h3>
-          <IconBtn onClick={onClose}><X size={18} color="var(--text-secondary)" /></IconBtn>
+          <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 19, color: "var(--text-strong)", margin: 0 }}>{t("Settings")}</h3>
+          <IconBtn onClick={onClose} title={t("Close")}><X size={18} color="var(--text-secondary)" /></IconBtn>
         </div>
+
+        <label htmlFor="app-language" style={{ display: "block", fontFamily: "Inter, sans-serif", fontSize: 14,
+          fontWeight: 500, color: "var(--text-strong)", marginBottom: 8 }}>{t("App language")}</label>
+        <select id="app-language" value={languageChoice} onChange={e => setLanguage(e.target.value)}
+          style={{ width: "100%", minHeight: 44, borderRadius: 8, padding: "10px 12px", fontSize: 14,
+            background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 8 }}>
+          {LANGUAGE_CHOICES.map(c => <option key={c.id} value={c.id}>{t(c.label)}</option>)}
+        </select>
+        <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "var(--text-faint)",
+          margin: "0 0 20px", lineHeight: 1.45 }}>{t("Applies immediately and is saved on this device.")}</p>
 
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-        }}>Appearance</p>
+        }}>{t("Appearance")}</p>
         <div style={{ display: "flex", gap: 6, marginBottom: theme === "system" ? 8 : 20 }}>
           {THEME_CHOICES.map(c => {
             const active = theme === c.id;
@@ -3646,7 +3561,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
                 color: active ? "#FBF7EC" : "var(--text-secondary)",
                 fontFamily: "Inter, sans-serif", fontSize: 13.5, fontWeight: 600,
                 WebkitTapHighlightColor: "transparent",
-              }}>{c.label}</button>
+              }}>{t(c.label)}</button>
             );
           })}
         </div>
@@ -3656,22 +3571,18 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           <p style={{
             fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-faint)",
             margin: "0 0 20px", lineHeight: 1.45,
-          }}>
-            Following your device — currently {darkMode ? "dark" : "light"}.
-          </p>
+          }}>{t("Following your device — currently {0}.", [darkMode ? t("dark") : t("light")])}</p>
         )}
         <div style={{ height: 1, background: "var(--card-border)", margin: "0 0 18px" }} />
 
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-        }}>Studying</p>
+        }}>{t("Studying")}</p>
         {reminders.isSupported() ? (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
-                Daily reminder
-              </span>
+              <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>{t("Daily reminder")}</span>
               <Switch
                 checked={!!game.reminder.enabled}
                 onChange={async () => {
@@ -3686,7 +3597,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
                 — once it's on — the times it will actually fire. */}
             {reminderNote && (
               <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 10px", lineHeight: 1.45 }}>
-                {reminderNote}
+                {t(reminderNote)}
               </p>
             )}
             {game.reminder.enabled && (
@@ -3700,10 +3611,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
             {!game.reminder.enabled && <div style={{ marginBottom: 18 }} />}
           </>
         ) : (
-          <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 14px", lineHeight: 1.45 }}>
-            Daily reminders need the installed Android app — the web version can't
-            schedule notifications.
-          </p>
+          <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 14px", lineHeight: 1.45 }}>{t("Daily reminders need the installed Android app — the web version can't schedule notifications.")}</p>
         )}
 
         {/* The mascot only exists on the home screen, so the picker follows
@@ -3712,9 +3620,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
         {widget.isSupported() && (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
-                Widget mascot
-              </span>
+              <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>{t("Widget mascot")}</span>
             </div>
             <div style={{ display: "flex", gap: 7, marginBottom: 8 }}>
               {widget.MASCOTS.map((m) => {
@@ -3724,9 +3630,9 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
                     key={m.id}
                     type="button"
                     onClick={() => onSetMascot(m.id)}
-                    aria-label={m.name}
+                    aria-label={t(m.name)}
                     aria-pressed={selected}
-                    title={m.name}
+                    title={t(m.name)}
                     style={{
                       flex: 1, padding: 5, cursor: "pointer", lineHeight: 0,
                       background: selected ? "var(--input-bg)" : "transparent",
@@ -3745,37 +3651,28 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
                 );
               })}
             </div>
-            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 18px", lineHeight: 1.45 }}>
-              Shown here in the mood it's in right now. Long-press your home
-              screen → Widgets → Flashcard Catalog to add it.
-            </p>
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 18px", lineHeight: 1.45 }}>{t("Shown here in the mood it's in right now. Long-press your home screen → Widgets → Flashcard Catalog to add it.")}</p>
           </>
         )}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
-            Show me on the global board
-          </span>
+          <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>{t("Show me on the global board")}</span>
           <Switch checked={game.listed !== false} onChange={() => onSetListed(game.listed === false)} />
         </div>
         {/* What is published is a privacy claim, and belongs next to the
             switch that decides it — not only in a tour seen once. */}
-        <p style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 20px", lineHeight: 1.45 }}>
-          Off leaves only your friends' boards. Either way: username, streak, level and weekly XP — nothing else.
-        </p>
+        <p style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 20px", lineHeight: 1.45 }}>{t("Off leaves only your friends' boards. Either way: username, streak, level and weekly XP — nothing else.")}</p>
         <div style={{ height: 1, background: "var(--card-border)", margin: "0 0 18px" }} />
 
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-        }}>Backup</p>
+        }}>{t("Backup")}</p>
         <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
           <GhostButton onClick={async () => setBackupNote((await onExport()) || "Backup saved.")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
-            <Download size={16} /> Export
-          </GhostButton>
+            <Download size={16} />{t(" Export")}</GhostButton>
           <GhostButton onClick={() => importInputRef.current && importInputRef.current.click()} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
-            <Upload size={16} /> Import
-          </GhostButton>
+            <Upload size={16} />{t(" Import")}</GhostButton>
           <input
             ref={importInputRef}
             type="file"
@@ -3786,7 +3683,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
         </div>
         {backupNote && (
           <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 10px" }}>
-            {backupNote}
+            {t(backupNote)}
           </p>
         )}
 
@@ -3797,43 +3694,30 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           <GhostButton
             onClick={async () => setBackupNote((await onExportCards("apkg")) || "Anki deck saved.")}
             style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}
-          >
-            Export to Anki
-          </GhostButton>
+          >{t("Export to Anki")}</GhostButton>
           <GhostButton
             onClick={async () => setBackupNote((await onExportCards("csv")) || "CSV saved.")}
             style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}
-          >
-            Export CSV
-          </GhostButton>
+          >{t("Export CSV")}</GhostButton>
         </div>
-        <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 18px", lineHeight: 1.45 }}>
-          The Anki package keeps your folders and your review schedule. CSV opens in a spreadsheet but
-          carries only the text. Pictures stay on this device either way.
-        </p>
+        <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 18px", lineHeight: 1.45 }}>{t("The Anki package keeps your folders and your review schedule. CSV opens in a spreadsheet but carries only the text. Pictures stay on this device either way.")}</p>
 
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-        }}>Study</p>
+        }}>{t("Study")}</p>
         <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-          <GhostButton onClick={onOpenStats} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
-            Statistics
-          </GhostButton>
-          <GhostButton onClick={onAddSharedDeck} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>
-            Add shared deck
-          </GhostButton>
+          <GhostButton onClick={onOpenStats} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>{t("Statistics")}</GhostButton>
+          <GhostButton onClick={onAddSharedDeck} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", flex: 1 }}>{t("Add shared deck")}</GhostButton>
         </div>
 
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-        }}>AI-powered import</p>
+        }}>{t("AI-powered import")}</p>
         {/* Which service a key is *for* has to be said, because the field
             below changes meaning with it. */}
-        <p style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 12px" }}>
-          A key of your own lifts the daily limit. Which service it's for:
-        </p>
+        <p style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "0 0 12px" }}>{t("A key of your own lifts the daily limit. Which service it's for:")}</p>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           {aiImport.PROVIDERS.map(p => {
@@ -3847,53 +3731,48 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
                 fontFamily: "Inter, sans-serif", WebkitTapHighlightColor: "transparent", cursor: "pointer",
               }}>
                 <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{p.label}</span>
-                <span style={{ display: "block", fontSize: 11, opacity: 0.85, marginTop: 2 }}>{p.note}</span>
+                <span style={{ display: "block", fontSize: 11, opacity: 0.85, marginTop: 2 }}>{t(p.note)}</span>
               </button>
             );
           })}
         </div>
 
         {provider === aiImport.FREE_TIER_TRAINS_ON_DATA && (
-          <p style={{ fontSize: 11.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 14px", lineHeight: 1.5 }}>
-            Google's free tier costs nothing and needs no credit card, but they may use what you send — the text and photos you import — to improve their models. Switch to Claude if you'd rather pay than share.
-          </p>
+          <p style={{ fontSize: 11.5, color: "var(--text-muted)", fontFamily: "Inter, sans-serif", margin: "0 0 14px", lineHeight: 1.5 }}>{t("Google's free tier costs nothing and needs no credit card, but they may use what you send — the text and photos you import — to improve their models. Switch to Claude if you'd rather pay than share.")}</p>
         )}
 
-        <Label><Key size={11} style={{ verticalAlign: -1, marginRight: 4 }} />{info.label} API key</Label>
+        <Label><Key size={11} style={{ verticalAlign: -1, marginRight: 4 }} />{t("{0} API key", [info.label])}</Label>
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
           background: "var(--input-bg)", border: "1px solid var(--card-border)", borderRadius: 8,
           padding: "12px 14px", marginBottom: 4,
         }}>
           <span style={{ fontSize: 14, color: hasKey ? "var(--text-strong)" : "var(--text-faint)", fontFamily: "'IBM Plex Mono', monospace" }}>
-            {hasKey ? "••••••••••••••••" : "Not set"}
+            {hasKey ? "••••••••••••••••" : t("Not set")}
           </span>
           <GhostButton onClick={() => setApiKeyEditorOpen(true)} style={{
             color: "var(--text-secondary)", borderColor: "var(--card-border)",
             padding: "8px 14px", minHeight: 36, fontSize: 13,
           }}>
-            {hasKey ? "View / change" : "Add key"}
+            {hasKey ? t("View / change") : t("Add key")}
           </GhostButton>
         </div>
-        <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 18px" }}>
-          Stored only on this device — never synced to your account.
-        </p>
+        <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 18px" }}>{t("Stored only on this device — never synced to your account.")}</p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
           <GhostButton onClick={() => openExternal(info.keyUrl)} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
-            <ExternalLink size={16} /> {provider === "gemini" ? "Get a free Gemini key" : "Get a Claude key"}
+            <ExternalLink size={16} /> {provider === "gemini" ? t("Get a free Gemini key") : t("Get a Claude key")}
           </GhostButton>
           {provider === "anthropic" && (
             <GhostButton onClick={() => openExternal("https://console.anthropic.com/settings/billing")} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
-              <CreditCard size={16} /> Add credits / billing
-            </GhostButton>
+              <CreditCard size={16} />{t(" Add credits / billing")}</GhostButton>
           )}
         </div>
         {/* The one thing a link can't say: what it costs on the other side. */}
         <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "10px 0 0" }}>
           {provider === "gemini"
-            ? `${info.keyUrlLabel} — no card, no charges.`
-            : `${info.keyUrlLabel} — billed by Anthropic, a few cents per file or photo.`}
+            ? t("{0} — no card, no charges.", [info.keyUrlLabel])
+            : t("{0} — billed by Anthropic, a few cents per file or photo.", [info.keyUrlLabel])}
         </p>
 
         <div style={{ height: 1, background: "var(--card-border)", margin: "18px 0" }} />
@@ -3906,7 +3785,7 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
             <p style={{
               fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
               textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-            }}>Android app</p>
+            }}>{t("Android app")}</p>
             {/* The one filled button in Settings. Everything else here is a
                 setting; this is the thing the web version most wants you to
                 do, and it reads as a ghost among ghosts otherwise. */}
@@ -3915,34 +3794,27 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
               download={appDownload.APK_FILENAME}
               style={{ background: "var(--accent)", color: "var(--shell-bg)", border: "none", fontWeight: 600 }}
             >
-              <Download size={16} /> Download the Android app
-            </GhostButton>
-            <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "8px 0 18px", lineHeight: 1.45 }}>
-              Always the newest build — {APP_VERSION} as this page was published.
-              It installs from the file rather than from Play, so Android will
-              ask once whether your browser may install apps; there is no
-              automatic update, so come back here for the next one.
-            </p>
+              <Download size={16} />{t(" Download the Android app")}</GhostButton>
+            <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "8px 0 18px", lineHeight: 1.45 }}>{t("Always the newest build — {0} as this page was published. It installs from the file rather than from Play, so Android will ask once whether your browser may install apps; there is no automatic update, so come back here for the next one.", [APP_VERSION])}</p>
           </>
         )}
 
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-        }}>How the app works</p>
+        }}>{t("How the app works")}</p>
         {/* The tour is the only place the app explains itself now, so it has
             to be reachable after the day you installed it. */}
         <GhostButton
           onClick={onReplayWalkthrough}
           style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)", marginBottom: 18 }}
         >
-          <BookOpen size={16} /> Show the walkthrough again
-        </GhostButton>
+          <BookOpen size={16} />{t(" Show the walkthrough again")}</GhostButton>
 
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
-        }}>Troubleshooting</p>
+        }}>{t("Troubleshooting")}</p>
         <GhostButton
           onClick={async () => {
             // Asked here rather than inside diagnosticsText, which is sync:
@@ -3962,11 +3834,10 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           }}
           style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}
         >
-          <ClipboardList size={16} /> Copy diagnostics
-        </GhostButton>
+          <ClipboardList size={16} />{t(" Copy diagnostics")}</GhostButton>
         {diagNote && (
           <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "8px 0 0" }}>
-            {diagNote}
+            {t(diagNote)}
           </p>
         )}
       </div>
@@ -3988,19 +3859,11 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
             background: "var(--card-bg)", borderRadius: 12, width: "100%", maxWidth: 400,
             padding: 22, animation: "popIn 0.15s ease-out",
           }}>
-            <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18, color: "var(--text-strong)", margin: "0 0 10px" }}>
-              Replace your catalog?
-            </h3>
-            <p style={{ fontSize: 13.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", lineHeight: 1.5, margin: "0 0 18px" }}>
-              Importing <b>{confirmImport.name}</b> replaces everything currently in the app — subjects, cards and stats. If you're signed in, the imported catalog becomes the one that syncs.
-            </p>
+            <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18, color: "var(--text-strong)", margin: "0 0 10px" }}>{t("Replace your catalog?")}</h3>
+            <p style={{ fontSize: 13.5, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", lineHeight: 1.5, margin: "0 0 18px" }}>{t("Importing ")}<b>{confirmImport.name}</b>{t(" replaces everything currently in the app — subjects, cards and stats. If you're signed in, the imported catalog becomes the one that syncs.")}</p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <GhostButton onClick={() => setConfirmImport(null)} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
-                Cancel
-              </GhostButton>
-              <GhostButton onClick={runImport} style={{ color: "#B5533C", borderColor: "#B5533C" }}>
-                Import and replace
-              </GhostButton>
+              <GhostButton onClick={() => setConfirmImport(null)} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>{t("Cancel")}</GhostButton>
+              <GhostButton onClick={runImport} style={{ color: "#B5533C", borderColor: "#B5533C" }}>{t("Import and replace")}</GhostButton>
             </div>
           </div>
         </div>
@@ -4032,18 +3895,16 @@ function ApiKeyModal({ provider, onClose, onSaved }) {
         padding: 22, animation: "popIn 0.15s ease-out",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18, color: "var(--text-strong)", margin: 0 }}>
-            {info.label} API key
-          </h3>
-          <IconBtn onClick={onClose}><X size={18} color="var(--text-secondary)" /></IconBtn>
+          <h3 style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18, color: "var(--text-strong)", margin: 0 }}>{t("{0} API key", [info.label])}</h3>
+          <IconBtn onClick={onClose} title={t("Close")}><X size={18} color="var(--text-secondary)" /></IconBtn>
         </div>
 
-        <Label>Key</Label>
+        <Label>{t("Key")}</Label>
         <div style={{ position: "relative", marginBottom: 4 }}>
           <TextField value={value} onChange={e => setValue(e.target.value)}
-            placeholder={provider === "gemini" ? "AIza..." : "sk-ant-..."} type={visible ? "text" : "password"}
+            placeholder={provider === "gemini" ? t("AIza...") : t("sk-ant-...")} type={visible ? "text" : "password"}
             style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", paddingRight: 44 }} />
-          <button onClick={() => setVisible(v => !v)} title={visible ? "Hide" : "Show"} style={{
+          <button onClick={() => setVisible(v => !v)} title={visible ? t("Hide") : t("Show")} style={{
             position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
             background: "transparent", border: "none", padding: 8, display: "flex",
             color: "var(--text-secondary)", cursor: "pointer", WebkitTapHighlightColor: "transparent",
@@ -4051,15 +3912,12 @@ function ApiKeyModal({ provider, onClose, onSaved }) {
             {visible ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 18px" }}>
-          Nothing here is saved until you tap Save — safe to look without changing anything.
-        </p>
+        <p style={{ fontSize: 11.5, color: "var(--text-faint)", fontFamily: "Inter, sans-serif", margin: "4px 0 18px" }}>{t("Nothing here is saved until you tap Save — safe to look without changing anything.")}</p>
 
         <div style={{ display: "flex", gap: 8 }}>
           <PrimaryButton onClick={save} style={{ flex: 1 }}>
-            <Check size={16} /> Save
-          </PrimaryButton>
-          <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>Cancel</GhostButton>
+            <Check size={16} />{t(" Save")}</PrimaryButton>
+          <GhostButton onClick={onClose} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>{t("Cancel")}</GhostButton>
         </div>
       </div>
     </div>
@@ -4129,20 +3987,18 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart, pausedSes
       <button onClick={onBack} style={{
         background: "none", border: "none", color: "var(--on-shell-muted)", display: "flex", alignItems: "center",
         gap: 6, fontFamily: "Inter, sans-serif", fontSize: 14, padding: "10px 4px", minHeight: 44, marginBottom: 14, WebkitTapHighlightColor: "transparent",
-      }}><ArrowLeft size={15} /> Back to catalog</button>
+      }}><ArrowLeft size={15} />{t(" Back to catalog")}</button>
 
-      <h2 style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 24, color: "var(--accent)", margin: "0 0 18px" }}>
-        Pick your deck
-      </h2>
+      <h2 style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 24, color: "var(--accent)", margin: "0 0 18px" }}>{t("Pick your deck")}</h2>
 
       {pausedSession && <div className="fc-resume-note">
-        <span>{pausedSession.index} of {pausedSession.queue.length} exercises done · saved on this device</span>
-        <button onClick={onResumeSession}>Resume session</button>
+        <span>{t("{0} of {1} exercises done · saved on this device", [pausedSession.index, pausedSession.queue.length])}</span>
+        <button onClick={onResumeSession}>{t("Resume session")}</button>
       </div>}
 
-      <Label>Subject / subcategory</Label>
+      <Label>{t("Subject / subcategory")}</Label>
       <select value={nodeId} onChange={e => setNodeId(e.target.value)} style={selectStyle}>
-        <option value="all">All subjects</option>
+        <option value="all">{t("All subjects")}</option>
         {flat.map(f => (
           <option key={f.id} value={f.id}>{"—".repeat(f.depth)}{f.depth > 0 ? " " : ""}{f.name}</option>
         ))}
@@ -4164,7 +4020,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart, pausedSes
                 color: active ? "var(--accent)" : opt.id === "due" && duePool.length === 0 ? "var(--on-shell-faint)" : "#EDE6D3",
                 fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
                 WebkitTapHighlightColor: "transparent",
-              }}>{opt.label}</button>
+              }}>{t(opt.label)}</button>
           );
         })}
       </div>
@@ -4180,18 +4036,14 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart, pausedSes
             </span>
           </Ring>
           <div>
-            <p style={{ color: "#EDE6D3", fontSize: 14, fontWeight: 600, margin: 0 }}>
-              {Math.round(strength * 100)}% deck strength
-            </p>
-            <p style={{ color: "var(--on-shell-muted)", fontSize: 12.5, margin: "2px 0 0" }}>
-              {duePool.length} due now · {pool.length} card{pool.length !== 1 ? "s" : ""} total
-            </p>
+            <p style={{ color: "#EDE6D3", fontSize: 14, fontWeight: 600, margin: 0 }}>{t("{0}% deck strength", [Math.round(strength * 100)])}</p>
+            <p style={{ color: "var(--on-shell-muted)", fontSize: 12.5, margin: "2px 0 0" }}>{t("{0} due now · {1} card{2} total", [duePool.length, pool.length, pool.length !== 1 ? "s" : ""])}</p>
           </div>
         </div>
         <MasteryBar cards={pool} height={8} showLegend />
       </div>
 
-      <Label style={{ marginTop: 18 }}>How many this sitting?</Label>
+      <Label style={{ marginTop: 18 }}>{t("How many this sitting?")}</Label>
       <div style={{ display: "flex", gap: 8 }}>
         {[...SESSION_SIZES, "all"].map(size => {
           const active = sessionSize === size;
@@ -4203,7 +4055,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart, pausedSes
               color: active ? "var(--accent)" : "#EDE6D3",
               fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
               WebkitTapHighlightColor: "transparent",
-            }}>{size === "all" ? "All" : size}</button>
+            }}>{size === "all" ? t("All") : size}</button>
           );
         })}
       </div>
@@ -4211,10 +4063,7 @@ function StudySetup({ subjects, cards, initialNodeId, onBack, onStart, pausedSes
         <p style={{
           fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--on-shell-muted)",
           margin: "8px 2px 0", lineHeight: 1.45,
-        }}>
-          {sessionCount} of the {startPool.length} waiting. Cards you get right move on,
-          so the next sitting picks up where this one left off.
-        </p>
+        }}>{t("{0} of the {1} waiting. Cards you get right move on, so the next sitting picks up where this one left off.", [sessionCount, startPool.length])}</p>
       )}
 
       <DrillPicker
@@ -4290,24 +4139,20 @@ function DrillPicker({ pool, allCards, sessionCount, onStart }) {
   if (!pool.length) {
     return (
       <PrimaryButton disabled style={{ marginTop: 18, width: "100%" }}>
-        <Shuffle size={16} /> Nothing to study here
-      </PrimaryButton>
+        <Shuffle size={16} />{t(" Nothing to study here")}</PrimaryButton>
     );
   }
 
   return (
     <>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 22 }}>
-        <Label style={{ margin: 0 }}>Pick your drill</Label>
+        <Label style={{ margin: 0 }}>{t("Pick your drill")}</Label>
         {tuning === "loading" && (
-          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--on-shell-muted)" }}>
-            tuning to this deck…
-          </span>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--on-shell-muted)" }}>{t("tuning to this deck…")}</span>
         )}
         {tuning === "done" && (
           <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "var(--accent)" }}>
-            <Sparkles size={11} /> tuned to this deck
-          </span>
+            <Sparkles size={11} />{t(" tuned to this deck")}</span>
         )}
       </div>
 
@@ -4323,14 +4168,14 @@ function DrillPicker({ pool, allCards, sessionCount, onStart }) {
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{
                 display: "block", fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 600, color: "#EDE6D3",
-              }}>{d.label}</span>
+              }}>{t(d.label)}</span>
               <span style={{
                 display: "block", fontFamily: "Inter, sans-serif", fontSize: 12.5,
                 color: d.tuned ? "var(--accent)" : "var(--on-shell-muted)", marginTop: 2,
-              }}>{d.tuned || d.blurb}</span>
+              }}>{d.tuned || t(d.blurb)}</span>
             </span>
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-faint)", whiteSpace: "nowrap" }}>
-              {drillsLib.formatDuration(drillsLib.estimateSeconds(d, Math.min(sessionCount, cards.length)))}
+              {t(drillsLib.formatDuration(drillsLib.estimateSeconds(d, Math.min(sessionCount, cards.length))))}
             </span>
           </button>
         ))}
@@ -4341,7 +4186,7 @@ function DrillPicker({ pool, allCards, sessionCount, onStart }) {
           fontFamily: "Inter, sans-serif", fontSize: 12, color: "var(--on-shell-muted)",
           margin: "10px 2px 0", lineHeight: 1.45,
         }}>
-          {note || <>Add an AI key in Settings and the drills get written around your own cards — real gaps to fill, wrong answers worth second-guessing.</>}
+          {t(note) || <>{t("Add an AI key in Settings and the drills get written around your own cards — real gaps to fill, wrong answers worth second-guessing.")}</>}
         </p>
       )}
     </>
@@ -4503,7 +4348,7 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, spe
         <button onClick={onExit} style={{
           background: "none", border: "none", color: "var(--on-shell-muted)", display: "flex", alignItems: "center",
           gap: 6, fontFamily: "Inter, sans-serif", fontSize: 14, padding: "10px 4px", minHeight: 44, marginBottom: 14, WebkitTapHighlightColor: "transparent",
-        }}><ArrowLeft size={15} /> Change deck</button>
+        }}><ArrowLeft size={15} />{t(" Change deck")}</button>
 
         {award ? (
           <SessionReward
@@ -4516,33 +4361,25 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, spe
             background: "var(--card-bg)", borderRadius: 12, padding: 28, textAlign: "center",
             boxShadow: "0 4px 14px rgba(0,0,0,0.25)", animation: "popIn 0.2s ease-out",
           }}>
-            <p style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 22, color: "var(--text-strong)", margin: "0 0 6px" }}>
-              Round {round} complete
-            </p>
-            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15, color: "var(--text-secondary)", margin: "0 0 20px" }}>
-              {correctCount} of {queue.reduce((n, s) => n + s.cards.length, 0)} correct
-            </p>
+            <p style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 22, color: "var(--text-strong)", margin: "0 0 6px" }}>{t("Round {0} complete", [round])}</p>
+            <p style={{ fontFamily: "Inter, sans-serif", fontSize: 15, color: "var(--text-secondary)", margin: "0 0 20px" }}>{t("{0} of {1} correct", [correctCount, queue.reduce((n, s) => n + s.cards.length, 0)])}</p>
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
               {!perfect && (
                 <PrimaryButton onClick={retryMissed}>
-                  <RotateCcw size={16} /> Retry {missed.length} missed
-                </PrimaryButton>
+                  <RotateCcw size={16} />{t(" Retry {0} missed", [missed.length])}</PrimaryButton>
               )}
               <GhostButton onClick={studyAgain} style={{ color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>
-                <Shuffle size={16} /> Study again
-              </GhostButton>
+                <Shuffle size={16} />{t(" Study again")}</GhostButton>
             </div>
           </div>
         )}
 
         {award && !perfect && (
-          <p style={{ textAlign: "center", fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--on-shell-muted)", margin: "14px 0 0" }}>
-            "Keep going" replays the {missed.length} card{missed.length !== 1 ? "s" : ""} you missed.
-          </p>
+          <p style={{ textAlign: "center", fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--on-shell-muted)", margin: "14px 0 0" }}>{t("\"Keep going\" replays the {0} card{1} you missed.", [missed.length, missed.length !== 1 ? "s" : ""])}</p>
         )}
         {undo && <div className="fc-session-tools">
-          <button onClick={undoLast}>Undo last grade<KeyHint>⌘/Ctrl Z</KeyHint></button>
-          <p>Returns to the last exercise and updates this session's result.</p>
+          <button onClick={undoLast}>{t("Undo last grade")}<KeyHint>{t("⌘/Ctrl Z")}</KeyHint></button>
+          <p>{t("Returns to the last exercise and updates this session's result.")}</p>
         </div>}
       </div>
     );
@@ -4554,8 +4391,8 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, spe
         <button onClick={onExit} style={{
           background: "none", border: "none", color: "var(--on-shell-muted)", display: "flex", alignItems: "center",
           gap: 6, fontFamily: "Inter, sans-serif", fontSize: 14, padding: "10px 4px", minHeight: 44, WebkitTapHighlightColor: "transparent",
-        }}><ArrowLeft size={15} /> Pause session</button>
-        <span className="fc-session-counter" role="status" aria-label="Study progress" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--on-shell-muted)" }}>
+        }}><ArrowLeft size={15} />{t(" Pause session")}</button>
+        <span className="fc-session-counter" role="status" aria-label={t("Study progress")} style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "var(--on-shell-muted)" }}>
           {index + 1} / {queue.length}
         </span>
       </div>
@@ -4573,8 +4410,8 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, spe
         onGroupResult={handleGroupResult}
       />
       <div className="fc-session-tools">
-        <button onClick={undoLast} disabled={!undo}>Undo last grade<KeyHint>⌘/Ctrl Z</KeyHint></button>
-        <p>Progress saves on this device. Pause whenever you need.</p>
+        <button onClick={undoLast} disabled={!undo}>{t("Undo last grade")}<KeyHint>{t("⌘/Ctrl Z")}</KeyHint></button>
+        <p>{t("Progress saves on this device. Pause whenever you need.")}</p>
       </div>
     </div>
   );
@@ -4621,28 +4458,28 @@ function FlipCard({ card, onResult, subject, speechCards, initialState, onStateC
     <>
       <div
         className="fc-flip"
-        role="button" tabIndex={0} aria-label={flipped ? "Hide answer" : "Reveal answer"} aria-expanded={flipped}
+        role="button" tabIndex={0} aria-label={flipped ? t("Hide answer") : t("Reveal answer")} aria-expanded={flipped}
         onKeyDown={event => { if (event.target === event.currentTarget && event.key === "Enter" && !event.repeat) { event.preventDefault(); setFlipped(f => !f); } }}
         onClick={() => setFlipped(f => !f)}
         style={{ cursor: "pointer", animation: "popIn 0.25s ease-out" }}>
         <div className="fc-flip-inner" style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
           <div className="fc-flip-face" aria-hidden={flipped}>
-            <CardShell fill tabLabel="Flip">
+            <CardShell fill tabLabel={t("Flip")}>
               <div style={body}>
                 {occlusionLib.isOcclusionCard(card)
                   ? <OcclusionCard card={card} revealed={false} />
                   : <PronounceFace card={card} subject={subject} speechCards={speechCards} inactive={flipped} />}
-                <p style={caption}>Tap the card to reveal the answer<KeyHint>Space</KeyHint></p>
+                <p style={caption}>{t("Tap the card to reveal the answer")}<KeyHint>{t("Space")}</KeyHint></p>
               </div>
             </CardShell>
           </div>
           <div className="fc-flip-face fc-flip-face-back" aria-hidden={!flipped}>
-            <CardShell fill tabLabel="Answer" tabColor="var(--success)">
+            <CardShell fill tabLabel={t("Answer")} tabColor="var(--success)">
               <div style={body}>
                 {occlusionLib.isOcclusionCard(card)
                   ? <OcclusionCard card={card} revealed={true} />
                   : <PronounceFace card={card} subject={subject} speechCards={speechCards} side="back" inactive={!flipped} />}
-                <p style={caption}>That's the answer</p>
+                <p style={caption}>{t("That's the answer")}</p>
               </div>
             </CardShell>
           </div>
@@ -4654,7 +4491,7 @@ function FlipCard({ card, onResult, subject, speechCards, initialState, onStateC
         <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "center", marginTop: 10 }}>
           {tutorLib.isAvailable() && (
             <GhostButton onClick={() => setTutorMode(flipped ? "explain" : "hint")} style={{ fontSize: 12.5, padding: "5px 10px" }}>
-              {flipped ? "Explain" : "Hint"}
+              {flipped ? t("Explain") : t("Hint")}
             </GhostButton>
           )}
         </div>
@@ -4666,8 +4503,8 @@ function FlipCard({ card, onResult, subject, speechCards, initialState, onStateC
       {/* Deliberately outside the card: these stay put while it turns, so you
           can grade a card you already know without revealing it first. */}
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>Missed it<KeyHint>1</KeyHint></GhostButton>
-        <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>Got it<KeyHint>2</KeyHint></PrimaryButton>
+        <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>{t("Missed it")}<KeyHint>1</KeyHint></GhostButton>
+        <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>{t("Got it")}<KeyHint>2</KeyHint></PrimaryButton>
       </div>
     </>
   );
@@ -4722,7 +4559,7 @@ function McqCard({ card, subject, speechCards, options, onResult, initialState, 
     : Object.fromEntries(options.map((option, i) => [String(i + 1), () => setPicked(option)])), shortcutsEnabled);
 
   return (
-    <CardShell tabLabel="Multiple choice" tabColor="var(--highlight)">
+    <CardShell tabLabel={t("Multiple choice")} tabColor="var(--highlight)">
       <div style={{ marginBottom: 18 }}>
         <PronounceFace card={card} subject={subject} speechCards={speechCards} size={19} />
       </div>
@@ -4744,8 +4581,7 @@ function McqCard({ card, subject, speechCards, options, onResult, initialState, 
         })}
       </div>
       {answered && (
-        <PrimaryButton onClick={() => onResult(normalize(picked) === normalize(card.back))} style={{ width: "100%", marginTop: 16 }}>
-          Continue<KeyHint>Enter</KeyHint>
+        <PrimaryButton onClick={() => onResult(normalize(picked) === normalize(card.back))} style={{ width: "100%", marginTop: 16 }}>{t("Continue")}<KeyHint>{t("Enter")}</KeyHint>
         </PrimaryButton>
       )}
     </CardShell>
@@ -4763,11 +4599,11 @@ function WriteCard({ card, subject, speechCards, onResult, initialState, onState
   const backSpeech = ttsLib.speechFor(card, subject, "back", speechCards);
 
   return (
-    <CardShell tabLabel="Write answer" tabColor="#7B4B94">
+    <CardShell tabLabel={t("Write answer")} tabColor="#7B4B94">
       <div style={{ marginBottom: 16 }}>
         <PronounceFace card={card} subject={subject} speechCards={speechCards} size={19} />
       </div>
-      <TextField value={value} onChange={e => setValue(e.target.value)} placeholder="Type your answer…"
+      <TextField value={value} onChange={e => setValue(e.target.value)} placeholder={t("Type your answer…")}
         readOnly={checked}
         onKeyDown={e => {
           if (e.key !== "Enter" || e.repeat || e.isComposing || !shortcutsEnabled || !value.trim()) return;
@@ -4780,7 +4616,7 @@ function WriteCard({ card, subject, speechCards, onResult, initialState, onState
           padding: "10px 12px", borderRadius: 8, marginBottom: 12,
           background: isCorrect ? "var(--success)" : "#B5533C", color: "#FBF7EC", fontFamily: "Inter, sans-serif", fontSize: 13.5,
         }}>
-          {isCorrect ? "Correct!" : <>Not quite — the answer was <strong>{card.back}</strong></>}
+          {isCorrect ? t("Correct!") : <>{t("Not quite — the answer was ")}<strong>{card.back}</strong></>}
         </div>
       )}
       {/* A wrong typed answer is where the tutor earns its keep: the user has
@@ -4790,9 +4626,7 @@ function WriteCard({ card, subject, speechCards, onResult, initialState, onState
         <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
           {backSpeech && <SpeakButton {...backSpeech} />}
           {!isCorrect && tutorLib.isAvailable() && !tutorOpen && (
-            <GhostButton onClick={() => setTutorOpen(true)} style={{ fontSize: 12.5, padding: "5px 10px" }}>
-              Why is that wrong?
-            </GhostButton>
+            <GhostButton onClick={() => setTutorOpen(true)} style={{ fontSize: 12.5, padding: "5px 10px" }}>{t("Why is that wrong?")}</GhostButton>
           )}
         </div>
       )}
@@ -4800,9 +4634,9 @@ function WriteCard({ card, subject, speechCards, onResult, initialState, onState
         <div className="fc-study-overlay"><TutorPanel card={card} given={value} subject={subject?.name} mode="why" onClose={() => setTutorOpen(false)} /></div>
       )}
       {checked ? (
-        <PrimaryButton onClick={() => onResult(isCorrect)} style={{ width: "100%" }}>Continue<KeyHint>Enter</KeyHint></PrimaryButton>
+        <PrimaryButton onClick={() => onResult(isCorrect)} style={{ width: "100%" }}>{t("Continue")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
       ) : (
-        <PrimaryButton onClick={() => setChecked(true)} disabled={!value.trim()} style={{ width: "100%" }}>Check answer<KeyHint>Enter</KeyHint></PrimaryButton>
+        <PrimaryButton onClick={() => setChecked(true)} disabled={!value.trim()} style={{ width: "100%" }}>{t("Check answer")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
       )}
     </CardShell>
   );

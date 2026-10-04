@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // ---------------------------------------------------------------------------
 // The two screens that explain the app to its user: the walkthrough a fresh
 // install opens on, and the short note after an update.
@@ -61,7 +62,7 @@ export function Walkthrough({ onDone }) {
           fontFamily: "Inter, sans-serif", fontSize: 14, color: "var(--on-shell-muted)",
           WebkitTapHighlightColor: "transparent",
         }}>
-          {last ? "" : "Skip"}
+          {last ? "" : t("Skip")}
         </button>
       </div>
 
@@ -82,19 +83,19 @@ export function Walkthrough({ onDone }) {
           fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 27,
           color: "#FBF7EC", margin: "0 0 12px", lineHeight: 1.2,
         }}>
-          {slide.title}
+          {t(slide.title)}
         </h2>
         <p style={{
           fontFamily: "Inter, sans-serif", fontSize: 15.5, lineHeight: 1.55,
           color: "#EDE6D3", opacity: 0.82, margin: 0,
         }}>
-          {slide.text}
+          {t(slide.text)}
         </p>
       </div>
 
       <div style={{ display: "flex", justifyContent: "center", gap: 7, margin: "0 0 20px" }}>
         {WALKTHROUGH.map((s, n) => (
-          <button key={s.title} onClick={() => go(n)} aria-label={`Step ${n + 1}`} style={{
+          <button key={s.title} onClick={() => go(n)} aria-label={t("Step {0}", [n + 1])} style={{
             background: "none", border: "none", padding: 8, WebkitTapHighlightColor: "transparent",
             display: "flex", alignItems: "center",
           }}>
@@ -109,12 +110,10 @@ export function Walkthrough({ onDone }) {
 
       <div style={{ display: "flex", gap: 10, maxWidth: 440, width: "100%", margin: "0 auto" }}>
         {i > 0 && (
-          <GhostButton onClick={() => go(i - 1)} style={{ flex: "0 0 auto", paddingLeft: 24, paddingRight: 24 }}>
-            Back
-          </GhostButton>
+          <GhostButton onClick={() => go(i - 1)} style={{ flex: "0 0 auto", paddingLeft: 24, paddingRight: 24 }}>{t("Back")}</GhostButton>
         )}
         <PrimaryButton onClick={() => (last ? onDone() : go(i + 1))} style={{ flex: 1 }}>
-          {last ? <><Check size={17} /> Start studying</> : "Next"}
+          {last ? <><Check size={17} />{t(" Start studying")}</> : t("Next")}
         </PrimaryButton>
       </div>
     </div>
@@ -138,9 +137,7 @@ export function WhatsNew({ releases, onClose }) {
           <h3 style={{
             fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 600, fontSize: 21,
             color: "var(--text-strong)", margin: 0,
-          }}>
-            What's new
-          </h3>
+          }}>{t("What's new")}</h3>
           <button onClick={onClose} style={{
             background: "none", border: "none", padding: 10, minWidth: 44, minHeight: 44,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -152,11 +149,9 @@ export function WhatsNew({ releases, onClose }) {
             <p style={{
               fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
               textTransform: "uppercase", letterSpacing: 0.5, margin: "10px 0 8px",
-            }}>
-              Version {r.version} · {r.date}
-            </p>
+            }}>{t("Version {0} · {1}", [r.version, r.date])}</p>
             {r.items.map((item) => (
-              <div key={item} style={{ display: "flex", gap: 10, marginBottom: 9 }}>
+              <div key={t(item)} style={{ display: "flex", gap: 10, marginBottom: 9 }}>
                 <span style={{
                   width: 6, height: 6, borderRadius: "50%", background: "var(--accent)",
                   flexShrink: 0, marginTop: 7,
@@ -164,15 +159,13 @@ export function WhatsNew({ releases, onClose }) {
                 <p style={{
                   fontFamily: "Inter, sans-serif", fontSize: 14, lineHeight: 1.5,
                   color: "var(--text-secondary)", margin: 0,
-                }}>{item}</p>
+                }}>{t(item)}</p>
               </div>
             ))}
           </div>
         ))}
 
-        <PrimaryButton onClick={onClose} style={{ width: "100%", marginTop: 6 }}>
-          Got it
-        </PrimaryButton>
+        <PrimaryButton onClick={onClose} style={{ width: "100%", marginTop: 6 }}>{t("Got it")}</PrimaryButton>
       </div>
     </div>
   );

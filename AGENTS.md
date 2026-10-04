@@ -243,6 +243,16 @@ Play Store compatibility problem).
 
 ## Known hazards
 
+- **App language is device-local (1.8.5).** `i18n.js` owns English/German copy,
+  device-language fallback and the `flashcard-catalog-language` preference.
+  `useAppLanguage` re-renders without remounting editors or study sessions.
+  Pass only app-owned copy to `t`; render card text, answers, folder names,
+  tags and generated explanations unchanged. Translation interpolation must
+  preserve user text. Keep setting choices and translation keys out of cloud
+  payloads and backups. A language change must not edit the catalog or game.
+  Add German copy to `src/locales/de.json` for new interface strings.
+
+
 - **Android speech must wait for onInit and check speak's return status (1.8.4).**
   Never return a Capacitor plugin proxy directly from async: its synthetic
   `then` method traps Promise resolution. Return a plain wrapper instead. This

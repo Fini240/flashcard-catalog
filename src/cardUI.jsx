@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // ---------------------------------------------------------------------------
 // The shared visual vocabulary: buttons, fields, and the index card itself.
 //
@@ -108,7 +109,7 @@ export function IndexCardTab({ color, label }) {
       padding: "3px 10px", borderRadius: "3px 3px 0 0",
       letterSpacing: 0.6, textTransform: "uppercase",
       boxShadow: "0 -1px 3px rgba(0,0,0,0.15)",
-    }}>{label}</div>
+    }}>{t(label)}</div>
   );
 }
 
@@ -151,7 +152,7 @@ export function CardFace({ text, imageId, size }) {
     if (src === undefined) return <div style={{ height: 220 }} />;
     return src
       ? <img src={src} alt={text || ""} style={{ maxWidth: "100%", maxHeight: 220, borderRadius: 8, objectFit: "contain" }} />
-      : <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-faint)", margin: 0 }}>Picture not available on this device</p>;
+      : <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13.5, color: "var(--text-faint)", margin: 0 }}>{t("Picture not available on this device")}</p>;
   }
   return (
     <p style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: size || 21, color: "var(--text-strong)", margin: 0, lineHeight: 1.4 }}>

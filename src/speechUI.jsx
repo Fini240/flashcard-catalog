@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Volume2, Square } from "lucide-react";
 import { CardFace } from "./cardUI";
@@ -49,8 +50,8 @@ export function PronounceFace({ card, subject, speechCards, side = "front", size
     <div style={{ display: "flex", alignItems: "center", gap: 4, maxWidth: "100%", color: "var(--text-strong)", textAlign: "inherit" }}>
       <div style={{ minWidth: 0, overflowWrap: "anywhere" }}><CardFace text={text} size={size} /></div>
       <button type="button" tabIndex={inactive ? -1 : 0}
-        aria-label={`${busy ? "Stop pronunciation" : "Read aloud"}: ${speech.text}`}
-        title={busy ? "Stop pronunciation" : "Read aloud"} onClick={activate}
+        aria-label={`${t(busy ? "Stop pronunciation" : "Read aloud")}: ${speech.text}`}
+        title={busy ? t("Stop pronunciation") : t("Read aloud")} onClick={activate}
         onKeyDown={event => event.stopPropagation()}
         style={{ display: "grid", placeItems: "center", width: 48, height: 48, flexShrink: 0,
           border: "none", borderRadius: 8, background: "transparent", cursor: "pointer",
@@ -58,16 +59,14 @@ export function PronounceFace({ card, subject, speechCards, side = "front", size
         <Icon aria-hidden="true" size={19} />
       </button>
     </div>
-    {error && <p role="status" style={{ fontSize: 12, color: "var(--text-secondary)", margin: "6px 0 0", fontFamily: "Inter, sans-serif" }}>{error}</p>}
+    {error && <p role="status" style={{ fontSize: 12, color: "var(--text-secondary)", margin: "6px 0 0", fontFamily: "Inter, sans-serif" }}>{t(error)}</p>}
     {error && tts.canOpenVoiceSettings() && <button type="button" tabIndex={inactive ? -1 : 0}
       onClick={async event => {
         event.stopPropagation();
         if (!await tts.openVoiceSettings()) setError("Open Android Settings and search for text-to-speech.");
       }} onKeyDown={event => event.stopPropagation()}
       style={{ border: "1px solid var(--card-border)", borderRadius: 6, background: "transparent",
-        color: "var(--text-secondary)", minHeight: 44, marginTop: 6, padding: "6px 10px", cursor: "pointer" }}>
-      Voice settings
-    </button>}
+        color: "var(--text-secondary)", minHeight: 44, marginTop: 6, padding: "6px 10px", cursor: "pointer" }}>{t("Voice settings")}</button>}
   </div>;
 }
 
@@ -85,25 +84,23 @@ export function CardSpeechFields({ value, onChange, sides = ["front", "back"] })
   }, []);
   if (!sides.length) return null;
   return <fieldset style={{ border: 0, padding: 0, margin: "0 0 14px", minWidth: 0 }}>
-    <legend style={{ color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Pronunciation</legend>
+    <legend style={{ color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{t("Pronunciation")}</legend>
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
       {sides.map(side => {
         const label = side === "front" ? "Front" : "Back";
         const lang = value?.[`${side}LanguageMode`] === "manual" ? value?.[`${side}Lang`] || "" : "";
-        return <label key={side} style={{ flex: "1 1 130px", minWidth: 0, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", fontSize: 12 }}>
-          {label} language
-          <select aria-label={`${label} pronunciation language`} value={lang}
+        return <label key={side} style={{ flex: "1 1 130px", minWidth: 0, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", fontSize: 12 }}>{t("{0} language", [t(label)])}<select aria-label={t("{0} pronunciation language", [t(label)])} value={lang}
             onChange={event => onChange({ ...value, [`${side}Lang`]: event.target.value || null,
               [`${side}LanguageMode`]: event.target.value ? "manual" : "auto" })}
             style={{ display: "block", width: "100%", minHeight: 44, marginTop: 5, borderRadius: 8,
               border: "1px solid var(--card-border)", background: "var(--input-bg)", color: "var(--text-strong)", padding: "8px 10px", fontSize: 13 }}>
-            <option value="">Automatic</option>
+            <option value="">{t("Automatic")}</option>
             {lang && !languages.some(([tag]) => tag === lang) && <option value={lang}>{lang}</option>}
-            {languages.map(([tag, name]) => <option key={tag} value={tag}>{name}</option>)}
+            {languages.map(([tag, name]) => <option key={tag} value={tag}>{t(name)}</option>)}
           </select>
         </label>;
       })}
     </div>
-    <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-secondary)", margin: "6px 0 0" }}>Detects the language automatically. Choose one only to correct it for this card.</p>
+    <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-secondary)", margin: "6px 0 0" }}>{t("Detects the language automatically. Choose one only to correct it for this card.")}</p>
   </fieldset>;
 }
