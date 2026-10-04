@@ -8,25 +8,16 @@ const commonLanguages = [
   ["fr-FR", "French"], ["it-IT", "Italian"], ["pt-PT", "Portuguese"],
 ];
 
-export function PronounceFace({ card, subject, speechCards, side = "front", size, onLanguage, inactive = false }) {
+export function PronounceFace({ card, subject, speechCards, side = "front", size, inactive = false }) {
   const speech = tts.pronunciationFor(card, subject, side, speechCards);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [picking, setPicking] = useState(false);
-  const [languages, setLanguages] = useState(commonLanguages);
-  const picker = useRef(null);
   const mounted = useRef(true);
   const action = useRef(0);
   useEffect(() => {
     mounted.current = true;
-    tts.availableLanguages().then(list => {
-      if (!mounted.current) return;
-      const extra = list.filter(l => !commonLanguages.some(([tag]) => tag === l.lang));
-      setLanguages([...commonLanguages, ...extra.map(l => [l.lang, `${l.lang} — ${l.name}`])]);
-    });
     return () => { mounted.current = false; };
   }, []);
-  useEffect(() => { if (picking) picker.current?.focus(); }, [picking]);
 
   const text = card?.[side];
   const imageId = card?.[`${side}ImageId`];
@@ -35,7 +26,7 @@ export function PronounceFace({ card, subject, speechCards, side = "front", size
   const play = async (lang = speech.lang) => {
     const token = ++action.current;
     setError("");
-    if (!lang) { setPicking(true); return; }
+    if (!lang) { setError("Couldn't determine the language. Set it in the card editor."); return; }
     setBusy(true);
     const result = await tts.speak(speech.text, { ...speech, lang });
     if (!mounted.current || token !== action.current) return;
@@ -65,22 +56,43 @@ export function PronounceFace({ card, subject, speechCards, side = "front", size
         <Icon aria-hidden="true" size={19} />
       </button>
     </div>
-    <div onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}
-      style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-      <select ref={picker} aria-label={`${side === "front" ? "Front" : "Back"} pronunciation language`}
-        tabIndex={inactive ? -1 : 0} value={speech.automatic ? "" : speech.lang || ""}
-        onChange={event => {
-          const lang = event.target.value;
-          onLanguage?.(side, lang);
-          setPicking(false);
-        }}
-        style={{ maxWidth: "100%", minHeight: 32, border: picking ? "1px solid var(--card-border)" : "none",
-          borderRadius: 4, background: "var(--input-bg)", color: "var(--text-secondary)", fontSize: 12, padding: "4px 6px" }}>
-        <option value="">Automatic ({languages.find(([tag]) => tag.split("-")[0] === speech.lang?.split("-")[0])?.[1] || speech.lang})</option>
-        {speech.lang && !languages.some(([lang]) => lang === speech.lang) && <option value={speech.lang}>{speech.lang}</option>}
-        {languages.map(([lang, label]) => <option key={lang} value={lang}>{label}</option>)}
-      </select>
-    </div>
     {error && <p role="status" style={{ fontSize: 12, color: "var(--text-secondary)", margin: "6px 0 0", fontFamily: "Inter, sans-serif" }}>{error}</p>}
   </div>;
+}
+
+// Keep corrections with the card, away from the study controls.
+export function CardSpeechFields({ value, onChange, sides = ["front", "back"] }) {
+  const [languages, setLanguages] = useState(commonLanguages);
+  useEffect(() => {
+    let active = true;
+    tts.availableLanguages().then(list => {
+      if (active) setLanguages([...commonLanguages, ...list
+        .filter(l => !commonLanguages.some(([tag]) => tag === l.lang))
+        .map(l => [l.lang, `${l.lang} — ${l.name}`])]);
+    });
+    return () => { active = false; };
+  }, []);
+  if (!sides.length) return null;
+  return <fieldset style={{ border: 0, padding: 0, margin: "0 0 14px", minWidth: 0 }}>
+    <legend style={{ color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Pronunciation</legend>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      {sides.map(side => {
+        const label = side === "front" ? "Front" : "Back";
+        const lang = value?.[`${side}LanguageMode`] === "manual" ? value?.[`${side}Lang`] || "" : "";
+        return <label key={side} style={{ flex: "1 1 130px", minWidth: 0, color: "var(--text-secondary)", fontFamily: "Inter, sans-serif", fontSize: 12 }}>
+          {label} language
+          <select aria-label={`${label} pronunciation language`} value={lang}
+            onChange={event => onChange({ ...value, [`${side}Lang`]: event.target.value || null,
+              [`${side}LanguageMode`]: event.target.value ? "manual" : "auto" })}
+            style={{ display: "block", width: "100%", minHeight: 44, marginTop: 5, borderRadius: 8,
+              border: "1px solid var(--card-border)", background: "var(--input-bg)", color: "var(--text-strong)", padding: "8px 10px", fontSize: 13 }}>
+            <option value="">Automatic</option>
+            {lang && !languages.some(([tag]) => tag === lang) && <option value={lang}>{lang}</option>}
+            {languages.map(([tag, name]) => <option key={tag} value={tag}>{name}</option>)}
+          </select>
+        </label>;
+      })}
+    </div>
+    <p style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, color: "var(--text-secondary)", margin: "6px 0 0" }}>Detects the language automatically. Choose one only to correct it for this card.</p>
+  </fieldset>;
 }

@@ -133,6 +133,29 @@ describe("catalog data integrity", () => {
     expect(saved.fsrsReps).toBe(12);
   });
 
+  it("saves per-card pronunciation corrections without changing other cards or learning history", async () => {
+    const learned = { ...base.cards[0], front: "el campamento", back: "das Lager", fsrsReps: 12, srsDue: 9876543210 };
+    const other = { ...learned, id: "c2", front: "Other word" };
+    await start({ ...base, cards: [learned, other] }); openBiology(); click(titled("Edit"));
+    const setLanguage = (side, value) => act(() => {
+      const select = container.querySelector(`select[aria-label="${side} pronunciation language"]`);
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector('select[aria-label="Front pronunciation language"]').value).toBe("");
+    setLanguage("Front", "es-ES"); setLanguage("Back", "de-DE");
+    click(button(/^Save card$/)); await wait(500);
+    const saved = JSON.parse(localStorage.getItem("flashcard-catalog-data")).cards;
+    expect(saved[0]).toMatchObject({ fsrsReps: 12, srsDue: learned.srsDue,
+      speech: { frontLang: "es-ES", frontLanguageMode: "manual", backLang: "de-DE", backLanguageMode: "manual" } });
+    expect(saved[1].speech).toBeUndefined();
+    click([...container.querySelectorAll('button[title="Edit"]')].at(-1));
+    expect(container.querySelector('select[aria-label="Front pronunciation language"]').value).toBe("es-ES");
+    setLanguage("Front", ""); click(button(/^Save card$/)); await wait(500);
+    expect(JSON.parse(localStorage.getItem("flashcard-catalog-data")).cards[0].speech)
+      .toMatchObject({ frontLang: null, frontLanguageMode: "auto", backLang: "de-DE" });
+  });
+
   it("rejecting a malformed backup leaves the current catalog intact", async () => {
     await start(base, true); click(titled("Settings"));
     const input = container.querySelector('input[type="file"][accept="application/json,.json"]');

@@ -179,7 +179,7 @@ export async function speak(text, opts = {}) {
 export function pronunciationFor(card, subject, side, pool = []) {
   const text = side === "front" ? card?.front : card?.back;
   if (!text?.trim() || card?.[`${side}ImageId`]) return null;
-  const cfg = subject?.speech || {};
+  const cfg = { ...subject?.speech, ...card?.speech };
   const manual = cfg[`${side}LanguageMode`] === "manual" && !!cfg[`${side}Lang`];
   const lang = manual ? cfg[`${side}Lang`] : automaticSpeechLanguage(toPlainText(text), {
     card, subject, side, pool, preferred: cfg[`${side}Lang`],

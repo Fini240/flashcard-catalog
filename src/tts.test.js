@@ -43,6 +43,14 @@ describe("manual pronunciation", () => {
     expect(tts.pronunciationFor(card, { speech: { frontLang: "es-MX", frontLanguageMode: "manual" } }, "front"))
       .toMatchObject({ lang: "es-MX", automatic: false });
   });
+  it("uses card-specific corrections and can reset a subject correction to Auto", () => {
+    const subject = { speech: { frontLang: "de-DE", frontLanguageMode: "manual" } };
+    expect(tts.pronunciationFor({ ...card, speech: { frontLang: "es-MX", frontLanguageMode: "manual" } }, subject, "front"))
+      .toMatchObject({ lang: "es-MX", automatic: false });
+    expect(tts.pronunciationFor({ ...card, speech: { frontLang: null, frontLanguageMode: "auto" } }, subject, "front"))
+      .toMatchObject({ lang: "es-ES", automatic: true });
+    expect(tts.pronunciationFor(card, subject, "front").lang).toBe("de-DE");
+  });
   it("also detects automatic answer-reading languages, while keeping that feature opt-in", () => {
     expect(tts.speechFor(card, { speech: { enabled: true } }, "back"))
       .toMatchObject({ lang: "de-DE", automatic: true });
