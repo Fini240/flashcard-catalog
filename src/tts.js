@@ -3,8 +3,8 @@
 //
 // A vocabulary card without a pronunciation is half a card, and the app already
 // claims language learning in its onboarding. This uses the platform's own
-// speech synthesis — the Web Speech API, which Capacitor's WebView exposes on
-// Android and every target browser supports — so there is no service to pay
+// speech synthesis — native TextToSpeech on Android and Web Speech in browsers
+// — so there is no service to pay
 // for, nothing to send anywhere, and it works offline once the system voice is
 // installed.
 //
@@ -15,16 +15,25 @@
 // ---------------------------------------------------------------------------
 
 import { report } from "./report";
+import { Capacitor } from "@capacitor/core";
+import { toPlainText } from "./richText";
 
 const synth = () => (typeof window !== "undefined" ? window.speechSynthesis : null);
+const native = () => Capacitor.isNativePlatform();
+let nativePlugin;
+const nativeTts = async () => (nativePlugin ??= (await import("@capacitor-community/text-to-speech")).TextToSpeech);
 
-export const isSupported = () => !!synth();
+export const isSupported = () => native() || !!synth();
 
 // Voices load asynchronously on most platforms and the first call routinely
 // returns an empty list, so this waits for the event rather than reporting
 // "no voices" to a user who has plenty.
 let voicesCache = null;
 export function voices() {
+  if (native()) return nativeTts().then(p => p.getSupportedVoices()).then(r => r.voices || []).catch(e => {
+    report("tts.voices", e);
+    return [];
+  });
   const s = synth();
   if (!s) return Promise.resolve([]);
   const now = s.getVoices();
@@ -39,6 +48,7 @@ export function voices() {
       if (settled) return;
       settled = true;
       voicesCache = s.getVoices() || [];
+      s.removeEventListener?.("voiceschanged", done);
       resolve(voicesCache);
     };
     s.addEventListener?.("voiceschanged", done, { once: true });
@@ -65,8 +75,14 @@ export function pickVoice(list, lang, preferredName) {
   );
 }
 
+let request = 0;
+let cancelActive = null;
 export const stop = () => {
+  request++;
+  cancelActive?.({ ok: false, reason: "canceled" });
+  cancelActive = null;
   try {
+    if (native()) return nativeTts().then(p => p.stop()).catch(e => report("tts.stop", e));
     synth()?.cancel();
   } catch {
     // Cancelling something that isn't speaking is not a failure.
@@ -76,20 +92,58 @@ export const stop = () => {
 // Speaks `text` and resolves when it finishes. Resolves rather than rejects on
 // an unavailable voice: a card whose audio didn't play must not break the
 // review it belongs to.
-export function speak(text, opts = {}) {
+export async function speak(text, opts = {}) {
   const s = synth();
-  const body = String(text || "").trim();
-  if (!s || !body) return Promise.resolve({ ok: false, reason: "unsupported" });
+  const body = toPlainText(String(text || "")).trim().slice(0, 500);
+  if (!isSupported() || !body) return { ok: false, reason: "unsupported" };
 
   // Cancel first: queuing is the default, so tapping through four cards
   // quickly would otherwise read all four in a row over each other.
-  stop();
+  const stopping = stop();
+  const token = request;
+  await stopping;
+  const list = await voices();
+  // Navigating away or tapping again while voices load cancels this request too.
+  if (token !== request) return { ok: false, reason: "canceled" };
+  const voice = pickVoice(list, opts.lang, opts.voiceName);
+  const plugin = native() ? await nativeTts() : null;
+  if (native()) {
+    try {
+      const { supported } = await plugin.isLanguageSupported({ lang: opts.lang || "en-US" });
+      if (token !== request) return { ok: false, reason: "canceled" };
+      if (!supported) return { ok: false, reason: "no-voice" };
+    } catch (e) {
+      report("tts.language", e);
+      return { ok: false, reason: "no-voice" };
+    }
+  } else if (opts.strict && opts.lang && !voice) {
+    return { ok: false, reason: "no-voice" };
+  }
 
-  return voices().then(
-    (list) =>
-      new Promise((resolve) => {
-        const utterance = new SpeechSynthesisUtterance(body.slice(0, 500));
-        const voice = pickVoice(list, opts.lang, opts.voiceName);
+  return new Promise((resolve) => {
+        let settled = false;
+        const finish = (result) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          if (cancelActive === finish) cancelActive = null;
+          resolve(result);
+        };
+        // Some engines fail to emit an end/error event. Always release the UI.
+        const timeout = setTimeout(() => finish({ ok: false, reason: "timeout" }), 60000);
+        cancelActive = finish;
+        const rate = Math.min(2, Math.max(0.5, opts.rate ?? 0.95));
+        const pitch = Math.min(2, Math.max(0, opts.pitch ?? 1));
+        if (native()) {
+          plugin.speak({ text: body, lang: opts.lang || "en-US", rate, pitch,
+            ...(voice ? { voice: list.indexOf(voice) } : {}), queueStrategy: 0 })
+            .then(() => finish({ ok: true })).catch(e => {
+              report("tts.speak", e);
+              finish({ ok: false, reason: "error" });
+            });
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(body);
         if (voice) {
           utterance.voice = voice;
           utterance.lang = voice.lang;
@@ -97,18 +151,10 @@ export function speak(text, opts = {}) {
           // No installed voice for the language. Setting lang anyway lets the
           // platform substitute if it can, but a wrong-language reading is
           // worse than silence, so a strict caller can opt out.
-          if (opts.strict) return resolve({ ok: false, reason: "no-voice" });
           utterance.lang = opts.lang;
         }
-        utterance.rate = Math.min(2, Math.max(0.5, opts.rate ?? 0.95));
-        utterance.pitch = Math.min(2, Math.max(0, opts.pitch ?? 1));
-
-        let settled = false;
-        const finish = (result) => {
-          if (settled) return;
-          settled = true;
-          resolve(result);
-        };
+        utterance.rate = rate;
+        utterance.pitch = pitch;
         utterance.onend = () => finish({ ok: true });
         utterance.onerror = (e) => {
           // "interrupted" is what cancel() produces and is not worth reporting.
@@ -123,8 +169,26 @@ export function speak(text, opts = {}) {
           report("tts.speak", e);
           finish({ ok: false, reason: "throw" });
         }
-      })
-  );
+      });
+}
+
+// Manual pronunciation does not require automatic answer reading to be enabled.
+// Only an explicitly named language subject supplies a default; ambiguous words
+// such as "pan" cannot be reliably language-detected in isolation.
+export function pronunciationFor(card, subject, side) {
+  const text = side === "front" ? card?.front : card?.back;
+  if (!text?.trim() || card?.[`${side}ImageId`]) return null;
+  const cfg = subject?.speech || {};
+  const subjectLanguages = [
+    [/\b(spanish|spanisch|español|adelante)\b/i, "es-ES"],
+    [/\b(german|deutsch)\b/i, "de-DE"],
+    [/\b(english|englisch)\b/i, "en-GB"],
+    [/\b(french|französisch|français)\b/i, "fr-FR"],
+    [/\b(italian|italienisch|italiano)\b/i, "it-IT"],
+  ];
+  const inferred = side === "front" ? subjectLanguages.find(([re]) => re.test(subject?.name || ""))?.[1] : null;
+  return { text, lang: cfg[`${side}Lang`] || inferred || null, rate: cfg.rate ?? 0.85,
+    voiceName: cfg[`${side}Voice`], strict: true };
 }
 
 // Languages the device can actually speak, for the per-subject language picker.

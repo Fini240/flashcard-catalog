@@ -73,6 +73,9 @@
       isn't installed" on a phone where it plainly is.
     -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
         <package android:name="com.ichi2.anki" />
         <provider android:authorities="com.ichi2.anki.flashcards" />
     </queries>

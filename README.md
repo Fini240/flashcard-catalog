@@ -26,7 +26,9 @@ whether it is working: what falls due over the next month, how much you
 actually recall against how much you asked to, a year of study history, and the
 cards you keep missing, set aside with a guess at why.
 
-Cards can be read aloud in a language per side, formulas and code render
+Tap the speaker beside a study word to hear its pronunciation; choose a
+language per card side, remembered for the subject. Android uses system voices,
+and browsers use Web Speech. Formulas and code render
 properly (`$x^2$`, `\alpha`, fractions, roots), tags cut across the folder
 tree, and a graded test mode measures without quietly rewriting what it
 measures.

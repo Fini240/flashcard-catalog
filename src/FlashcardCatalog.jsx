@@ -24,7 +24,7 @@ import * as updateCheck from "./updateCheck";
 import * as imageStore from "./imageStore";
 import {
   normalize, PrimaryButton, GhostButton, TextField, Label,
-  IndexCardTab, CardShell, CardFace, useCardImage,
+  IndexCardTab, CardShell, useCardImage,
 } from "./cardUI";
 import { pushBackHandler, consumeBack } from "./backHandler";
 import * as G from "./gamification";
@@ -50,6 +50,8 @@ import * as tagsLib from "./tags";
 import * as clozeLib from "./cloze";
 import * as occlusionLib from "./occlusion";
 import * as ttsLib from "./tts";
+import { PronounceFace } from "./speechUI";
+import { migrateSubjects } from "./subjectTree";
 import * as exporters from "./exporters";
 import * as deckShare from "./deckShare";
 import {
@@ -230,15 +232,6 @@ function flattenTree(subjects) {
   };
   subjects.forEach(s => walk(s, 0, s.id));
   return out;
-}
-// migrate legacy one-level-deep "categories" shape into recursive "children"
-function migrateSubjects(rawSubjects) {
-  const migrateNode = (n) => ({
-    id: n.id,
-    name: n.name,
-    children: (n.children || n.categories || []).map(migrateNode),
-  });
-  return (rawSubjects || []).map(migrateNode);
 }
 function migrateCards(rawCards) {
   return (rawCards || []).map(c => ({ ...c, nodeId: c.nodeId || c.categoryId || c.subjectId }));
@@ -1099,6 +1092,9 @@ export default function FlashcardCatalog() {
           rebuildQueue={rebuildQueue}
           game={game}
           subjects={subjects}
+          onSpeechChange={(id, side, lang) => setSubjects(ss => mapTree(ss, id, n => ({
+            ...n, speech: { ...n.speech, [`${side}Lang`]: lang || null },
+          })))}
           onGrade={gradeCard}
           onFinish={finishSession}
           onExit={() => setView(sessionOriginRef.current)}
@@ -4331,7 +4327,7 @@ const selectStyle = {
 };
 
 // ---------- SESSION ----------
-function Session({ initialQueue, initialState, rebuildQueue, game, subjects, onGrade, onFinish, onExit, onCheckpoint, onUndo, shortcutsEnabled }) {
+function Session({ initialQueue, initialState, rebuildQueue, game, subjects, onSpeechChange, onGrade, onFinish, onExit, onCheckpoint, onUndo, shortcutsEnabled }) {
   const [queue, setQueue] = useState(initialState?.queue || initialQueue);
   const [index, setIndex] = useState(initialState?.index || 0);
   const [missed, setMissed] = useState(initialState?.missed || []);
@@ -4349,6 +4345,7 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, onG
   // Every answer of the round, in order, for the XP calculation.
   const answerLog = useRef(initialState?.answerLog || []);
   const current = queue[index];
+  useEffect(() => () => { ttsLib.stop(); }, [current?.key]);
   const handledStep = useRef(null);
   useEffect(() => { handledStep.current = null; }, [index, queue, exerciseEpoch]);
   useLayoutEffect(() => {
@@ -4532,6 +4529,7 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, onG
         shortcutsEnabled={shortcutsEnabled}
         step={current}
         subject={subjectOf(subjects, current.cards[0])}
+        onLanguage={(side, lang) => onSpeechChange?.(subjectOf(subjects, current.cards[0])?.id, side, lang)}
         onResult={handleResult}
         onGroupResult={handleGroupResult}
       />
@@ -4553,12 +4551,11 @@ function ProgressBar({ value }) {
 
 
 
-function FlipCard({ card, onResult, subject, initialState, onStateChange, shortcutsEnabled }) {
+function FlipCard({ card, onResult, subject, onLanguage, initialState, onStateChange, shortcutsEnabled }) {
   const [flipped, setFlipped] = useState(!!initialState?.flipped);
   const [tutorMode, setTutorMode] = useState(null);
   useExerciseSnapshot({ flipped }, onStateChange);
   useStudyKeys({ " ": () => setFlipped(true), "1": () => onResult(false), "2": () => onResult(true) }, shortcutsEnabled && !tutorMode);
-  const frontSpeech = ttsLib.speechFor(card, subject, "front");
   const backSpeech = ttsLib.speechFor(card, subject, "back");
   // The flip drill grades itself with one binary call, before and after the
   // reveal alike. A 1-5 self-rating would tell FSRS more, but it turned a
@@ -4586,7 +4583,7 @@ function FlipCard({ card, onResult, subject, initialState, onStateChange, shortc
       <div
         className="fc-flip"
         role="button" tabIndex={0} aria-label={flipped ? "Hide answer" : "Reveal answer"} aria-expanded={flipped}
-        onKeyDown={event => { if (event.key === "Enter" && !event.repeat) { event.preventDefault(); setFlipped(f => !f); } }}
+        onKeyDown={event => { if (event.target === event.currentTarget && event.key === "Enter" && !event.repeat) { event.preventDefault(); setFlipped(f => !f); } }}
         onClick={() => setFlipped(f => !f)}
         style={{ cursor: "pointer", animation: "popIn 0.25s ease-out" }}>
         <div className="fc-flip-inner" style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
@@ -4595,7 +4592,7 @@ function FlipCard({ card, onResult, subject, initialState, onStateChange, shortc
               <div style={body}>
                 {occlusionLib.isOcclusionCard(card)
                   ? <OcclusionCard card={card} revealed={false} />
-                  : <CardFace text={card.front} imageId={card.frontImageId} />}
+                  : <PronounceFace card={card} subject={subject} onLanguage={onLanguage} inactive={flipped} />}
                 <p style={caption}>Tap the card to reveal the answer<KeyHint>Space</KeyHint></p>
               </div>
             </CardShell>
@@ -4605,7 +4602,7 @@ function FlipCard({ card, onResult, subject, initialState, onStateChange, shortc
               <div style={body}>
                 {occlusionLib.isOcclusionCard(card)
                   ? <OcclusionCard card={card} revealed={true} />
-                  : <CardFace text={card.back} imageId={card.backImageId} />}
+                  : <PronounceFace card={card} subject={subject} side="back" onLanguage={onLanguage} inactive={!flipped} />}
                 <p style={caption}>That's the answer</p>
               </div>
             </CardShell>
@@ -4613,12 +4610,9 @@ function FlipCard({ card, onResult, subject, initialState, onStateChange, shortc
         </div>
       </div>
 
-      {/* Speech and the tutor sit between the card and the grading buttons, so
-          neither is reachable by a stray tap aimed at "Got it". */}
-      {(frontSpeech || backSpeech || tutorLib.isAvailable()) && (
+      {/* Keep the tutor separate from the grading buttons. */}
+      {tutorLib.isAvailable() && (
         <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "center", marginTop: 10 }}>
-          {frontSpeech && <SpeakButton {...frontSpeech} />}
-          {backSpeech && flipped && <SpeakButton {...backSpeech} />}
           {tutorLib.isAvailable() && (
             <GhostButton onClick={() => setTutorMode(flipped ? "explain" : "hint")} style={{ fontSize: 12.5, padding: "5px 10px" }}>
               {flipped ? "Explain" : "Hint"}
@@ -4642,9 +4636,9 @@ function FlipCard({ card, onResult, subject, initialState, onStateChange, shortc
 
 // One step in, one exercise out. Everything a step needs was worked out when
 // the queue was built, so nothing here has to know about drills or the model.
-function Exercise({ step, subject, onResult, onGroupResult, initialState, onStateChange, shortcutsEnabled }) {
+function Exercise({ step, subject, onLanguage, onResult, onGroupResult, initialState, onStateChange, shortcutsEnabled }) {
   const card = step.cards[0];
-  const controls = { initialState, onStateChange, shortcutsEnabled };
+  const controls = { initialState, onStateChange, shortcutsEnabled, subject, onLanguage };
   switch (step.type) {
     case drillsLib.EXERCISES.MCQ:
       return <McqCard {...controls} card={card} options={step.payload.options} onResult={onResult} />;
@@ -4653,7 +4647,7 @@ function Exercise({ step, subject, onResult, onGroupResult, initialState, onStat
     case drillsLib.EXERCISES.CLOZE:
       return <ClozeCard {...controls} card={card} payload={step.payload} onResult={onResult} />;
     case drillsLib.EXERCISES.TRUEFALSE:
-      return <TrueFalseCard {...controls} payload={step.payload} onResult={onResult} />;
+      return <TrueFalseCard {...controls} card={card} payload={step.payload} onResult={onResult} />;
     case drillsLib.EXERCISES.MATCH:
       return <MatchCard {...controls} payload={step.payload} onResult={onGroupResult} />;
     default:
@@ -4680,7 +4674,7 @@ function subjectOf(subjects, card) {
 // The options are built by the drill now — from the wrong answers you wrote,
 // the ones the model wrote, and the rest of the deck, in that order — so this
 // only has to draw them.
-function McqCard({ card, options, onResult, initialState, onStateChange, shortcutsEnabled }) {
+function McqCard({ card, subject, onLanguage, options, onResult, initialState, onStateChange, shortcutsEnabled }) {
   const [picked, setPicked] = useState(initialState?.picked ?? null);
   const answered = picked !== null;
   useExerciseSnapshot({ picked }, onStateChange);
@@ -4691,7 +4685,7 @@ function McqCard({ card, options, onResult, initialState, onStateChange, shortcu
   return (
     <CardShell tabLabel="Multiple choice" tabColor="var(--highlight)">
       <div style={{ marginBottom: 18 }}>
-        <CardFace text={card.front} imageId={card.frontImageId} size={19} />
+        <PronounceFace card={card} subject={subject} onLanguage={onLanguage} size={19} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {options.map((opt, i) => {
@@ -4719,7 +4713,7 @@ function McqCard({ card, options, onResult, initialState, onStateChange, shortcu
   );
 }
 
-function WriteCard({ card, subject, onResult, initialState, onStateChange, shortcutsEnabled }) {
+function WriteCard({ card, subject, onLanguage, onResult, initialState, onStateChange, shortcutsEnabled }) {
   const [value, setValue] = useState(initialState?.value || "");
   const [checked, setChecked] = useState(!!initialState?.checked);
   const [tutorOpen, setTutorOpen] = useState(false);
@@ -4732,7 +4726,7 @@ function WriteCard({ card, subject, onResult, initialState, onStateChange, short
   return (
     <CardShell tabLabel="Write answer" tabColor="#7B4B94">
       <div style={{ marginBottom: 16 }}>
-        <CardFace text={card.front} imageId={card.frontImageId} size={19} />
+        <PronounceFace card={card} subject={subject} onLanguage={onLanguage} size={19} />
       </div>
       <TextField value={value} onChange={e => setValue(e.target.value)} placeholder="Type your answer…"
         readOnly={checked}

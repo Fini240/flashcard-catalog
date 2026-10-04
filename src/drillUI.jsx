@@ -9,6 +9,7 @@ import { useState, useRef, useEffect } from "react";
 import { Check, X } from "lucide-react";
 import { CardShell, CardFace, PrimaryButton, GhostButton, TextField, normalize } from "./cardUI";
 import { useStudyKeys, useExerciseSnapshot, KeyHint } from "./studyShortcuts";
+import { PronounceFace } from "./speechUI";
 
 const captionStyle = {
   textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
@@ -129,7 +130,7 @@ export function ClozeCard({ card, payload, onResult, initialState, onStateChange
 
 // ---------- true or false ----------
 
-export function TrueFalseCard({ payload, onResult, initialState, onStateChange, shortcutsEnabled }) {
+export function TrueFalseCard({ card, subject, onLanguage, payload, onResult, initialState, onStateChange, shortcutsEnabled }) {
   const [picked, setPicked] = useState(initialState?.picked ?? null);
   const answered = picked !== null;
   const wasRight = picked === payload.isTrue;
@@ -140,7 +141,7 @@ export function TrueFalseCard({ payload, onResult, initialState, onStateChange, 
   return (
     <>
       <CardShell tabLabel="True or false" tabColor="var(--highlight)">
-        <p style={promptStyle}>{payload.prompt}</p>
+        <div style={promptStyle}><PronounceFace card={card || { front: payload.prompt }} subject={subject} onLanguage={onLanguage} size={17} /></div>
         <div style={{
           flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
           minHeight: 90, textAlign: "center",

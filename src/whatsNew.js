@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.7.3";
+export const APP_VERSION = "1.8.0";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,14 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.8.0",
+    date: "2026-10-04",
+    items: [
+      "Tap the small speaker beside a word to practice its pronunciation in multiple choice, written answers, true or false and flip cards; choose a language for each side and Catalog remembers it for the subject.",
+      "The Android app now uses your device's text-to-speech engine, with playback stopping when you move to another card or pause the session.",
+    ],
+  },
   {
     version: "1.7.3",
     date: "2026-10-04",
