@@ -29,15 +29,17 @@ it("only the small speaker reads aloud; tapping the word keeps the normal card a
   expect(tts.speak).toHaveBeenCalledWith(card.front, expect.objectContaining({ lang: "es-ES", strict: true }));
   expect(flip).not.toHaveBeenCalled();
 });
-it("focuses a language picker when the subject has no known language", async () => {
+it("speaks automatically without requiring language selection, with an optional override", async () => {
   await render({ name: "Vocabulary" }); await click(host.querySelector("button"));
-  expect(tts.speak).not.toHaveBeenCalled(); expect(document.activeElement).toBe(host.querySelector("select"));
+  expect(tts.speak).toHaveBeenCalledWith(card.front, expect.objectContaining({ lang: "es-ES" }));
+  expect(host.querySelector("select").value).toBe("");
+  expect(host.querySelector("select").textContent).toContain("Automatic (Spanish)");
   await act(async () => {
     const select = host.querySelector("select"); select.value = "de-DE";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(onLanguage).toHaveBeenCalledWith("front", "de-DE");
-  expect(tts.speak).toHaveBeenCalledWith(card.front, expect.objectContaining({ lang: "de-DE" }));
+  expect(tts.speak).toHaveBeenCalledTimes(1);
   expect(flip).not.toHaveBeenCalled();
 });
 it("offers stop during playback and shows actionable missing-voice feedback", async () => {

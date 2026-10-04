@@ -8,8 +8,8 @@ const commonLanguages = [
   ["fr-FR", "French"], ["it-IT", "Italian"], ["pt-PT", "Portuguese"],
 ];
 
-export function PronounceFace({ card, subject, side = "front", size, onLanguage, inactive = false }) {
-  const speech = tts.pronunciationFor(card, subject, side);
+export function PronounceFace({ card, subject, speechCards, side = "front", size, onLanguage, inactive = false }) {
+  const speech = tts.pronunciationFor(card, subject, side, speechCards);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [picking, setPicking] = useState(false);
@@ -68,15 +68,15 @@ export function PronounceFace({ card, subject, side = "front", size, onLanguage,
     <div onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}
       style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
       <select ref={picker} aria-label={`${side === "front" ? "Front" : "Back"} pronunciation language`}
-        tabIndex={inactive ? -1 : 0} value={speech.lang || ""}
+        tabIndex={inactive ? -1 : 0} value={speech.automatic ? "" : speech.lang || ""}
         onChange={event => {
           const lang = event.target.value;
           onLanguage?.(side, lang);
-          if (lang) { setPicking(false); void play(lang); }
+          setPicking(false);
         }}
         style={{ maxWidth: "100%", minHeight: 32, border: picking ? "1px solid var(--card-border)" : "none",
           borderRadius: 4, background: "var(--input-bg)", color: "var(--text-secondary)", fontSize: 12, padding: "4px 6px" }}>
-        <option value="">Choose language</option>
+        <option value="">Automatic ({languages.find(([tag]) => tag.split("-")[0] === speech.lang?.split("-")[0])?.[1] || speech.lang})</option>
         {speech.lang && !languages.some(([lang]) => lang === speech.lang) && <option value={speech.lang}>{speech.lang}</option>}
         {languages.map(([lang, label]) => <option key={lang} value={lang}>{label}</option>)}
       </select>

@@ -31,11 +31,22 @@ describe("manual pronunciation", () => {
     expect(tts.pronunciationFor(card, subject, "back").lang).toBe("de-DE");
     expect(tts.speechFor(card, subject, "front")).toBeNull();
   });
-  it("uses a named subject as a default and leaves ambiguous sides for the picker", () => {
+  it("automatically detects both sides even without a named subject", () => {
     expect(tts.pronunciationFor(card, { name: "Spanisch" }, "front").lang).toBe("es-ES");
-    expect(tts.pronunciationFor(card, { name: "Spanish" }, "back").lang).toBeNull();
-    expect(tts.pronunciationFor(card, { name: "Vocabulary" }, "front").lang).toBeNull();
+    expect(tts.pronunciationFor(card, { name: "Spanish" }, "back").lang).toBe("de-DE");
+    expect(tts.pronunciationFor(card, { name: "Vocabulary" }, "front").lang).toBe("es-ES");
     expect(tts.pronunciationFor({ ...card, frontImageId: "image" }, {}, "front")).toBeNull();
+  });
+  it("defaults to Auto while retaining explicit manual corrections", () => {
+    expect(tts.pronunciationFor(card, { speech: { frontLang: "de-DE" } }, "front"))
+      .toMatchObject({ lang: "es-ES", automatic: true });
+    expect(tts.pronunciationFor(card, { speech: { frontLang: "es-MX", frontLanguageMode: "manual" } }, "front"))
+      .toMatchObject({ lang: "es-MX", automatic: false });
+  });
+  it("also detects automatic answer-reading languages, while keeping that feature opt-in", () => {
+    expect(tts.speechFor(card, { speech: { enabled: true } }, "back"))
+      .toMatchObject({ lang: "de-DE", automatic: true });
+    expect(tts.speechFor(card, {}, "back")).toBeNull();
   });
   it("reads the visible plain text with the chosen browser voice", async () => {
     const result = tts.speak("`el campamento`", { lang: "es-ES", strict: true, rate: 0.85 });

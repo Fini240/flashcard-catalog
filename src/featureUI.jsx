@@ -421,15 +421,16 @@ export function SpeechSettings({ subject, onChange }) {
     <div style={{ flex: 1 }}>
       <Label>{side === "front" ? "Front" : "Back"}</Label>
       <select
-        value={cfg[`${side}Lang`] || ""}
-        onChange={(e) => set({ [`${side}Lang`]: e.target.value || null })}
+        value={cfg[`${side}LanguageMode`] === "manual" ? cfg[`${side}Lang`] || "" : ""}
+        onChange={(e) => set({ [`${side}Lang`]: e.target.value || null,
+          [`${side}LanguageMode`]: e.target.value ? "manual" : "auto" })}
         style={{
           width: "100%", padding: "9px 10px", borderRadius: 8, minHeight: 40,
           background: "var(--shell-raised)", color: "var(--on-shell-strong)",
           border: "1px solid var(--shell-raised)", fontSize: 14,
         }}
       >
-        <option value="">Don't read</option>
+        <option value="">Automatic</option>
         {languages.map((l) => (
           <option key={l.lang} value={l.lang}>{l.lang} — {l.name}</option>
         ))}

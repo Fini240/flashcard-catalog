@@ -1092,8 +1092,10 @@ export default function FlashcardCatalog() {
           rebuildQueue={rebuildQueue}
           game={game}
           subjects={subjects}
+          speechCards={cards}
           onSpeechChange={(id, side, lang) => setSubjects(ss => mapTree(ss, id, n => ({
-            ...n, speech: { ...n.speech, [`${side}Lang`]: lang || null },
+            ...n, speech: { ...n.speech, [`${side}Lang`]: lang || null,
+              [`${side}LanguageMode`]: lang ? "manual" : "auto" },
           })))}
           onGrade={gradeCard}
           onFinish={finishSession}
@@ -4327,7 +4329,7 @@ const selectStyle = {
 };
 
 // ---------- SESSION ----------
-function Session({ initialQueue, initialState, rebuildQueue, game, subjects, onSpeechChange, onGrade, onFinish, onExit, onCheckpoint, onUndo, shortcutsEnabled }) {
+function Session({ initialQueue, initialState, rebuildQueue, game, subjects, speechCards, onSpeechChange, onGrade, onFinish, onExit, onCheckpoint, onUndo, shortcutsEnabled }) {
   const [queue, setQueue] = useState(initialState?.queue || initialQueue);
   const [index, setIndex] = useState(initialState?.index || 0);
   const [missed, setMissed] = useState(initialState?.missed || []);
@@ -4529,6 +4531,7 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, onS
         shortcutsEnabled={shortcutsEnabled}
         step={current}
         subject={subjectOf(subjects, current.cards[0])}
+        speechCards={speechCards}
         onLanguage={(side, lang) => onSpeechChange?.(subjectOf(subjects, current.cards[0])?.id, side, lang)}
         onResult={handleResult}
         onGroupResult={handleGroupResult}
@@ -4551,12 +4554,12 @@ function ProgressBar({ value }) {
 
 
 
-function FlipCard({ card, onResult, subject, onLanguage, initialState, onStateChange, shortcutsEnabled }) {
+function FlipCard({ card, onResult, subject, speechCards, onLanguage, initialState, onStateChange, shortcutsEnabled }) {
   const [flipped, setFlipped] = useState(!!initialState?.flipped);
   const [tutorMode, setTutorMode] = useState(null);
   useExerciseSnapshot({ flipped }, onStateChange);
   useStudyKeys({ " ": () => setFlipped(true), "1": () => onResult(false), "2": () => onResult(true) }, shortcutsEnabled && !tutorMode);
-  const backSpeech = ttsLib.speechFor(card, subject, "back");
+  const backSpeech = ttsLib.speechFor(card, subject, "back", speechCards);
   // The flip drill grades itself with one binary call, before and after the
   // reveal alike. A 1-5 self-rating would tell FSRS more, but it turned a
   // one-tap drill into a five-way decision on every card, so it is gone.
@@ -4592,7 +4595,7 @@ function FlipCard({ card, onResult, subject, onLanguage, initialState, onStateCh
               <div style={body}>
                 {occlusionLib.isOcclusionCard(card)
                   ? <OcclusionCard card={card} revealed={false} />
-                  : <PronounceFace card={card} subject={subject} onLanguage={onLanguage} inactive={flipped} />}
+                  : <PronounceFace card={card} subject={subject} speechCards={speechCards} onLanguage={onLanguage} inactive={flipped} />}
                 <p style={caption}>Tap the card to reveal the answer<KeyHint>Space</KeyHint></p>
               </div>
             </CardShell>
@@ -4602,7 +4605,7 @@ function FlipCard({ card, onResult, subject, onLanguage, initialState, onStateCh
               <div style={body}>
                 {occlusionLib.isOcclusionCard(card)
                   ? <OcclusionCard card={card} revealed={true} />
-                  : <PronounceFace card={card} subject={subject} side="back" onLanguage={onLanguage} inactive={!flipped} />}
+                  : <PronounceFace card={card} subject={subject} speechCards={speechCards} side="back" onLanguage={onLanguage} inactive={!flipped} />}
                 <p style={caption}>That's the answer</p>
               </div>
             </CardShell>
@@ -4636,9 +4639,9 @@ function FlipCard({ card, onResult, subject, onLanguage, initialState, onStateCh
 
 // One step in, one exercise out. Everything a step needs was worked out when
 // the queue was built, so nothing here has to know about drills or the model.
-function Exercise({ step, subject, onLanguage, onResult, onGroupResult, initialState, onStateChange, shortcutsEnabled }) {
+function Exercise({ step, subject, speechCards, onLanguage, onResult, onGroupResult, initialState, onStateChange, shortcutsEnabled }) {
   const card = step.cards[0];
-  const controls = { initialState, onStateChange, shortcutsEnabled, subject, onLanguage };
+  const controls = { initialState, onStateChange, shortcutsEnabled, subject, speechCards, onLanguage };
   switch (step.type) {
     case drillsLib.EXERCISES.MCQ:
       return <McqCard {...controls} card={card} options={step.payload.options} onResult={onResult} />;
@@ -4674,7 +4677,7 @@ function subjectOf(subjects, card) {
 // The options are built by the drill now — from the wrong answers you wrote,
 // the ones the model wrote, and the rest of the deck, in that order — so this
 // only has to draw them.
-function McqCard({ card, subject, onLanguage, options, onResult, initialState, onStateChange, shortcutsEnabled }) {
+function McqCard({ card, subject, speechCards, onLanguage, options, onResult, initialState, onStateChange, shortcutsEnabled }) {
   const [picked, setPicked] = useState(initialState?.picked ?? null);
   const answered = picked !== null;
   useExerciseSnapshot({ picked }, onStateChange);
@@ -4685,7 +4688,7 @@ function McqCard({ card, subject, onLanguage, options, onResult, initialState, o
   return (
     <CardShell tabLabel="Multiple choice" tabColor="var(--highlight)">
       <div style={{ marginBottom: 18 }}>
-        <PronounceFace card={card} subject={subject} onLanguage={onLanguage} size={19} />
+        <PronounceFace card={card} subject={subject} speechCards={speechCards} onLanguage={onLanguage} size={19} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {options.map((opt, i) => {
@@ -4713,7 +4716,7 @@ function McqCard({ card, subject, onLanguage, options, onResult, initialState, o
   );
 }
 
-function WriteCard({ card, subject, onLanguage, onResult, initialState, onStateChange, shortcutsEnabled }) {
+function WriteCard({ card, subject, speechCards, onLanguage, onResult, initialState, onStateChange, shortcutsEnabled }) {
   const [value, setValue] = useState(initialState?.value || "");
   const [checked, setChecked] = useState(!!initialState?.checked);
   const [tutorOpen, setTutorOpen] = useState(false);
@@ -4721,12 +4724,12 @@ function WriteCard({ card, subject, onLanguage, onResult, initialState, onStateC
   useExerciseSnapshot({ value, checked }, onStateChange);
   useStudyKeys(checked ? { Enter: () => onResult(isCorrect), " ": () => onResult(isCorrect) }
     : { Enter: value.trim() ? () => setChecked(true) : null }, shortcutsEnabled && !tutorOpen);
-  const backSpeech = ttsLib.speechFor(card, subject, "back");
+  const backSpeech = ttsLib.speechFor(card, subject, "back", speechCards);
 
   return (
     <CardShell tabLabel="Write answer" tabColor="#7B4B94">
       <div style={{ marginBottom: 16 }}>
-        <PronounceFace card={card} subject={subject} onLanguage={onLanguage} size={19} />
+        <PronounceFace card={card} subject={subject} speechCards={speechCards} onLanguage={onLanguage} size={19} />
       </div>
       <TextField value={value} onChange={e => setValue(e.target.value)} placeholder="Type your answer…"
         readOnly={checked}

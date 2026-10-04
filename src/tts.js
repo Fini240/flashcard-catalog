@@ -17,6 +17,7 @@
 import { report } from "./report";
 import { Capacitor } from "@capacitor/core";
 import { toPlainText } from "./richText";
+import { automaticSpeechLanguage } from "./speechLanguage";
 
 const synth = () => (typeof window !== "undefined" ? window.speechSynthesis : null);
 const native = () => Capacitor.isNativePlatform();
@@ -173,21 +174,17 @@ export async function speak(text, opts = {}) {
 }
 
 // Manual pronunciation does not require automatic answer reading to be enabled.
-// Only an explicitly named language subject supplies a default; ambiguous words
-// such as "pan" cannot be reliably language-detected in isolation.
-export function pronunciationFor(card, subject, side) {
+// Detect the spoken side, using nearby vocabulary for ambiguous short words.
+// Existing language settings are hints unless the user explicitly overrides Auto.
+export function pronunciationFor(card, subject, side, pool = []) {
   const text = side === "front" ? card?.front : card?.back;
   if (!text?.trim() || card?.[`${side}ImageId`]) return null;
   const cfg = subject?.speech || {};
-  const subjectLanguages = [
-    [/\b(spanish|spanisch|español|adelante)\b/i, "es-ES"],
-    [/\b(german|deutsch)\b/i, "de-DE"],
-    [/\b(english|englisch)\b/i, "en-GB"],
-    [/\b(french|französisch|français)\b/i, "fr-FR"],
-    [/\b(italian|italienisch|italiano)\b/i, "it-IT"],
-  ];
-  const inferred = side === "front" ? subjectLanguages.find(([re]) => re.test(subject?.name || ""))?.[1] : null;
-  return { text, lang: cfg[`${side}Lang`] || inferred || null, rate: cfg.rate ?? 0.85,
+  const manual = cfg[`${side}LanguageMode`] === "manual" && !!cfg[`${side}Lang`];
+  const lang = manual ? cfg[`${side}Lang`] : automaticSpeechLanguage(toPlainText(text), {
+    card, subject, side, pool, preferred: cfg[`${side}Lang`],
+  });
+  return { text, lang, automatic: !manual, rate: cfg.rate ?? 0.85,
     voiceName: cfg[`${side}Voice`], strict: true };
 }
 
@@ -207,12 +204,9 @@ export async function availableLanguages() {
 // Which side of a card to read, and in which language. A vocabulary subject is
 // typically native on one side and target on the other, so one language for the
 // whole card would read half of it wrong.
-export function speechFor(card, subject, side) {
+export function speechFor(card, subject, side, pool = []) {
   const cfg = subject?.speech || null;
   if (!cfg || !cfg.enabled) return null;
-  const lang = side === "front" ? cfg.frontLang : cfg.backLang;
-  if (!lang) return null;
-  const text = side === "front" ? card?.front : card?.back;
-  if (!text || (side === "front" && card?.frontImageId)) return null;
-  return { text, lang, rate: cfg.rate ?? 0.95, voiceName: side === "front" ? cfg.frontVoice : cfg.backVoice };
+  const speech = pronunciationFor(card, subject, side, pool);
+  return speech ? { ...speech, rate: cfg.rate ?? 0.95 } : null;
 }
