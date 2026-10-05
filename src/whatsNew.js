@@ -68,6 +68,13 @@ export const RELEASES = [
     ],
   },
   {
+    version: "1.8.7",
+    date: "2026-10-05",
+    items: [
+      "Correct and wrong study answers now have distinct sounds and vibration, including each matching-pair attempt; switch either off in Settings.",
+    ],
+  },
+  {
     version: "1.8.6",
     date: "2026-10-05",
     items: [
