@@ -51,6 +51,7 @@ import * as tagsLib from "./tags";
 import * as clozeLib from "./cloze";
 import * as occlusionLib from "./occlusion";
 import * as ttsLib from "./tts";
+import { getFeedbackSettings, setFeedbackSettings, useAnswerFeedback } from "./answerFeedback";
 import { PronounceFace, CardSpeechFields } from "./speechUI";
 import { migrateSubjects } from "./subjectTree";
 import * as exporters from "./exporters";
@@ -3467,9 +3468,9 @@ function ApiKeyPrompt({ onOpenSettings, googleUser }) {
 }
 
 // ---------- SETTINGS ----------
-function Switch({ checked, onChange }) {
+function Switch({ checked, onChange, label }) {
   return (
-    <button onClick={() => onChange(!checked)} role="switch" aria-checked={checked} style={{
+    <button onClick={() => onChange(!checked)} role="switch" aria-label={label} aria-checked={checked} style={{
       width: 46, height: 26, borderRadius: 13, border: "none", padding: 3,
       background: checked ? "var(--brand)" : "var(--card-border)",
       display: "flex", alignItems: "center", justifyContent: checked ? "flex-end" : "flex-start",
@@ -3489,6 +3490,7 @@ function Switch({ checked, onChange }) {
 // API key never leaves the device.
 function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetReminder, onSetMascot, onSetListed, onExport, onImport, onExportCards, onOpenStats, onAddSharedDeck, onReplayWalkthrough, diagInfo }) {
   const { choice: languageChoice, setLanguage } = useAppLanguage();
+  const [feedback, setFeedback] = useState(getFeedbackSettings);
   const [apiKeyEditorOpen, setApiKeyEditorOpen] = useState(false);
   const mascotMood = widget.moodNow(game);
   const [reminderBusy, setReminderBusy] = useState(false);
@@ -3579,6 +3581,13 @@ function SettingsModal({ onClose, darkMode, theme, onChooseTheme, game, onSetRem
           fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
           textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px",
         }}>{t("Studying")}</p>
+        {[{ key: "sound", label: "Answer sounds" }, { key: "haptics", label: "Answer vibration" }].map(({ key, label }) => (
+          <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ fontSize: 14, color: "var(--text-strong)", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>{t(label)}</span>
+            <Switch label={t(label)} checked={feedback[key]}
+              onChange={() => setFeedback(setFeedbackSettings({ [key]: !feedback[key] }))} />
+          </div>
+        ))}
         {reminders.isSupported() ? (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -4431,8 +4440,10 @@ function ProgressBar({ value }) {
 function FlipCard({ card, onResult, subject, speechCards, initialState, onStateChange, shortcutsEnabled }) {
   const [flipped, setFlipped] = useState(!!initialState?.flipped);
   const [tutorMode, setTutorMode] = useState(null);
+  const feedback = useAnswerFeedback();
+  const answer = (correct) => { if (feedback(correct)) onResult(correct); };
   useExerciseSnapshot({ flipped }, onStateChange);
-  useStudyKeys({ " ": () => setFlipped(true), "1": () => onResult(false), "2": () => onResult(true) }, shortcutsEnabled && !tutorMode);
+  useStudyKeys({ " ": () => setFlipped(true), "1": () => answer(false), "2": () => answer(true) }, shortcutsEnabled && !tutorMode);
   const backSpeech = ttsLib.speechFor(card, subject, "back", speechCards);
   // The flip drill grades itself with one binary call, before and after the
   // reveal alike. A 1-5 self-rating would tell FSRS more, but it turned a
@@ -4504,8 +4515,8 @@ function FlipCard({ card, onResult, subject, speechCards, initialState, onStateC
       {/* Deliberately outside the card: these stay put while it turns, so you
           can grade a card you already know without revealing it first. */}
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <GhostButton onClick={() => onResult(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>{t("Missed it")}<KeyHint>1</KeyHint></GhostButton>
-        <PrimaryButton onClick={() => onResult(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>{t("Got it")}<KeyHint>2</KeyHint></PrimaryButton>
+        <GhostButton onClick={() => answer(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>{t("Missed it")}<KeyHint>1</KeyHint></GhostButton>
+        <PrimaryButton onClick={() => answer(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>{t("Got it")}<KeyHint>2</KeyHint></PrimaryButton>
       </div>
     </>
   );
@@ -4554,10 +4565,14 @@ function subjectOf(subjects, card) {
 function McqCard({ card, subject, speechCards, options, onResult, initialState, onStateChange, shortcutsEnabled }) {
   const [picked, setPicked] = useState(initialState?.picked ?? null);
   const answered = picked !== null;
+  const feedback = useAnswerFeedback(answered);
+  const pick = (option) => {
+    if (feedback(normalize(option) === normalize(card.back))) setPicked(option);
+  };
   useExerciseSnapshot({ picked }, onStateChange);
   const next = () => onResult(normalize(picked) === normalize(card.back));
   useStudyKeys(answered ? { " ": next, Enter: next }
-    : Object.fromEntries(options.map((option, i) => [String(i + 1), () => setPicked(option)])), shortcutsEnabled);
+    : Object.fromEntries(options.map((option, i) => [String(i + 1), () => pick(option)])), shortcutsEnabled);
 
   return (
     <CardShell tabLabel={t("Multiple choice")} tabColor="var(--highlight)">
@@ -4573,7 +4588,7 @@ function McqCard({ card, subject, speechCards, options, onResult, initialState, 
             else if (opt === picked) { bg = "#B5533C"; border = "#B5533C"; color = "#FBF7EC"; }
           }
           return (
-            <button key={i} data-study-option disabled={answered} onClick={() => setPicked(opt)} style={{
+            <button key={i} data-study-option disabled={answered} onClick={() => pick(opt)} style={{
               textAlign: "left", padding: "15px 16px", minHeight: 48, borderRadius: 8, border: `1px solid ${border}`,
               background: bg, color, fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 500,
               WebkitTapHighlightColor: "transparent",
@@ -4594,9 +4609,13 @@ function WriteCard({ card, subject, speechCards, onResult, initialState, onState
   const [checked, setChecked] = useState(!!initialState?.checked);
   const [tutorOpen, setTutorOpen] = useState(false);
   const isCorrect = normalize(value) === normalize(card.back);
+  const feedback = useAnswerFeedback(checked);
+  const check = () => {
+    if (value.trim() && feedback(isCorrect)) setChecked(true);
+  };
   useExerciseSnapshot({ value, checked }, onStateChange);
   useStudyKeys(checked ? { Enter: () => onResult(isCorrect), " ": () => onResult(isCorrect) }
-    : { Enter: value.trim() ? () => setChecked(true) : null }, shortcutsEnabled && !tutorOpen);
+    : { Enter: value.trim() ? check : null }, shortcutsEnabled && !tutorOpen);
   const backSpeech = ttsLib.speechFor(card, subject, "back", speechCards);
 
   return (
@@ -4609,7 +4628,7 @@ function WriteCard({ card, subject, speechCards, onResult, initialState, onState
         onKeyDown={e => {
           if (e.key !== "Enter" || e.repeat || e.isComposing || !shortcutsEnabled || !value.trim()) return;
           e.preventDefault();
-          if (checked) onResult(isCorrect); else setChecked(true);
+          if (checked) onResult(isCorrect); else check();
         }}
         style={{ background: "var(--input-bg)", color: "var(--text-strong)", border: "1px solid var(--card-border)", marginBottom: 12 }} />
       {checked && (
@@ -4637,7 +4656,7 @@ function WriteCard({ card, subject, speechCards, onResult, initialState, onState
       {checked ? (
         <PrimaryButton onClick={() => onResult(isCorrect)} style={{ width: "100%" }}>{t("Continue")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
       ) : (
-        <PrimaryButton onClick={() => setChecked(true)} disabled={!value.trim()} style={{ width: "100%" }}>{t("Check answer")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
+        <PrimaryButton onClick={check} disabled={!value.trim()} style={{ width: "100%" }}>{t("Check answer")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
       )}
     </CardShell>
   );

@@ -845,5 +845,8 @@
   "Review": "Prüfen",
   "{0} duplicates skipped.": "{0} Duplikate übersprungen.",
   "Choose English, German or your device language in Settings; the interface switches immediately and remembers your choice on this device.": "Wähle Englisch, Deutsch oder deine Gerätesprache in den Einstellungen. Die Oberfläche wechselt sofort und merkt sich deine Auswahl auf diesem Gerät.",
-  "Photo": "Foto"
+  "Photo": "Foto",
+  "Answer sounds": "Antworttöne",
+  "Answer vibration": "Vibration bei Antworten",
+  "Correct and wrong study answers now have distinct sounds and vibration, including each matching-pair attempt; switch either off in Settings.": "Richtige und falsche Antworten haben jetzt unterschiedliche Töne und Vibrationen, auch bei jedem Zuordnungsversuch. Beides lässt sich in den Einstellungen einzeln ausschalten."
 }

@@ -1,4 +1,5 @@
 import { t } from "./i18n";
+import { playAnswerFeedback, useAnswerFeedback } from "./answerFeedback";
 // ---------------------------------------------------------------------------
 // The exercises a drill is made of, beyond the original three.
 //
@@ -48,12 +49,15 @@ export function ClozeCard({ card, payload, onResult, initialState, onStateChange
   const [values, setValues] = useState(() => initialState?.values?.length === answers.length ? initialState.values : answers.map(() => ""));
   const [verdict, setVerdict] = useState(initialState?.verdict || null); // null | "right" | "wrong"
   const inputRef = useRef(null);
+  const feedback = useAnswerFeedback(!!verdict);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   const check = () => {
     if (verdict) return;
-    setVerdict(values.every((value, i) => normalize(value) === normalize(answers[i])) ? "right" : "wrong");
+    if (!values.every((value) => value.trim())) return;
+    const correct = values.every((value, i) => normalize(value) === normalize(answers[i]));
+    if (feedback(correct)) setVerdict(correct ? "right" : "wrong");
   };
   const setValue = (index, value) => {
     setValues((current) => current.map((old, i) => i === index ? value : old));
@@ -116,7 +120,7 @@ export function ClozeCard({ card, payload, onResult, initialState, onStateChange
           ? <PrimaryButton onClick={next} style={{ flex: 1 }}>{t("Next")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
           : (
             <>
-              <GhostButton onClick={() => setVerdict("wrong")} style={{ flex: 1, color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>{t("Show me")}</GhostButton>
+              <GhostButton onClick={() => { if (feedback(false)) setVerdict("wrong"); }} style={{ flex: 1, color: "var(--text-secondary)", borderColor: "var(--card-border)" }}>{t("Show me")}</GhostButton>
               <PrimaryButton onClick={check} disabled={!allFilled} style={{ flex: 1 }}>{t("Check")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
             </>
           )}
@@ -131,9 +135,11 @@ export function TrueFalseCard({ card, subject, speechCards, payload, onResult, i
   const [picked, setPicked] = useState(initialState?.picked ?? null);
   const answered = picked !== null;
   const wasRight = picked === payload.isTrue;
+  const feedback = useAnswerFeedback(answered);
+  const pick = (value) => { if (feedback(value === payload.isTrue)) setPicked(value); };
   useExerciseSnapshot({ picked }, onStateChange);
   const next = () => onResult(wasRight);
-  useStudyKeys(answered ? { Enter: next, " ": next } : { "1": () => setPicked(false), "2": () => setPicked(true) }, shortcutsEnabled);
+  useStudyKeys(answered ? { Enter: next, " ": next } : { "1": () => pick(false), "2": () => pick(true) }, shortcutsEnabled);
 
   return (
     <>
@@ -179,10 +185,10 @@ export function TrueFalseCard({ card, subject, speechCards, payload, onResult, i
           <PrimaryButton onClick={next} style={{ flex: 1 }}>{t("Next")}<KeyHint>{t("Enter")}</KeyHint></PrimaryButton>
         ) : (
           <>
-            <GhostButton onClick={() => setPicked(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>
+            <GhostButton onClick={() => pick(false)} style={{ flex: 1, color: "#B5533C", borderColor: "#B5533C" }}>
               <X size={16} />{t(" False")}<KeyHint>1</KeyHint>
             </GhostButton>
-            <PrimaryButton onClick={() => setPicked(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>
+            <PrimaryButton onClick={() => pick(true)} style={{ flex: 1, background: "var(--success)", color: "#FBF7EC" }}>
               <Check size={16} />{t(" True")}<KeyHint>2</KeyHint>
             </PrimaryButton>
           </>
@@ -212,6 +218,7 @@ export function MatchCard({ payload, onResult, initialState, onStateChange, shor
 
   const tapMeaning = (meaningId) => {
     if (!pickedTerm || solved[meaningId]) return;
+    playAnswerFeedback(pickedTerm === meaningId);
     if (pickedTerm === meaningId) {
       setSolved((s) => ({ ...s, [meaningId]: true }));
       setPickedTerm(null);
