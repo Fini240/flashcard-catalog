@@ -845,5 +845,6 @@
   "Review": "Prüfen",
   "{0} duplicates skipped.": "{0} Duplikate übersprungen.",
   "Choose English, German or your device language in Settings; the interface switches immediately and remembers your choice on this device.": "Wähle Englisch, Deutsch oder deine Gerätesprache in den Einstellungen. Die Oberfläche wechselt sofort und merkt sich deine Auswahl auf diesem Gerät.",
-  "Photo": "Foto"
+  "Photo": "Foto",
+  "Android pronunciation loads voices in the background so tapping the speaker no longer freezes the screen; stopping or changing words also cancels a voice still loading.": "Android lädt Stimmen im Hintergrund, damit das Tippen auf den Lautsprecher den Bildschirm nicht mehr blockiert; beim Stoppen oder Wechseln des Wortes wird auch eine noch ladende Stimme abgebrochen."
 }

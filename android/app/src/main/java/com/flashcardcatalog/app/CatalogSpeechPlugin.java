@@ -3,6 +3,7 @@ package com.flashcardcatalog.app;
 import android.content.Intent;
 import android.media.AudioAttributes;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
@@ -21,11 +22,17 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Android speech with explicit readiness, cancellation and failed-request handling. */
 @CapacitorPlugin(name = "CatalogSpeech")
 public class CatalogSpeechPlugin extends Plugin {
     private final Handler main = new Handler(Looper.getMainLooper());
+    private HandlerThread speechThread;
+    private Handler worker;
+    // Updated at bridge entry, so stop/navigation can cancel even while a
+    // slow voice model is still loading on the worker.
+    private final AtomicInteger playbackGeneration = new AtomicInteger();
     private final List<ReadyCall> waiting = new ArrayList<>();
     private TextToSpeech engine;
     private boolean ready;
@@ -52,30 +59,41 @@ public class CatalogSpeechPlugin extends Plugin {
         return new TextToSpeech(getContext(), listener);
     }
 
-    @Override public void load() { main.post(this::initialize); }
+    // Voice selection makes synchronous engine IPC calls. Keep the entire TTS
+    // state on one serial worker so these calls cannot freeze the WebView/UI.
+    protected Handler createSpeechHandler() {
+        speechThread = new HandlerThread("CatalogSpeech");
+        speechThread.start();
+        return new Handler(speechThread.getLooper());
+    }
+
+    @Override public void load() {
+        worker = createSpeechHandler();
+        worker.post(this::initialize);
+    }
 
     private void initialize() {
         if (destroyed || engine != null) return;
         final int attempt = ++generation;
         try {
-            engine = createEngine(status -> main.post(() -> {
+            engine = createEngine(status -> worker.post(() -> {
                 if (attempt != generation || destroyed) return;
                 if (status != TextToSpeech.SUCCESS) { initializationFailed(); return; }
                 engine.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override public void onStart(String id) { main.post(() -> {
+                    @Override public void onStart(String id) { worker.post(() -> {
                         if (id.equals(utteranceId) && playbackTimeout != null) {
-                            main.removeCallbacks(playbackTimeout);
-                            main.postDelayed(playbackTimeout, 60000);
+                            worker.removeCallbacks(playbackTimeout);
+                            worker.postDelayed(playbackTimeout, 60000);
                         }
                     }); }
-                    @Override public void onDone(String id) { main.post(() -> finish(id, null)); }
+                    @Override public void onDone(String id) { worker.post(() -> finish(id, null)); }
                     @Override public void onError(String id) { onError(id, TextToSpeech.ERROR); }
                     @Override public void onError(String id, int code) {
-                        main.post(() -> finish(id, code == TextToSpeech.ERROR_NOT_INSTALLED_YET
+                        worker.post(() -> finish(id, code == TextToSpeech.ERROR_NOT_INSTALLED_YET
                             ? "NO_VOICE" : "PLAYBACK_ERROR"));
                     }
                     @Override public void onStop(String id, boolean interrupted) {
-                        main.post(() -> finish(id, "CANCELED"));
+                        worker.post(() -> finish(id, "CANCELED"));
                     }
                 });
                 engine.setAudioAttributes(new AudioAttributes.Builder()
@@ -86,7 +104,7 @@ public class CatalogSpeechPlugin extends Plugin {
                 waiting.clear();
                 for (ReadyCall operation : pending) run(operation);
             }));
-            main.postDelayed(() -> {
+            worker.postDelayed(() -> {
                 if (attempt == generation && !ready && !destroyed) initializationFailed();
             }, 10000);
         } catch (Exception e) { initializationFailed(); }
@@ -102,7 +120,7 @@ public class CatalogSpeechPlugin extends Plugin {
     }
 
     private void whenReady(PluginCall call, Consumer<TextToSpeech> action, boolean playback) {
-        main.post(() -> {
+        worker.post(() -> {
             if (destroyed) { call.reject("Speech was stopped.", "CANCELED"); return; }
             ReadyCall operation = new ReadyCall(call, action, playback);
             if (ready) run(operation);
@@ -176,7 +194,11 @@ public class CatalogSpeechPlugin extends Plugin {
     }
 
     @PluginMethod public void speak(PluginCall call) {
+        final int token = playbackGeneration.incrementAndGet();
         whenReady(call, tts -> {
+            if (token != playbackGeneration.get()) {
+                call.reject("Speech was replaced.", "CANCELED"); return;
+            }
             cancelPlayback();
             Locale locale = Locale.forLanguageTag(call.getString("lang", "en-US"));
             String preferred = call.getString("voiceName");
@@ -198,6 +220,11 @@ public class CatalogSpeechPlugin extends Plugin {
             Float rate = call.getFloat("rate", 0.85f), pitch = call.getFloat("pitch", 1.0f);
             if (!rate.equals(configuredRate) && tts.setSpeechRate(rate) == TextToSpeech.SUCCESS) configuredRate = rate;
             if (!pitch.equals(configuredPitch) && tts.setPitch(pitch) == TextToSpeech.SUCCESS) configuredPitch = pitch;
+            // Voice selection can block in an engine IPC call. Never speak an
+            // obsolete word after that call returns.
+            if (token != playbackGeneration.get()) {
+                call.reject("Speech was stopped.", "CANCELED"); return;
+            }
             Bundle params = new Bundle(); params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
             speaking = call;
             utteranceId = call.getCallbackId();
@@ -205,7 +232,7 @@ public class CatalogSpeechPlugin extends Plugin {
             playbackTimeout = () -> {
                 if (id.equals(utteranceId)) { finish(id, "PLAYBACK_TIMEOUT"); tts.stop(); }
             };
-            main.postDelayed(playbackTimeout, 15000);
+            worker.postDelayed(playbackTimeout, 15000);
             // ERROR can be returned without ever delivering an utterance callback.
             int status = tts.speak(call.getString("text", ""), TextToSpeech.QUEUE_FLUSH, params, id);
             if (status != TextToSpeech.SUCCESS) finish(id, "PLAYBACK_ERROR");
@@ -216,7 +243,7 @@ public class CatalogSpeechPlugin extends Plugin {
         if (speaking == null || !id.equals(utteranceId)) return;
         PluginCall call = speaking;
         speaking = null; utteranceId = null;
-        if (playbackTimeout != null) main.removeCallbacks(playbackTimeout);
+        if (playbackTimeout != null) worker.removeCallbacks(playbackTimeout);
         if (error == null) call.resolve();
         else {
             if (!"CANCELED".equals(error)) invalidateConfiguration();
@@ -232,7 +259,8 @@ public class CatalogSpeechPlugin extends Plugin {
     }
 
     @PluginMethod public void stop(PluginCall call) {
-        main.post(() -> {
+        playbackGeneration.incrementAndGet();
+        worker.post(() -> {
             cancelPlayback();
             waiting.removeIf(operation -> {
                 if (operation.playback) operation.call.reject("Speech was stopped.", "CANCELED");
@@ -254,15 +282,18 @@ public class CatalogSpeechPlugin extends Plugin {
     }
 
     @Override protected void handleOnDestroy() {
-        main.post(() -> {
+        playbackGeneration.incrementAndGet();
+        worker.post(() -> {
             destroyed = true;
             cancelPlayback();
             initializationFailed();
+            worker.removeCallbacksAndMessages(null);
+            if (speechThread != null) speechThread.quitSafely();
         });
     }
 
     @Override protected void handleOnResume() {
         // A voice may have been installed or changed while Android Settings was open.
-        main.post(this::invalidateConfiguration);
+        worker.post(this::invalidateConfiguration);
     }
 }

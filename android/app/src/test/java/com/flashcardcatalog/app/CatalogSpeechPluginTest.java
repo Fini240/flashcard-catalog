@@ -8,6 +8,7 @@ import static org.robolectric.Shadows.shadowOf;
 import android.content.Context;
 import android.media.AudioAttributes;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
@@ -18,7 +19,11 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Before;
+import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
@@ -36,6 +41,15 @@ public class CatalogSpeechPluginTest {
 
     private class TestPlugin extends CatalogSpeechPlugin {
         TextToSpeech.OnInitListener initialization;
+        Handler speechHandler;
+        boolean shutdownRequested;
+        @Override protected void handleOnDestroy() {
+            shutdownRequested = true; super.handleOnDestroy();
+        }
+        @Override protected Handler createSpeechHandler() {
+            speechHandler = super.createSpeechHandler();
+            return speechHandler;
+        }
         @Override public Context getContext() { return RuntimeEnvironment.getApplication(); }
         @Override protected TextToSpeech createEngine(TextToSpeech.OnInitListener listener) {
             initialization = listener; return engine;
@@ -52,7 +66,15 @@ public class CatalogSpeechPluginTest {
         plugin.load(); idle();
     }
 
-    private void idle() { shadowOf(Looper.getMainLooper()).idle(); }
+    @After public void cleanup() {
+        if (!plugin.shutdownRequested) { plugin.handleOnDestroy(); idle(); }
+    }
+
+    private void idle() {
+        shadowOf(plugin.speechHandler.getLooper()).idle();
+        shadowOf(Looper.getMainLooper()).idle();
+    }
+    private void advance(Duration duration) { shadowOf(plugin.speechHandler.getLooper()).idleFor(duration); }
     private void ready() { plugin.initialization.onInit(TextToSpeech.SUCCESS); idle(); }
     private PluginCall call(String id) {
         PluginCall call = mock(PluginCall.class);
@@ -89,7 +111,7 @@ public class CatalogSpeechPluginTest {
         ready(); when(engine.speak(any(CharSequence.class), anyInt(), any(Bundle.class), anyString())).thenReturn(TextToSpeech.ERROR);
         PluginCall call = call("failed"); plugin.speak(call); idle();
         verify(call).reject(anyString(), eq("PLAYBACK_ERROR"));
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(61));
+        advance(Duration.ofSeconds(61));
         verify(call, times(1)).reject(anyString(), anyString());
     }
 
@@ -97,7 +119,7 @@ public class CatalogSpeechPluginTest {
         ready(); when(engine.speak(any(CharSequence.class), anyInt(), any(Bundle.class), anyString())).thenThrow(new IllegalStateException("engine died"));
         PluginCall call = call("thrown"); plugin.speak(call); idle();
         verify(call).reject(anyString(), eq("PLAYBACK_ERROR"));
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(61));
+        advance(Duration.ofSeconds(61));
         verify(call, times(1)).reject(anyString(), anyString());
     }
 
@@ -146,7 +168,7 @@ public class CatalogSpeechPluginTest {
 
     @Test public void engineThatNeverInitializesFailsWithinBoundedTime() {
         PluginCall call = call("not-ready"); plugin.speak(call); idle();
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(11));
+        advance(Duration.ofSeconds(11));
         verify(call).reject(anyString(), eq("ENGINE_UNAVAILABLE")); verify(engine).shutdown();
         plugin.initialization.onInit(TextToSpeech.SUCCESS); idle();
         verify(engine, never()).speak(any(CharSequence.class), anyInt(), any(Bundle.class), anyString());
@@ -155,13 +177,13 @@ public class CatalogSpeechPluginTest {
     @Test public void noStartCallbackTimesOutAndStopsEngine() {
         ready(); PluginCall call = call("silent"); plugin.speak(call); idle();
         clearInvocations(engine);
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(16));
+        advance(Duration.ofSeconds(16));
         verify(call).reject(anyString(), eq("PLAYBACK_TIMEOUT")); verify(engine).stop();
     }
 
     @Test public void startedLongAnswerHasTimeToFinish() {
         ready(); PluginCall call = call("long"); plugin.speak(call); idle(); listener().onStart("long"); idle();
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(16));
+        advance(Duration.ofSeconds(16));
         verify(call, never()).reject(anyString(), anyString());
         listener().onDone("long"); idle(); verify(call).resolve();
     }
@@ -238,4 +260,69 @@ public class CatalogSpeechPluginTest {
         verify(engine).setLanguage(Locale.forLanguageTag("es-ES"));
         verify(engine).speak(any(CharSequence.class), anyInt(), any(Bundle.class), eq("fallback"));
     }
+
+    @Test public void voiceLoadingAndPlaybackNeverRunOnScreenThread() throws Exception {
+        ready();
+        CountDownLatch loading = new CountDownLatch(1), release = new CountDownLatch(1);
+        AtomicReference<Looper> configurationThread = new AtomicReference<>(), playbackThread = new AtomicReference<>();
+        when(engine.setLanguage(any())).thenAnswer(invocation -> {
+            configurationThread.set(Looper.myLooper()); loading.countDown();
+            if (!release.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Voice loading test timed out");
+            return TextToSpeech.LANG_COUNTRY_AVAILABLE;
+        });
+        when(engine.speak(any(CharSequence.class), anyInt(), any(Bundle.class), anyString())).thenAnswer(invocation -> {
+            playbackThread.set(Looper.myLooper()); return TextToSpeech.SUCCESS;
+        });
+        plugin.speak(call("background"));
+        // Drain the worker from a test thread, while the test's main thread
+        // remains free to drive a real main-looper UI operation.
+        Thread drain = new Thread(() -> shadowOf(plugin.speechHandler.getLooper()).idle());
+        drain.start();
+        try {
+            assertTrue(loading.await(5, TimeUnit.SECONDS));
+            assertNotEquals(Looper.getMainLooper(), configurationThread.get());
+            PluginCall settings = call("settings-during-load"); plugin.openInstall(settings);
+            shadowOf(Looper.getMainLooper()).idle(); verify(settings).resolve();
+        } finally { release.countDown(); drain.join(5000); }
+        idle();
+        assertEquals(plugin.speechHandler.getLooper(), playbackThread.get());
+        verify(engine).speak(any(CharSequence.class), anyInt(), any(Bundle.class), eq("background"));
+    }
+
+    @Test public void stopWhileVoiceLoadsPreventsObsoleteWordFromStarting() {
+        ready(); PluginCall stopped = call("loading"), stop = call("stop-loading");
+        when(engine.setLanguage(any())).thenAnswer(invocation -> {
+            plugin.stop(stop);
+            return TextToSpeech.LANG_COUNTRY_AVAILABLE;
+        });
+        plugin.speak(stopped); idle();
+        verify(stopped).reject(anyString(), eq("CANCELED")); verify(stop).resolve();
+        verify(engine, never()).speak(any(CharSequence.class), anyInt(), any(Bundle.class), anyString());
+    }
+
+    @Test public void destructionWhileVoiceLoadsCancelsSpeechAndShutsDownWorker() throws Exception {
+        ready(); PluginCall pending = call("destroyed-loading");
+        when(engine.setLanguage(any())).thenAnswer(invocation -> {
+            plugin.handleOnDestroy();
+            return TextToSpeech.LANG_COUNTRY_AVAILABLE;
+        });
+        plugin.speak(pending); idle();
+        verify(pending).reject(anyString(), eq("CANCELED")); verify(engine).shutdown();
+        verify(engine, never()).speak(any(CharSequence.class), anyInt(), any(Bundle.class), anyString());
+        plugin.speechHandler.getLooper().getThread().join(5000);
+        assertFalse(plugin.speechHandler.getLooper().getThread().isAlive());
+    }
+
+    @Test public void newTapWhileVoiceLoadsReplacesObsoleteWordBeforePlayback() {
+        ready(); PluginCall first = call("old-loading"), latest = call("new-word");
+        when(engine.setLanguage(any())).thenAnswer(invocation -> {
+            plugin.speak(latest);
+            return TextToSpeech.LANG_COUNTRY_AVAILABLE;
+        });
+        plugin.speak(first); idle();
+        verify(first).reject(anyString(), eq("CANCELED"));
+        verify(engine, never()).speak(any(CharSequence.class), anyInt(), any(Bundle.class), eq("old-loading"));
+        verify(engine).speak(any(CharSequence.class), anyInt(), any(Bundle.class), eq("new-word"));
+    }
+
 }
