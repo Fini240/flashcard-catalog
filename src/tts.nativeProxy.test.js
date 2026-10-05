@@ -12,7 +12,7 @@ beforeAll(async () => {
     if (method === "isLanguageSupported") return { supported: true };
   });
   window.Capacitor = {
-    PluginHeaders: [{ name: "CatalogSpeech", methods: ["speak", "stop", "getSupportedVoices", "isLanguageSupported", "openInstall"].map(name => ({ name, rtype: "promise" })) }],
+    PluginHeaders: [{ name: "CatalogSpeech", methods: ["speak", "stop", "prepare", "getSupportedVoices", "isLanguageSupported", "openInstall"].map(name => ({ name, rtype: "promise" })) }],
     nativePromise: bridge,
   };
   tts = await import("./tts");
@@ -27,7 +27,7 @@ afterAll(async () => {
 it("reaches Android speech through the real Capacitor proxy without invoking its synthetic then", async () => {
   expect(await tts.speak("el campamento", { lang: "es-ES", strict: true })).toEqual({ ok: true });
   expect(bridge).toHaveBeenCalledWith("CatalogSpeech", "speak", expect.objectContaining({ text: "el campamento", lang: "es-ES", volume: 1 }));
-  expect(bridge.mock.calls.map(([, method]) => method)).toEqual(["stop", "getSupportedVoices", "isLanguageSupported", "speak"]);
+  expect(bridge.mock.calls.map(([, method]) => method)).toEqual(["speak"]);
 }, 2000);
 
 it("settles a real-proxy Android playback rejection instead of leaving the speaker busy", async () => {

@@ -43,6 +43,13 @@ export async function openVoiceSettings() {
 
 export const isSupported = () => native() || !!synth();
 
+// Warm the engine before the first tap, without requesting or playing audio.
+export async function prepare() {
+  if (!native() || !android()) return;
+  try { const { plugin } = await nativeTts(); await plugin.prepare(); }
+  catch (e) { report("tts.prepare", e); }
+}
+
 // Voices load asynchronously on most platforms and the first call routinely
 // returns an empty list, so this waits for the event rather than reporting
 // "no voices" to a user who has plenty.
@@ -95,10 +102,13 @@ export function pickVoice(list, lang, preferredName) {
 
 let request = 0;
 let cancelActive = null;
-export const stop = () => {
+const cancelRequest = () => {
   request++;
   cancelActive?.({ ok: false, reason: "canceled" });
   cancelActive = null;
+};
+export const stop = () => {
+  cancelRequest();
   try {
     if (native()) return nativeTts().then(({ plugin }) => plugin.stop()).catch(e => report("tts.stop", e));
     synth()?.cancel();
@@ -117,15 +127,19 @@ export async function speak(text, opts = {}) {
 
   // Cancel first: queuing is the default, so tapping through four cards
   // quickly would otherwise read all four in a row over each other.
-  const stopping = stop();
+  // Android's speak already flushes playback and checks language/voice on the
+  // native side. Do not serialize four bridge round trips on every tap.
+  const fastAndroid = native() && android();
+  const stopping = fastAndroid ? cancelRequest() : stop();
   const token = request;
   await stopping;
-  const list = await voices();
+  const list = fastAndroid ? [] : await voices();
   // Navigating away or tapping again while voices load cancels this request too.
   if (token !== request) return { ok: false, reason: "canceled" };
   const voice = pickVoice(list, opts.lang, opts.voiceName);
   const { plugin } = native() ? await nativeTts() : { plugin: null };
-  if (native()) {
+  if (token !== request) return { ok: false, reason: "canceled" };
+  if (native() && !fastAndroid) {
     try {
       const { supported } = await plugin.isLanguageSupported({ lang: opts.lang || "en-US" });
       if (token !== request) return { ok: false, reason: "canceled" };
@@ -134,7 +148,7 @@ export async function speak(text, opts = {}) {
       report("tts.language", e);
       return { ok: false, reason: nativeReason(e) };
     }
-  } else if (opts.strict && opts.lang && !voice) {
+  } else if (!native() && opts.strict && opts.lang && !voice) {
     return { ok: false, reason: "no-voice" };
   }
 

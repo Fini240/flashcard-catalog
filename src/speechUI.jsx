@@ -1,5 +1,5 @@
 import { t } from "./i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Volume2, Square } from "lucide-react";
 import { CardFace } from "./cardUI";
 import * as tts from "./tts";
@@ -10,7 +10,8 @@ const commonLanguages = [
 ];
 
 export function PronounceFace({ card, subject, speechCards, side = "front", size, inactive = false }) {
-  const speech = tts.pronunciationFor(card, subject, side, speechCards);
+  const speech = useMemo(() => tts.pronunciationFor(card, subject, side, speechCards),
+    [card, subject, side, speechCards]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const mounted = useRef(true);

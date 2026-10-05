@@ -6,8 +6,10 @@ import { PronounceFace } from "./speechUI";
 import * as tts from "./tts";
 
 vi.mock("./tts", async importOriginal => ({ ...await importOriginal(),
+  pronunciationFor: vi.fn((...args) => actualPronunciation(...args)),
   isSupported: () => true, availableLanguages: async () => [], speak: vi.fn(), stop: vi.fn(), canOpenVoiceSettings: vi.fn(() => false), openVoiceSettings: vi.fn(),
 }));
+const { pronunciationFor: actualPronunciation } = await vi.importActual("./tts");
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host, root, flip;
 const card = { front: "el campamento", back: "das Lager" };
@@ -46,6 +48,19 @@ it("offers stop during playback and shows actionable missing-voice feedback", as
 it("does not offer pronunciation for image-only cards", async () => {
   await render({}, { front: "", frontImageId: "photo" });
   expect(host.querySelector("button")).toBeNull();
+});
+
+it("updates the icon while audio is pending without repeating language detection", async () => {
+  let finish;
+  tts.speak.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  await render();
+  expect(tts.pronunciationFor).toHaveBeenCalledTimes(1);
+  await click(host.querySelector("button"));
+  expect(host.querySelector("button").title).toBe("Stop pronunciation");
+  expect(tts.pronunciationFor).toHaveBeenCalledTimes(1);
+  await act(async () => finish({ ok: true }));
+  expect(host.querySelector("button").title).toBe("Read aloud");
+  expect(tts.pronunciationFor).toHaveBeenCalledTimes(1);
 });
 
 it("releases the busy speaker on failure and opens Android voice settings without flipping", async () => {

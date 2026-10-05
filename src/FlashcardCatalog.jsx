@@ -4229,6 +4229,7 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, spe
   // Every answer of the round, in order, for the XP calculation.
   const answerLog = useRef(initialState?.answerLog || []);
   const current = queue[index];
+  useEffect(() => { void ttsLib.prepare(); }, []);
   useEffect(() => () => { ttsLib.stop(); }, [current?.key]);
   const handledStep = useRef(null);
   useEffect(() => { handledStep.current = null; }, [index, queue, exerciseEpoch]);

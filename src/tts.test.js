@@ -2,7 +2,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ native: false, platform: "android", plugin: {
-  getSupportedVoices: vi.fn(), isLanguageSupported: vi.fn(), speak: vi.fn(), stop: vi.fn(), openInstall: vi.fn(),
+  getSupportedVoices: vi.fn(), isLanguageSupported: vi.fn(), speak: vi.fn(), stop: vi.fn(), prepare: vi.fn(), openInstall: vi.fn(),
 } }));
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => mocks.native, getPlatform: () => mocks.platform }, registerPlugin: () => new Proxy(mocks.plugin, { get(target, prop) { if (prop === "then") return () => new Promise(() => {}); return target[prop]; } }) }));
 vi.mock("@capacitor-community/text-to-speech", () => ({ TextToSpeech: mocks.plugin }));
@@ -19,6 +19,7 @@ beforeEach(async () => {
   mocks.plugin.getSupportedVoices.mockResolvedValue({ voices: list });
   mocks.plugin.isLanguageSupported.mockResolvedValue({ supported: true });
   mocks.plugin.stop.mockResolvedValue(); mocks.plugin.speak.mockResolvedValue();
+  mocks.plugin.prepare.mockResolvedValue();
   tts = await import("./tts");
 });
 afterEach(() => { tts.stop(); vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -96,7 +97,7 @@ describe("manual pronunciation", () => {
       mocks.plugin.speak.mockRejectedValueOnce({ code });
       expect(await tts.speak(card.front, { lang: "es-ES" })).toEqual({ ok: false, reason });
     }
-    mocks.plugin.isLanguageSupported.mockRejectedValueOnce({ code: "ENGINE_UNAVAILABLE" });
+    mocks.plugin.speak.mockRejectedValueOnce({ code: "ENGINE_UNAVAILABLE" });
     expect(await tts.speak(card.front, { lang: "es-ES" })).toEqual({ ok: false, reason: "engine-unavailable" });
   });
   it("opens Android voice settings and leaves browser speech unchanged", async () => {
@@ -110,11 +111,37 @@ describe("manual pronunciation", () => {
     expect(await tts.openVoiceSettings()).toBe(false);
   });
   it("reports a missing Android language and settles stopped native calls", async () => {
-    mocks.native = true; mocks.plugin.isLanguageSupported.mockResolvedValueOnce({ supported: false });
+    mocks.native = true; mocks.plugin.speak.mockRejectedValueOnce({ code: "NO_VOICE" });
     expect(await tts.speak("bonjour", { lang: "fr-FR", strict: true })).toEqual({ ok: false, reason: "no-voice" });
     mocks.plugin.speak.mockReturnValue(new Promise(() => {}));
     const pending = tts.speak("uno", { lang: "es-ES" });
     await flush(); tts.stop();
     expect(await pending).toEqual({ ok: false, reason: "canceled" });
+  });
+  it("warms Android without speaking and needs only one native call per tap", async () => {
+    mocks.native = true;
+    await tts.prepare();
+    expect(mocks.plugin.prepare).toHaveBeenCalledTimes(1);
+    expect(mocks.plugin.speak).not.toHaveBeenCalled();
+    await tts.speak("uno", { lang: "es-ES" });
+    expect(mocks.plugin.speak).toHaveBeenCalledTimes(1);
+    expect(mocks.plugin.getSupportedVoices).not.toHaveBeenCalled();
+    expect(mocks.plugin.isLanguageSupported).not.toHaveBeenCalled();
+    expect(mocks.plugin.stop).not.toHaveBeenCalled();
+  });
+  it("cancels Android before it crosses the bridge when stopped in the same turn", async () => {
+    mocks.native = true;
+    const pending = tts.speak("uno", { lang: "es-ES" });
+    await tts.stop();
+    expect(await pending).toEqual({ ok: false, reason: "canceled" });
+    expect(mocks.plugin.speak).not.toHaveBeenCalled();
+  });
+  it("keeps the indexed-voice community plugin flow for other native platforms", async () => {
+    mocks.native = true; mocks.platform = "ios";
+    await tts.prepare(); expect(mocks.plugin.prepare).not.toHaveBeenCalled();
+    expect(await tts.speak("uno", { lang: "es-ES" })).toEqual({ ok: true });
+    expect(mocks.plugin.getSupportedVoices).toHaveBeenCalled();
+    expect(mocks.plugin.isLanguageSupported).toHaveBeenCalled();
+    expect(mocks.plugin.speak).toHaveBeenCalledWith(expect.objectContaining({ voice: 0 }));
   });
 });

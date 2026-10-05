@@ -446,6 +446,7 @@
   "Start studying": "Lernen starten",
   "What's new": "Neu in dieser Version",
   "Version {0} · {1}": "Version {0} · {1}",
+  "Pronunciation responds faster on Android: the speech engine prepares when studying starts and reuses the selected voice between words.": "Die Aussprache reagiert auf Android schneller: Die Sprachausgabe wird beim Lernstart vorbereitet und verwendet dieselbe Stimme für weitere Wörter.",
   "Stop pronunciation": "Aussprache stoppen",
   "Voice settings": "Spracheinstellungen",
   "Pronunciation": "Aussprache",

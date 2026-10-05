@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -33,6 +34,9 @@ public class CatalogSpeechPlugin extends Plugin {
     private PluginCall speaking;
     private String utteranceId;
     private Runnable playbackTimeout;
+    private Locale configuredLocale;
+    private String configuredVoice;
+    private Float configuredRate, configuredPitch;
 
     private static class ReadyCall {
         final PluginCall call;
@@ -91,6 +95,7 @@ public class CatalogSpeechPlugin extends Plugin {
     private void initializationFailed() {
         ++generation;
         ready = false;
+        invalidateConfiguration();
         if (engine != null) { engine.shutdown(); engine = null; }
         for (ReadyCall operation : waiting) operation.call.reject("Android speech engine is unavailable.", "ENGINE_UNAVAILABLE");
         waiting.clear();
@@ -101,7 +106,13 @@ public class CatalogSpeechPlugin extends Plugin {
             if (destroyed) { call.reject("Speech was stopped.", "CANCELED"); return; }
             ReadyCall operation = new ReadyCall(call, action, playback);
             if (ready) run(operation);
-            else { waiting.add(operation); initialize(); }
+            else {
+                if (playback) waiting.removeIf(previous -> {
+                    if (previous.playback) previous.call.reject("Speech was replaced.", "CANCELED");
+                    return previous.playback;
+                });
+                waiting.add(operation); initialize();
+            }
         });
     }
 
@@ -131,16 +142,26 @@ public class CatalogSpeechPlugin extends Plugin {
             .orElse(null);
     }
 
+    private void invalidateConfiguration() {
+        configuredLocale = null; configuredVoice = null;
+        configuredRate = null; configuredPitch = null;
+    }
+
+    @PluginMethod public void prepare(PluginCall call) {
+        whenReady(call, tts -> call.resolve(), false);
+    }
+
     @PluginMethod public void getSupportedVoices(PluginCall call) {
         whenReady(call, tts -> {
             JSArray result = new JSArray();
+            Voice currentVoice = tts.getVoice();
             for (Voice voice : installedVoices(tts.getVoices())) {
                 JSObject v = new JSObject();
                 v.put("lang", voice.getLocale().toLanguageTag());
                 v.put("name", voice.getName());
                 v.put("voiceURI", voice.getName());
                 v.put("localService", !voice.isNetworkConnectionRequired());
-                v.put("default", voice.equals(tts.getVoice()));
+                v.put("default", voice.equals(currentVoice));
                 result.put(v);
             }
             JSObject resultObject = new JSObject(); resultObject.put("voices", result); call.resolve(resultObject);
@@ -158,19 +179,25 @@ public class CatalogSpeechPlugin extends Plugin {
         whenReady(call, tts -> {
             cancelPlayback();
             Locale locale = Locale.forLanguageTag(call.getString("lang", "en-US"));
-            int language = tts.setLanguage(locale);
-            if (language < TextToSpeech.LANG_AVAILABLE) {
-                call.reject("Install a voice for this language in Android's speech settings.", "NO_VOICE"); return;
-            }
-            Voice voice = chooseVoice(installedVoices(tts.getVoices()), locale, call.getString("voiceName"));
-            if (voice != null && tts.setVoice(voice) != TextToSpeech.SUCCESS) {
-                // Keep the engine's own language default if an advertised voice rejects selection.
-                if (tts.setLanguage(locale) < TextToSpeech.LANG_AVAILABLE) {
-                    call.reject("This language is unavailable.", "NO_VOICE"); return;
+            String preferred = call.getString("voiceName");
+            // setLanguage resets the engine's selected voice. Reusing it avoids
+            // repeatedly loading a voice model for consecutive vocabulary words.
+            if (!locale.equals(configuredLocale) || !Objects.equals(preferred, configuredVoice)) {
+                invalidateConfiguration();
+                Voice voice = chooseVoice(installedVoices(tts.getVoices()), locale, preferred);
+                // Selecting an installed matching voice also selects its language.
+                // Avoid loading a default voice only to replace it immediately.
+                if (voice == null || tts.setVoice(voice) != TextToSpeech.SUCCESS) {
+                    // Engines without a voice list can still provide a language default.
+                    if (tts.setLanguage(locale) < TextToSpeech.LANG_AVAILABLE) {
+                        call.reject("Install a voice for this language in Android's speech settings.", "NO_VOICE"); return;
+                    }
                 }
+                configuredLocale = locale; configuredVoice = preferred;
             }
-            tts.setSpeechRate(call.getFloat("rate", 0.85f));
-            tts.setPitch(call.getFloat("pitch", 1.0f));
+            Float rate = call.getFloat("rate", 0.85f), pitch = call.getFloat("pitch", 1.0f);
+            if (!rate.equals(configuredRate) && tts.setSpeechRate(rate) == TextToSpeech.SUCCESS) configuredRate = rate;
+            if (!pitch.equals(configuredPitch) && tts.setPitch(pitch) == TextToSpeech.SUCCESS) configuredPitch = pitch;
             Bundle params = new Bundle(); params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
             speaking = call;
             utteranceId = call.getCallbackId();
@@ -191,12 +218,17 @@ public class CatalogSpeechPlugin extends Plugin {
         speaking = null; utteranceId = null;
         if (playbackTimeout != null) main.removeCallbacks(playbackTimeout);
         if (error == null) call.resolve();
-        else call.reject("Android could not play the pronunciation.", error);
+        else {
+            if (!"CANCELED".equals(error)) invalidateConfiguration();
+            call.reject("Android could not play the pronunciation.", error);
+        }
     }
 
     private void cancelPlayback() {
-        if (speaking != null) finish(utteranceId, "CANCELED");
-        if (ready && engine != null) engine.stop();
+        if (speaking != null) {
+            finish(utteranceId, "CANCELED");
+            if (ready && engine != null) engine.stop();
+        }
     }
 
     @PluginMethod public void stop(PluginCall call) {
@@ -227,5 +259,10 @@ public class CatalogSpeechPlugin extends Plugin {
             cancelPlayback();
             initializationFailed();
         });
+    }
+
+    @Override protected void handleOnResume() {
+        // A voice may have been installed or changed while Android Settings was open.
+        main.post(this::invalidateConfiguration);
     }
 }
