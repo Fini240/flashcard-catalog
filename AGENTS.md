@@ -82,6 +82,9 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/gameUI.jsx` | The gamification surface: status bar, today card, quests, streak/goal/friends sheets |
 | `src/social.js` | Friend codes, usernames, public `profiles/` docs, nudges, friends + global leaderboards |
 | `src/reminders.js` | Daily study reminder — local notifications, scheduled on-device |
+| `src/courses.js` | **Language courses** (1.9.0): the syllabus (`BLOCKS`), the school tracks (`TRACKS`: start in Klasse 6, 7, 9 or a new start in the EF), placement (`QUESTIONS`, `buildPlan`, `recommended`), the content parser and `addUnits`, which files units as Subject › year › unit. Pure and unit-tested. |
+| `src/courses/es-*.js`, `src/courses/es.js` | The Spanish content in a small text format (header of `parseCourse`). Loaded on demand as its own chunk. `courses.test.js` validates all of it: every syllabus id exists, no word taught twice, every exercise a working cloze. |
+| `src/courseUI.jsx` | Placement questions, the year-by-year plan, and `GrammarNote` (the rule above a grammar folder's cards). |
 | `src/widget.js` | **The home-screen widget's brain.** The mascot catalogue, the mood ladder, and the snapshot handed to the native side. The widget itself decides nothing — read the header before changing either half. |
 | `public/mascots/*.png` | The mascot art for the picker in Settings. Referenced by URL, not imported, so it stays out of the JS bundle. |
 | `scripts/mascot_sheets.py` | Cuts a generated expression sheet into the 30 mascot images — `res/drawable-nodpi/` for the widget and `public/mascots/` for the picker. Run by hand when the art changes; the output is committed. |
@@ -688,6 +691,30 @@ Play Store compatibility problem).
   signed-in user entitled to the free allowance was told the one thing that
   was both untrue and unactionable, and nothing reached the diagnostics
   buffer. If you add another early return there, give it a reason too.
+
+## Language courses, in one paragraph
+
+Asked for by the user (2026-10-19): ready-made vocabulary that matches what a
+German school teaches in each year, plus grammar. **The words are our own,
+not a textbook's.** The topics follow the NRW Kernlehrplan (public); a
+publisher's unit lists (the user's school uses Klett's *¡Adelante!*) are
+copyrighted and must not be shipped in a public repo and web app — the user's
+own Anki import of theirs is a different matter. Placement asks five
+questions (language, when the course started, current year, half-year,
+"now" vs "now + catch up") and maps the track's school years onto seven
+syllabus blocks; the same block is Klasse 8 on one track and the EF on
+another. Grammar is **explain + practise in review** (the user's choice over a
+separate lesson path): each grammar unit is a folder whose cloze cards are
+scheduled like any others, with its German explanation drawn above them by
+`GrammarNote`. Folders carry a `course` marker (`{id}` on the subject, which
+also stores the placement `answers` so the plan reopens the same on every
+device; `{id, year}` on a year; `{id, unit}` on a unit) — that is how the plan
+knows what is already added, and a deleted folder makes its unit addable
+again. Vocabulary cards are Spanish → German with the subject's voices set to
+manual es-ES / de-DE; grammar cards override the back side to es-ES because
+their answer is Spanish. **To add a language:** another `COURSES` entry with
+its own content files and `BLOCKS`-compatible unit ids (or its own syllabus),
+and the tests in `courses.test.js` pointed at it.
 
 ## The widget, in one paragraph
 

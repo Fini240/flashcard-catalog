@@ -8,7 +8,7 @@ import {
   Plus, Trash2, Pencil, ChevronRight, X, Check,
   Shuffle, Layers, BookOpen, ArrowLeft, RotateCcw, Circle, Cloud, CloudOff, LogIn, LogOut, Upload,
   FileUp, Camera, Sparkles, Key, Settings, ExternalLink, CreditCard, Image as ImageIcon, Type, Eye, EyeOff, Search, Download, ClipboardList,
-  Zap, Flag, Volume2, RefreshCw
+  Zap, Flag, Volume2, RefreshCw, GraduationCap
 } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -56,6 +56,8 @@ import { PronounceFace, CardSpeechFields } from "./speechUI";
 import { migrateSubjects } from "./subjectTree";
 import * as exporters from "./exporters";
 import * as deckShare from "./deckShare";
+import * as coursesLib from "./courses";
+import { CourseSheet, GrammarNote } from "./courseUI";
 import {
   StatsScreen, TestRunner, NotesImport, ShareDeckModal, ImportDeckModal,
   OcclusionEditor, OcclusionCard, TagField, TagFilter, SpeakButton,
@@ -578,6 +580,21 @@ export default function FlashcardCatalog() {
         ? `Added ${fresh.length} cards — ${duplicates} you already had were skipped.`
         : `Added ${fresh.length} cards.`
     );
+  };
+
+  // ---------- language courses ----------
+  // courses.addUnits builds the folders and cards; this only commits them, in
+  // one tree write and one card write, from the live tree rather than a
+  // captured one (see the hazard note on stale subjects in AGENTS.md).
+  const addCourseUnits = ({ course, units, picks, answers }) => {
+    const out = coursesLib.addUnits({
+      subjects: currentDataRef.current.subjects, course, units, picks, answers, newId: uid,
+    });
+    setSubjects(out.subjects);
+    if (out.cards.length) setCards(cs => [...cs, ...out.cards]);
+    setError(out.added.length
+      ? `Added ${out.added.length} topic${out.added.length === 1 ? "" : "s"} (${out.cards.length} cards) to ${course.name}.`
+      : "Those topics are already in your library.");
   };
 
   const importCatalog = async (file) => {
@@ -1142,6 +1159,13 @@ export default function FlashcardCatalog() {
           than inside Library — it is the one extra that doesn't need a folder
           to already be open. The others live in Library, which owns the card
           form and the delete path they drive. */}
+      {extra === "courses" && (
+        <CourseSheet
+          subjects={subjects}
+          onClose={() => setExtra(null)}
+          onAdd={addCourseUnits}
+        />
+      )}
       {extra === "addShared" && (
         <ImportDeckModal
           onClose={() => setExtra(null)}
@@ -1845,13 +1869,14 @@ function Library({
         ) : (
         <>
         {subjects.length === 0 && !addingSubject && (
-          <EmptyState onAdd={() => setAddingSubject(true)} onImport={() => setImportOpen({ mode: "paste" })} />
+          <EmptyState onAdd={() => setAddingSubject(true)} onImport={() => setImportOpen({ mode: "paste" })} onCourses={() => setExtra("courses")} />
         )}
 
         {subjects.length > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" }}>
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)", letterSpacing: 0.8, textTransform: "uppercase" }}>{t("Your subjects")}</span>
             <div style={{ display: "flex", gap: 6 }}>
+              <SmallButton onClick={() => setExtra("courses")}><GraduationCap size={14} />{t(" Courses")}</SmallButton>
               <SmallButton onClick={() => setImportOpen({ mode: "paste" })}><Upload size={14} />{t(" Import")}</SmallButton>
               <SmallButton onClick={() => setAddingSubject(true)}><Plus size={14} />{t(" New")}</SmallButton>
             </div>
@@ -2018,6 +2043,14 @@ function Library({
             <BookOpen size={16} />{t(" Study")}</PrimaryButton>
         </div>
       </div>
+
+      {/* A course folder: the subject opens its plan again, and a grammar
+          topic shows its rule above the practice cards. */}
+      {currentNode.course && !currentNode.course.unit && (
+        <GhostButton onClick={() => setExtra("courses")} style={{ marginBottom: 14 }}>
+          <GraduationCap size={16} />{t(" Course plan")}</GhostButton>
+      )}
+      {currentNode.course?.unit && <GrammarNote courseId={currentNode.course.id} unitId={currentNode.course.unit} />}
 
       {/* Tags cut across the tree, so the filter belongs with the card list
           rather than the folder list. */}
@@ -2465,7 +2498,7 @@ const crumbStyle = {
   WebkitTapHighlightColor: "transparent",
 };
 
-function EmptyState({ onAdd, onImport }) {
+function EmptyState({ onAdd, onImport, onCourses }) {
   return (
     <div style={{
       border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 12, padding: "32px 20px",
@@ -2475,6 +2508,7 @@ function EmptyState({ onAdd, onImport }) {
       <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>{t("Snap a photo of a vocabulary list, drop in a PDF, or type a few by hand. Your streak starts the day you answer your first card.")}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 260, margin: "0 auto" }}>
         <PrimaryButton onClick={onImport}><Sparkles size={16} />{t(" Import cards")}</PrimaryButton>
+        <GhostButton onClick={onCourses}><GraduationCap size={16} />{t(" Learn a language for school")}</GhostButton>
         <GhostButton onClick={onAdd}><Plus size={16} />{t(" Start a subject by hand")}</GhostButton>
       </div>
     </div>
