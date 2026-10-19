@@ -2509,7 +2509,7 @@ function EmptyState({ onAdd, onImport, onCourses }) {
       <p style={{ color: "var(--on-shell-muted)", fontFamily: "Inter, sans-serif", fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>{t("Snap a photo of a vocabulary list, drop in a PDF, or type a few by hand. Your streak starts the day you answer your first card.")}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 260, margin: "0 auto" }}>
         <PrimaryButton onClick={onImport}><Sparkles size={16} />{t(" Import cards")}</PrimaryButton>
-        <GhostButton onClick={onCourses}><GraduationCap size={16} />{t(" Learn a language for school")}</GhostButton>
+        <GhostButton onClick={onCourses}><GraduationCap size={16} />{t(" Learn for school")}</GhostButton>
         <GhostButton onClick={onAdd}><Plus size={16} />{t(" Start a subject by hand")}</GhostButton>
       </div>
     </div>
@@ -4643,7 +4643,7 @@ function WriteCard({ card, subject, speechCards, onResult, initialState, onState
   const [value, setValue] = useState(initialState?.value || "");
   const [checked, setChecked] = useState(!!initialState?.checked);
   const [tutorOpen, setTutorOpen] = useState(false);
-  const isCorrect = normalize(value) === normalize(card.back);
+  const isCorrect = drillsLib.answersMatch(value, card.back);
   const feedback = useAnswerFeedback(checked);
   const check = () => {
     if (value.trim() && feedback(isCorrect)) setChecked(true);

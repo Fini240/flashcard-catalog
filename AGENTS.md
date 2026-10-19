@@ -724,7 +724,25 @@ script (kana, Hangul, pinyin/tones). Japanese fronts are kana with the kanji
 on the back, Chinese fronts are characters with pinyin on the back, so the
 voice reads the front once. Latin's voice is `la`, which most phones lack;
 the speaker then reports the missing voice, which is correct — never swap in
-Italian. **To add a language:** a `COURSES` entry plus `src/courses/<id>.js`
+Italian. **School subjects since 1.11.0**: Biologie, Chemie, Physik, Mathematik,
+Geschichte, Erdkunde (`kind: "subject"` in `COURSES`, content in
+`src/courses/{bio,ch,ph,ma,ge,ek}.js`). The NRW Kernlehrplan sets content per
+*phase* (Klasse 5/6, 7–10, EF, Q1/Q2) and each school picks the order inside
+it, so placement asks year → GK/LK (Q1/Q2 only) → current topic, and the
+topic's siblings show as "This stage". Content modules export
+`{ units, blocks (one per phase), lk, diagrams }`; LK-only topics are left out
+of a Grundkurs. Topic units (ids `t…`) add `! question | right | wrong…`
+(multiple choice via `manualOptions`), `= task | result` (checked by
+`drills.answersMatch`: same value within 1 %, unit must match if typed — 0,6 =
+0.6 = 3/5) and `@ diagram` (one occlusion card per label). **Diagrams are SVG
+drawn in code with `courses/diagram.js` and never stored**: a card's
+`frontImageId` is `course:<course>:<diagram>`, which `imageStore.getImage`
+resolves from the bundled content, so diagram cards work on every synced
+device; `removeImage` ignores those ids. When drawing one, render it and look
+at it — leader lines and mask boxes are easy to get wrong, and the tests only
+check that masks stay inside the picture. **`COURSES[].load` is memoised**:
+two concurrent `import()`s of a module still evaluating once resolved with
+`undefined` and left the plan on "Loading" for good. **To add a language:** a `COURSES` entry plus `src/courses/<id>.js`
 exporting `{ units, blocks }` with as many blocks as its tracks expect; the
 generic tests in `courses.test.js` pick it up automatically.
 

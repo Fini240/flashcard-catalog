@@ -11,7 +11,76 @@ beforeAll(async () => {
   for (const c of C.COURSES) content[c.id] = await c.load();
 });
 
-describe.each(C.COURSES.map((c) => [c.id, c]))("%s content", (id, course) => {
+import { parseQuantity } from "./drills";
+
+const LANGUAGES = C.COURSES.filter((c) => !C.isSubject(c));
+const SUBJECTS = C.COURSES.filter((c) => C.isSubject(c));
+
+describe.each(SUBJECTS.map((c) => [c.id, c]))("%s subject content", (id, course) => {
+  const get = () => content[id];
+
+  it("has one block per curriculum phase, and every unit in exactly one", () => {
+    const { units, blocks } = get();
+    expect(blocks.length).toBe(course.phases.length);
+    const used = blocks.flat();
+    const ids = new Set(units.map((u) => u.id));
+    expect(used.filter((x) => !ids.has(x))).toEqual([]);
+    expect([...ids].filter((x) => !used.includes(x))).toEqual([]);
+    expect(new Set(used).size).toBe(used.length);
+    for (const b of blocks) expect(b.length).toBeGreaterThan(0);
+    for (const lk of get().lk) expect(blocks[blocks.length - 1], lk).toContain(lk);
+  });
+
+  it("gives every topic key facts and enough practice", () => {
+    for (const u of get().units) {
+      expect(u.kind, u.id).toBe("topic");
+      expect(u.explain.length, u.id).toBeGreaterThanOrEqual(4);
+      expect(C.cardCount(u), u.id).toBeGreaterThanOrEqual(10);
+    }
+  });
+
+  // A term may come back in a later phase — "Oxidation" is "reacts with
+  // oxygen" in Klasse 8 and "gives up electrons" in the Q-Phase, which is
+  // the curriculum deepening it — but not twice within one phase.
+  it("has answerable calculations, fair choices and no term defined twice in a phase", () => {
+    const phaseOf = new Map(get().blocks.flatMap((b, i) => b.map((u) => [u, i])));
+    const seen = new Map();
+    for (const u of get().units) {
+      for (const s of u.sums) expect(parseQuantity(s.answer) || /^\d+:\d+$/.test(s.answer), `${u.id}: ${s.answer}`).toBeTruthy();
+      for (const c of u.choices) {
+        expect(c.wrong.length, c.question).toBeGreaterThanOrEqual(2);
+        expect(c.wrong.map((w) => w.toLowerCase()), c.question).not.toContain(c.right.toLowerCase());
+      }
+      for (const w of u.words) {
+        const key = `${phaseOf.get(u.id)}:${w.front.toLowerCase()}`;
+        expect(seen.get(key), `"${w.front}" in ${u.id} and ${seen.get(key)}`).toBeUndefined();
+        seen.set(key, u.id);
+      }
+    }
+  });
+
+  it("draws every diagram with labels inside the picture, each used by a topic", () => {
+    const { units, diagrams } = get();
+    const used = new Set(units.flatMap((u) => u.diagrams.map((d) => d.id)));
+    expect([...Object.keys(diagrams)].sort()).toEqual([...used].sort());
+    for (const [name, d] of Object.entries(diagrams)) {
+      expect(d.svg, name).toMatch(/^<svg /);
+      expect(d.masks.length, name).toBeGreaterThanOrEqual(4);
+      for (const m of d.masks) {
+        expect(m.x, `${name}: ${m.label}`).toBeGreaterThanOrEqual(0);
+        expect(m.y, `${name}: ${m.label}`).toBeGreaterThanOrEqual(0);
+        expect(m.x + m.w, `${name}: ${m.label}`).toBeLessThanOrEqual(1.001);
+        expect(m.y + m.h, `${name}: ${m.label}`).toBeLessThanOrEqual(1.001);
+      }
+    }
+  });
+
+  it("is a course worth the name", () => {
+    expect(get().units.reduce((s, u) => s + C.cardCount(u), 0)).toBeGreaterThan(200);
+  });
+});
+
+describe.each(LANGUAGES.map((c) => [c.id, c]))("%s content", (id, course) => {
   const get = () => content[id];
 
   it("has every unit its syllabus names, and nothing it doesn't", () => {

@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.10.0";
+export const APP_VERSION = "1.11.0";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,14 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.11.0",
+    date: "2026-10-19",
+    items: [
+      "New: school subjects. Biology, chemistry, physics, maths, history and geography from Klasse 5 to the Abitur, placed by your year, Grundkurs or Leistungskurs, and the topic your class is on.",
+      "Each topic has key facts, definitions, multiple choice, calculations that accept 0,6 and 0.6 alike, and labelled diagrams (cell, heart, circuit, lens, volcano …) with hidden labels to learn.",
+    ],
+  },
   {
     version: "1.10.0",
     date: "2026-10-19",

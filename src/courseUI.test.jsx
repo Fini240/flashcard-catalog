@@ -18,7 +18,7 @@ const press = async (text) => {
   await act(async () => b.click());
 };
 // The content arrives through a dynamic import; give it a moment.
-const until = async (fn) => { for (let i = 0; i < 40 && !fn(); i++) await act(() => new Promise((r) => setTimeout(r, 10))); };
+const until = async (fn) => { for (let i = 0; i < 300 && !fn(); i++) await act(() => new Promise((r) => setTimeout(r, 10))); };
 const settle = () => until(() => !host.textContent.includes("Loading the course"));
 let n = 0;
 const newId = () => `n${++n}`;
@@ -79,7 +79,43 @@ it("reopens a saved plan from the language list, shows added topics, and can cha
   expect(host.textContent).toContain("Since when do you learn it at school?");
   // One step back from the track question is the language list.
   await press("Previous question");
-  expect(host.textContent).toContain("Which language do you want to learn?");
+  expect(host.textContent).toContain("What do you want to learn?");
+});
+
+it("places a school subject by year, course level and current topic", async () => {
+  const onAdd = vi.fn();
+  await render(<CourseSheet subjects={[]} onAdd={onAdd} onClose={() => {}} />);
+  expect(host.textContent).toContain("School subjects");
+  await press("Biologie");
+  expect(host.textContent).toContain("Which year are you in now?");
+  await press("Q1");
+  await press("Leistungskurs");
+  await until(() => host.textContent.includes("Which topic are you doing right now?"));
+  // LK-only topics are offered to a Leistungskurs.
+  expect(host.textContent).toContain("Epigenetik");
+  await press("Neurobiologie");
+  await press("Just this topic");
+  await settle();
+  expect(host.textContent).toContain("Neurobiologie");
+  await press("Add what I need now");
+  const { picks, answers } = onAdd.mock.calls[0][0];
+  expect(answers).toMatchObject({ course: "bio", track: "school", year: "Q1", level: "LK", topic: "t4-neurobiologie", scope: "now" });
+  expect(picks.map((p) => p.id)).toEqual(["t4-neurobiologie"]);
+  expect(picks[0].label).toBe("Q1/Q2");
+});
+
+it("hides Leistungskurs topics from a Grundkurs and skips the level question before Q1", async () => {
+  await render(<CourseSheet subjects={[]} onAdd={() => {}} onClose={() => {}} />);
+  await press("Chemie");
+  await press("Klasse 8");
+  await until(() => host.textContent.includes("Which topic are you doing right now?"));
+  expect(host.textContent).toContain("Säuren, Basen, pH-Wert");
+  await press("Previous question");
+  await press("Q2");
+  await press("Grundkurs");
+  await until(() => host.textContent.includes("Which topic are you doing right now?"));
+  expect(host.textContent).not.toContain("Nernst");
+  expect(host.textContent).toContain("Elektrochemie");
 });
 
 it("opens straight on a course's plan from inside its folder", async () => {

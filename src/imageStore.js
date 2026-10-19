@@ -127,6 +127,19 @@ export async function getImage(id) {
   if (!id) return null;
   const known = peekImage(id);
   if (known !== undefined) return known;
+  // A course diagram is drawn from the bundled course content, not stored —
+  // which is why it is there on every device (see courses.courseImage).
+  if (String(id).startsWith("course:")) {
+    try {
+      const { courseImage } = await import("./courses.js");
+      const url = await courseImage(id);
+      if (url) cachePut(id, url);
+      return url || null;
+    } catch (e) {
+      report("imageStore.courseImage", e);
+      return null;
+    }
+  }
   const db = await openDb();
   if (db) {
     try {
@@ -211,6 +224,8 @@ export async function saveImage(file) {
 export function removeImage(id) {
   if (!id) return;
   cache.delete(id);
+  // Bundled course diagrams were never stored; there is nothing to delete.
+  if (String(id).startsWith("course:")) return;
   try { window.localStorage.removeItem(PREFIX + id); } catch (e) { /* ignore */ }
   openDb().then((db) => {
     if (!db) return;

@@ -26,6 +26,8 @@
 // ---------------------------------------------------------------------------
 
 import * as cloze from "./cloze";
+import * as occlusion from "./occlusion";
+import { svgDataUrl } from "./courses/diagram.js";
 
 // The usual second- and third-language timings in NRW: Klasse 7 is the G9
 // second foreign language, Klasse 6 the G8 timing some schools kept, Klasse 9
@@ -74,10 +76,37 @@ const selfStudy = (levels) => [{
   years: levels.map((label, i) => [String(i + 1), [i], { label }]),
 }];
 
+// School subjects: one track whose years fall into the curriculum's phases.
+// The NRW Kernlehrplan for the sciences, maths and the humanities sets content
+// per *phase* (Klasse 5/6, 7–10, EF, Q-Phase) and leaves the order inside a
+// phase to each school's own plan — so placement asks which topic the class is
+// doing, rather than guessing it from the half-year the way a language can.
+const schoolSubject = (phases) => [{
+  id: "school", label: "Schule", halves: false, subject: true,
+  years: phases.flatMap((p, i) => p.years.map((y) => [y, [i]])),
+}];
+const Q_YEARS = ["Q1", "Q2"];
+
 const manual = (front) => ({ frontLang: front, frontLanguageMode: "manual", backLang: "de-DE", backLanguageMode: "manual" });
 
 // The pronunciation each side gets. Manual rather than Auto: a course knows
 // its languages, and Auto guesses wrong on short words like "pan".
+const german = { frontLang: "de-DE", frontLanguageMode: "manual", backLang: "de-DE", backLanguageMode: "manual" };
+const SEK1 = (from) => {
+  const years = ["5", "6", "7", "8", "9", "10"].filter((y) => Number(y) >= from);
+  const lower = years.filter((y) => Number(y) <= 6);
+  const upper = years.filter((y) => Number(y) >= 7);
+  return [
+    ...(lower.length ? [{ id: "56", label: lower.length === 2 ? "Klasse 5/6" : `Klasse ${lower[0]}`, years: lower }] : []),
+    { id: "710", label: upper.length === 4 ? "Klasse 7–10" : `Klasse ${upper[0]}–10`, years: upper },
+    { id: "EF", label: "EF", years: ["EF"] },
+    { id: "Q", label: "Q1/Q2", years: Q_YEARS },
+  ];
+};
+const subject = (id, name, flag, phases) => ({
+  id, name, flag, kind: "subject", speech: german, phases, tracks: schoolSubject(phases),
+});
+
 export const COURSES = [
   { id: "en", name: "Englisch", flag: "🇬🇧", speech: manual("en-GB"), tracks: ENGLISH_TRACKS,
     load: () => import("./courses/en.js").then((m) => m.default) },
@@ -100,7 +129,28 @@ export const COURSES = [
   { id: "zh", name: "Chinesisch", flag: "🇨🇳", speech: manual("zh-CN"),
     tracks: selfStudy(["Stufe 1 · Pinyin", "Stufe 2 · A1", "Stufe 3 · A1+", "Stufe 4 · A2"]),
     load: () => import("./courses/zh.js").then((m) => m.default) },
+  { ...subject("bio", "Biologie", "🧬", SEK1(5)), load: () => import("./courses/bio.js").then((m) => m.default) },
+  { ...subject("ch", "Chemie", "⚗️", SEK1(7)), load: () => import("./courses/ch.js").then((m) => m.default) },
+  { ...subject("ph", "Physik", "🔭", SEK1(5)), load: () => import("./courses/ph.js").then((m) => m.default) },
+  { ...subject("ma", "Mathematik", "📐", SEK1(5)), load: () => import("./courses/ma.js").then((m) => m.default) },
+  { ...subject("ge", "Geschichte", "🏺", SEK1(6)), load: () => import("./courses/ge.js").then((m) => m.default) },
+  { ...subject("ek", "Erdkunde", "🌍", SEK1(5)), load: () => import("./courses/ek.js").then((m) => m.default) },
 ];
+
+export const isSubject = (course) => course?.kind === "subject";
+
+// Every course loads once, and concurrent callers share that one promise.
+// Two parts of the course sheet ask for the same content at the same moment;
+// a second import() of a module that is still evaluating can resolve before
+// its default export exists, and the plan then sat on "Loading" for good.
+for (const c of COURSES) {
+  const load = c.load;
+  let pending = null;
+  c.load = () => (pending ||= load().then((m) => {
+    if (!m) { pending = null; throw new Error(`Course ${c.id} loaded empty`); }
+    return m;
+  }, (e) => { pending = null; throw e; }));
+}
 
 export const courseById = (id) => COURSES.find((c) => c.id === id) || null;
 export const trackFor = (answers) =>
@@ -123,8 +173,10 @@ export function yearName(track, year) {
 // answer is already forced is skipped (see applicable / withDefaults).
 export const QUESTIONS = [
   {
-    id: "course", title: () => "Which language do you want to learn?",
-    options: () => COURSES.map((c) => ({ value: c.id, label: `${c.flag} ${c.name}` })),
+    id: "course", title: () => "What do you want to learn?",
+    options: () => COURSES.map((c) => ({
+      value: c.id, label: `${c.flag} ${c.name}`, group: isSubject(c) ? "School subjects" : "Languages",
+    })),
   },
   {
     id: "track", title: () => "Since when do you learn it at school?",
@@ -139,6 +191,33 @@ export const QUESTIONS = [
     options: (a) => (trackFor(a)?.years || []).map(([y]) => ({ value: y, label: yearName(trackFor(a), y) })),
   },
   {
+    id: "level", title: () => "Grundkurs or Leistungskurs?",
+    options: () => [
+      { value: "GK", label: "Grundkurs" },
+      { value: "LK", label: "Leistungskurs" },
+    ],
+    skip: (a) => !(isSubject(courseById(a.course)) && Q_YEARS.includes(a.year)),
+  },
+  {
+    // The one question that needs the content: which topics a phase has is in
+    // the subject's content module, not here.
+    id: "topic", title: () => "Which topic are you doing right now?", needsContent: true,
+    options: (a, content) => {
+      const course = courseById(a.course);
+      const phase = course?.phases?.findIndex((p) => p.years.includes(a.year));
+      if (!content || phase == null || phase < 0) return [];
+      const lk = new Set(content.lk || []);
+      const byId = new Map(content.units.map((u) => [u.id, u]));
+      return [
+        ...(content.blocks[phase] || [])
+          .filter((id) => a.level === "LK" || !lk.has(id))
+          .map((id) => ({ value: id, label: byId.get(id)?.title || id })),
+        { value: "*", label: "Not sure — show the whole stage" },
+      ];
+    },
+    skip: (a) => !isSubject(courseById(a.course)),
+  },
+  {
     id: "half", title: () => "Which half of the school year?",
     options: () => [
       { value: 1, label: "1st half (Aug–Jan)" },
@@ -148,7 +227,12 @@ export const QUESTIONS = [
   },
   {
     id: "scope", title: () => "What should the plan include?",
-    options: (a) => trackFor(a)?.self
+    options: (a) => isSubject(courseById(a.course))
+      ? [
+          { value: "now", label: a.topic === "*" ? "Just this stage" : "Just this topic" },
+          { value: "review", label: "This, plus everything from earlier years" },
+        ]
+      : trackFor(a)?.self
       ? [
           { value: "now", label: "Just this level" },
           { value: "review", label: "This level, plus the ones before it" },
@@ -167,6 +251,7 @@ export function withDefaults(answers) {
   const course = courseById(a.course);
   if (course && course.tracks.length === 1) a.track = course.tracks[0].id;
   if (trackFor(a)?.halves === false) a.half = 1;
+  if (isSubject(course) && !Q_YEARS.includes(a.year)) delete a.level;
   return a;
 }
 
@@ -181,7 +266,8 @@ export const halfForDate = (date = new Date()) => {
 
 export const isComplete = (a) => {
   const track = trackFor(a);
-  return !!(track && track.years.some(([y]) => y === a.year)
+  const subjectOk = !track?.subject || (!!a.topic && (!Q_YEARS.includes(a.year) || a.level === "GK" || a.level === "LK"));
+  return !!(track && track.years.some(([y]) => y === a.year) && subjectOk
     && (a.half === 1 || a.half === 2) && (a.scope === "now" || a.scope === "review"));
 };
 
@@ -208,9 +294,10 @@ function halves(ids, split) {
 //
 // A review-only year (Q2 on the Klasse 6 track) never has "now" units of its
 // own; its blocks were already met, so they count as review from the start.
-export function buildPlan(answers, blocks) {
+export function buildPlan(answers, blocks, content) {
   const track = trackFor(answers);
   if (!track || !blocks) return null;
+  if (track.subject) return buildSubjectPlan(answers, blocks, content);
   const currentIndex = track.years.findIndex(([y]) => y === answers.year);
   const seen = new Set();
   const years = track.years.map(([year, blockIds, opts = {}], yearIndex) => {
@@ -236,6 +323,26 @@ export function buildPlan(answers, blocks) {
   return { course: answers.course, track: track.id, halves: track.halves !== false, years };
 }
 
+// A school subject's plan: one entry per curriculum phase. Inside the current
+// phase only the chosen topic is "now" (all of them for "*"); its siblings are
+// "phase" — taught this stage, order unknown — and offered, not recommended.
+// Leistungskurs-only topics are marked, and left out of a Grundkurs plan's
+// recommendation.
+function buildSubjectPlan(answers, blocks, content) {
+  const course = courseById(answers.course);
+  const current = course.phases.findIndex((p) => p.years.includes(answers.year));
+  const lk = new Set(content?.lk || []);
+  const years = course.phases.map((p, i) => ({
+    year: p.id, label: p.label, review: false, current: i === current,
+    units: (blocks[i] || []).map((id) => ({
+      id, half: 1, lk: lk.has(id),
+      status: i < current ? "done" : i > current ? "next"
+        : answers.topic === "*" || answers.topic === id ? "now" : "phase",
+    })),
+  }));
+  return { course: answers.course, track: "school", halves: false, subject: true, level: answers.level || null, years };
+}
+
 // Which units the plan recommends adding: this half's, plus everything
 // earlier when the student asked to catch up. Each id appears once even if a
 // review year repeats it.
@@ -244,6 +351,7 @@ export function recommended(plan, scope) {
   const want = scope === "review" ? new Set(["now", "done"]) : new Set(["now"]);
   const out = [];
   for (const y of plan.years) for (const u of y.units) {
+    if (u.lk && plan.level !== "LK") continue;
     if (want.has(u.status) && !out.some((o) => o.id === u.id)) out.push({ ...u, year: y.year, label: y.label });
   }
   return out;
@@ -266,8 +374,19 @@ export function recommended(plan, scope) {
 // "#" starts a unit (id | title | subtitle), "a | b" is a vocabulary card
 // (target language | German), "> " a line of a grammar explanation and "? " a
 // cloze exercise. Blank lines and lines starting with "//" are ignored.
+//
+// School-subject topics (ids starting with "t") add three more:
+//
+//   ! Warum leitet Salzwasser Strom? | Es enthält Ionen. | Es ist nass. | …
+//   = R = 20 Ω, U = 12 V. Wie groß ist I? | 0,6 A
+//   @ zelle
+//
+// "! " a multiple-choice question (right answer first, then wrong ones), "= "
+// a calculation whose answer is checked by value (drills.answersMatch), and
+// "@ " a labelled diagram from the content module's `diagrams`, which becomes
+// one occlusion card per label.
 
-export function parseCourse(text) {
+export function parseCourse(text, opts = {}) {
   const units = [];
   let unit = null;
   String(text || "").split("\n").forEach((raw, i) => {
@@ -275,14 +394,28 @@ export function parseCourse(text) {
     if (!line || line.startsWith("//")) return;
     if (line.startsWith("# ")) {
       const [id, title, subtitle = ""] = line.slice(2).split("|").map((s) => s.trim());
-      unit = { id, title, subtitle, kind: id.startsWith("g") ? "grammar" : "vocab", words: [], explain: [], exercises: [] };
+      const kind = id.startsWith("g") ? "grammar" : id.startsWith("t") ? "topic" : "vocab";
+      unit = { id, title, subtitle, kind, words: [], explain: [], exercises: [], choices: [], sums: [], diagrams: [] };
       units.push(unit);
       return;
     }
     if (!unit) throw new Error(`Line ${i + 1} is outside a unit`);
     if (line.startsWith(">")) unit.explain.push(line.replace(/^>\s?/, ""));
     else if (line.startsWith("? ")) unit.exercises.push(line.slice(2).trim());
-    else {
+    else if (line.startsWith("! ")) {
+      const [question, right, ...wrong] = line.slice(2).split(" | ").map((x) => x.trim());
+      if (!question || !right || wrong.length < 2) throw new Error(`Line ${i + 1} in ${unit.id} needs a question, the answer and two wrong ones`);
+      unit.choices.push({ question, right, wrong });
+    } else if (line.startsWith("= ")) {
+      const at = line.lastIndexOf(" | ");
+      if (at === -1) throw new Error(`Line ${i + 1} in ${unit.id} is not "task | result"`);
+      unit.sums.push({ question: line.slice(2, at).trim(), answer: line.slice(at + 3).trim() });
+    } else if (line.startsWith("@ ")) {
+      const id = line.slice(2).trim();
+      const d = opts.diagrams?.[id];
+      if (!d) throw new Error(`Line ${i + 1} in ${unit.id}: no diagram "${id}"`);
+      unit.diagrams.push({ id, masks: d.masks });
+    } else {
       const at = line.indexOf(" | ");
       if (at === -1) throw new Error(`Line ${i + 1} in ${unit.id} is not "front | back"`);
       unit.words.push({ front: line.slice(0, at).trim(), back: line.slice(at + 3).trim() });
@@ -292,7 +425,9 @@ export function parseCourse(text) {
 }
 
 export const cardCount = (unit) =>
-  unit ? unit.words.length + unit.exercises.reduce((n, e) => n + cloze.clozeNumbers(e).length, 0) : 0;
+  unit ? unit.words.length + unit.exercises.reduce((n, e) => n + cloze.clozeNumbers(e).length, 0)
+    + (unit.choices?.length || 0) + (unit.sums?.length || 0)
+    + (unit.diagrams || []).reduce((n, d) => n + d.masks.length, 0) : 0;
 
 // ---------------------------------------------------------------------------
 // Adding units to the library
@@ -358,7 +493,7 @@ export function addUnits({ subjects, course, units, picks, answers, newId }) {
     let yearNode = subject.children.find((n) => n.course?.year === pick.year);
     if (!yearNode) {
       yearNode = { id: newId(), name: pick.label || yearName(track, pick.year), children: [], course: { id: course.id, year: pick.year } };
-      subject = { ...subject, children: sortYears(track, [...subject.children, yearNode]) };
+      subject = { ...subject, children: sortYears(course, track, [...subject.children, yearNode]) };
     }
     const name = unit.kind === "grammar" ? `Grammatik · ${unit.title}` : unit.title;
     const unitNode = { id: newId(), name, children: [], course: { id: course.id, unit: unit.id } };
@@ -374,8 +509,8 @@ export function addUnits({ subjects, course, units, picks, answers, newId }) {
 }
 
 // Year folders stay in school order whatever order they were added in.
-function sortYears(track, nodes) {
-  const order = (track?.years || []).map(([y]) => y);
+function sortYears(course, track, nodes) {
+  const order = course?.phases ? course.phases.map((p) => p.id) : (track?.years || []).map(([y]) => y);
   const rank = (n) => (order.includes(n.course?.year) ? order.indexOf(n.course.year) : 99);
   return [...nodes].sort((a, b) => rank(a) - rank(b));
 }
@@ -388,10 +523,43 @@ export function unitCards(unit, nodeId, subjectId, newId, course) {
   if (unit.kind === "vocab") {
     return unit.words.map((w) => ({ ...base, id: newId(), front: w.front, back: w.back }));
   }
+  if (unit.kind === "topic") {
+    // Everything here is German, so the subject's voices need no override.
+    return [
+      ...unit.words.map((w) => ({ ...base, id: newId(), front: w.front, back: w.back })),
+      ...unit.exercises.flatMap((source) => cloze.expand(source).map((c) => ({ ...base, ...c, id: newId() }))),
+      ...unit.choices.map((c) => ({ ...base, id: newId(), front: c.question, back: c.right, manualOptions: c.wrong })),
+      ...unit.sums.map((c) => ({ ...base, id: newId(), front: c.question, back: c.answer })),
+      ...unit.diagrams.flatMap((d) =>
+        occlusion.expand(courseImageId(course.id, d.id), d.masks, { mode: occlusion.HIDE_ALL, base })
+          .map((c) => ({ ...c, id: newId() }))),
+    ];
+  }
   const lang = course?.speech?.frontLang || "es-ES";
   return unit.exercises.flatMap((source) =>
     cloze.expand(source).map((c) => ({
       ...base, ...c, id: newId(),
       speech: { backLang: lang, backLanguageMode: "manual" },
     })));
+}
+
+// ---------------------------------------------------------------------------
+// Diagram images
+// ---------------------------------------------------------------------------
+
+// A course diagram is never copied into the device's picture store: its card
+// names it as "course:<course>:<diagram>", and imageStore resolves that from
+// the bundled content. So the card works on every device as soon as it syncs
+// — an ordinary picture card only works where its picture was taken.
+export const courseImageId = (courseId, diagramId) => `course:${courseId}:${diagramId}`;
+export const isCourseImage = (id) => typeof id === "string" && id.startsWith("course:");
+
+export async function courseImage(id) {
+  if (!isCourseImage(id)) return null;
+  const [, courseId, diagramId] = id.split(":");
+  const course = courseById(courseId);
+  if (!course) return null;
+  const content = await course.load();
+  const d = content.diagrams?.[diagramId];
+  return d ? svgDataUrl(d.svg) : null;
 }

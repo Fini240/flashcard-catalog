@@ -324,3 +324,22 @@ describe("estimateSeconds", () => {
     expect(D.formatDuration(180)).toBe("3 min");
   });
 });
+
+describe("answersMatch", () => {
+  it("accepts the same number however it is written, in the same unit", async () => {
+    const { answersMatch } = await import("./drills");
+    expect(answersMatch("0,6", "0,6 A")).toBe(true);
+    expect(answersMatch("0.6 A", "0,6 A")).toBe(true);
+    expect(answersMatch("0,6A", "0,6 A")).toBe(true);
+    expect(answersMatch("3/5", "0,6")).toBe(true);
+    expect(answersMatch("x = 5", "5")).toBe(true);
+    expect(answersMatch("5", "x = 5")).toBe(true);
+    expect(answersMatch("6·10^23", "6 · 10^23")).toBe(true);
+    expect(answersMatch("−3", "-3")).toBe(true);
+    expect(answersMatch("0,6 V", "0,6 A")).toBe(false);
+    expect(answersMatch("0,7", "0,6 A")).toBe(false);
+    expect(answersMatch("1492", "1492")).toBe(true);
+    expect(answersMatch("Mitochondrien", "Mitochondrien.")).toBe(true);
+    expect(answersMatch("Ribosom", "Mitochondrium")).toBe(false);
+  });
+});

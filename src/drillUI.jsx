@@ -9,8 +9,9 @@ import { playAnswerFeedback, useAnswerFeedback } from "./answerFeedback";
 // ---------------------------------------------------------------------------
 import { useState, useRef, useEffect } from "react";
 import { Check, X } from "lucide-react";
-import { CardShell, CardFace, PrimaryButton, GhostButton, TextField, normalize } from "./cardUI";
+import { CardShell, CardFace, PrimaryButton, GhostButton, TextField } from "./cardUI";
 import { useStudyKeys, useExerciseSnapshot, KeyHint } from "./studyShortcuts";
+import { answersMatch } from "./drills";
 import { PronounceFace } from "./speechUI";
 
 const captionStyle = {
@@ -56,7 +57,7 @@ export function ClozeCard({ card, payload, onResult, initialState, onStateChange
   const check = () => {
     if (verdict) return;
     if (!values.every((value) => value.trim())) return;
-    const correct = values.every((value, i) => normalize(value) === normalize(answers[i]));
+    const correct = values.every((value, i) => answersMatch(value, answers[i]));
     if (feedback(correct)) setVerdict(correct ? "right" : "wrong");
   };
   const setValue = (index, value) => {

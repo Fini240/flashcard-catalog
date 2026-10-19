@@ -105,6 +105,35 @@ export const normalizeAnswer = (s) =>
 
 const normalizeish = normalizeAnswer;
 
+// Numbers and quantities, for calculation cards. normalizeAnswer strips "."
+// and ",", which is right for words and wrong for numbers: "0,6" would become
+// "06". So a typed answer that is a number is compared by *value* — 0,6 and
+// 0.6 and 3/5 are the same answer — within 1%, and its unit must match when
+// one is typed ("0,6 A" right, "0,6 V" wrong, plain "0,6" accepted). A leading
+// "x =" is ignored on both sides.
+const QUANTITY = /^([+-]?\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+(?:[.,]\d+)?))?(?:\s*(?:·|\*|x|×)\s*10\s*\^?\s*([+-]?\d+))?\s*(.*)$/;
+export function parseQuantity(s) {
+  const text = String(s ?? "").trim().replace(/[−–]/g, "-").replace(/^[a-zA-Z]\w*\s*=\s*/, "");
+  const m = text.match(QUANTITY);
+  if (!m) return null;
+  let value = Number(m[1].replace(",", "."));
+  if (m[2]) value /= Number(m[2].replace(",", "."));
+  if (m[3]) value *= 10 ** Number(m[3]);
+  if (!Number.isFinite(value)) return null;
+  return { value, unit: m[4].replace(/\s+/g, "").replace(/\.$/, "") };
+}
+
+// The one answer comparison for typed answers: the same text, or — for
+// numbers — the same value in the same unit.
+export function answersMatch(given, expected) {
+  if (normalizeAnswer(given) === normalizeAnswer(expected)) return true;
+  const want = parseQuantity(expected);
+  const got = parseQuantity(given);
+  if (!want || !got) return false;
+  const close = Math.abs(got.value - want.value) <= Math.max(1e-9, Math.abs(want.value) * 0.01);
+  return close && (got.unit === "" || got.unit === want.unit);
+}
+
 // A drill is offered only if the deck can actually sustain it: multiple choice
 // needs wrong answers to draw from, matching needs a full group, and anything
 // that reads the answer as words is meaningless for picture cards.
