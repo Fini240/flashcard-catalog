@@ -7,6 +7,10 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Typeface;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.StyleSpan;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -88,7 +92,7 @@ public class StreakWidgetProvider extends AppWidgetProvider {
 
         // The mood is carried by the card colour and the face together. Either
         // alone is legible; both is what makes it readable without focusing.
-        views.setInt(R.id.widget_root, "setBackgroundResource",
+        views.setInt(R.id.widget_card, "setBackgroundResource",
             WidgetState.backgroundFor(context, mood));
         views.setImageViewResource(R.id.widget_mascot, WidgetState.drawableFor(context, mascot, mood));
         views.setImageViewResource(R.id.widget_flame,
@@ -97,9 +101,13 @@ public class StreakWidgetProvider extends AppWidgetProvider {
         String headline = context.getString(
             streak == 1 ? R.string.widget_day_streak_n : R.string.widget_days_streak_n, streak);
         views.setTextViewText(R.id.widget_streak, headline);
+        // Gold once today is done, the way Duolingo's number lights up when
+        // the streak is extended — the flame and the number say it together.
+        views.setTextColor(R.id.widget_streak, context.getColor(
+            done ? R.color.widget_streak_lit : R.color.widget_on_dark));
         views.setTextViewText(R.id.widget_message, message);
 
-        renderDays(views, WidgetState.days(p, stale));
+        renderDays(context, views, WidgetState.days(p, stale));
 
         // The whole widget is one target — a home screen is a place for one
         // tap, not for hunting a small button.
@@ -120,14 +128,28 @@ public class StreakWidgetProvider extends AppWidgetProvider {
      * snapshot at all: five unlabelled empty circles look like a bug, and an
      * absent strip looks like a widget waiting for its first session.
      */
-    private static void renderDays(RemoteViews views, WidgetState.Day[] days) {
+    private static void renderDays(Context context, RemoteViews views, WidgetState.Day[] days) {
+        // The window ends on today (dayWindow in src/widget.js), so the last
+        // column is "now": its label is bold and, while unfinished, its mark
+        // is a bright ring rather than the dark well of a missed day.
+        int today = days.length - 1;
         for (int i = 0; i < DAY_DOTS.length; i++) {
             boolean present = i < days.length;
             views.setViewVisibility(DAY_LABELS[i], present ? View.VISIBLE : View.GONE);
             views.setViewVisibility(DAY_DOTS[i], present ? View.VISIBLE : View.GONE);
             if (!present) continue;
-            views.setTextViewText(DAY_LABELS[i], days[i].label);
-            views.setImageViewResource(DAY_DOTS[i], dotFor(days[i].state));
+            boolean isToday = i == today;
+            CharSequence label = days[i].label;
+            if (isToday) {
+                SpannableString bold = new SpannableString(label);
+                bold.setSpan(new StyleSpan(Typeface.BOLD), 0, bold.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                label = bold;
+            }
+            views.setTextViewText(DAY_LABELS[i], label);
+            views.setTextColor(DAY_LABELS[i], context.getColor(
+                isToday ? R.color.widget_on_dark : R.color.widget_on_dark_faint));
+            views.setImageViewResource(DAY_DOTS[i], dotFor(days[i].state, isToday));
         }
         for (int i = 0; i < DAY_LINKS.length; i++) {
             // Only two *studied* days join up. A freeze keeps the streak alive
@@ -142,10 +164,10 @@ public class StreakWidgetProvider extends AppWidgetProvider {
         }
     }
 
-    private static int dotFor(int state) {
+    private static int dotFor(int state, boolean today) {
         if (state == WidgetState.DAY_MET) return R.drawable.widget_day_done;
         if (state == WidgetState.DAY_FROZEN) return R.drawable.widget_day_frozen;
-        return R.drawable.widget_day_todo;
+        return today ? R.drawable.widget_day_today : R.drawable.widget_day_todo;
     }
 
     private static PendingIntent launchApp(Context context) {

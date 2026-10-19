@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Laid over every mood background (widget_bg_*.xml), so the six moods share
+     one sense of depth instead of each needing its own copy:
+
+     1. a soft light behind the mascot, which is what lifts the character off
+        the card the way Duolingo's owl is lifted off theirs;
+     2. a vertical wash, lighter at the top and slightly shaded at the bottom,
+        so the card reads as a surface rather than a flat swatch;
+     3. a 1dp rim at 16% white, the edge that keeps it crisp on a busy
+        wallpaper.
+
+     All three are translucent white or black, so they work on any mood
+     colour. MIRRORS .sheen in scripts/widget_mockup.mjs. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="radial"
+                android:centerX="0.8"
+                android:centerY="0.52"
+                android:gradientRadius="72dp"
+                android:startColor="#4DFFFFFF"
+                android:endColor="#00FFFFFF" />
+            <corners android:radius="@dimen/widget_corner_radius" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#21FFFFFF"
+                android:centerColor="#00FFFFFF"
+                android:endColor="#24000000" />
+            <corners android:radius="@dimen/widget_corner_radius" />
+            <stroke android:width="1dp" android:color="#29FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

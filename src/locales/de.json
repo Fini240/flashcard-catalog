@@ -849,5 +849,6 @@
   "Answer sounds": "Antworttöne",
   "Answer vibration": "Vibration bei Antworten",
   "Correct and wrong study answers now have distinct sounds and vibration, including each matching-pair attempt; switch either off in Settings.": "Richtige und falsche Antworten haben jetzt unterschiedliche Töne und Vibrationen, auch bei jedem Zuordnungsversuch. Beides lässt sich in den Einstellungen einzeln ausschalten.",
+  "The home-screen widget has a new look: a compact card like Duolingo's, redrawn mascots, a real flame, a marked today and full weekday names.": "Das Startbildschirm-Widget hat einen neuen Look: eine kompakte Karte wie bei Duolingo, neu gezeichnete Maskottchen, eine echte Flamme, ein markiertes Heute und vollständige Wochentage.",
   "Android pronunciation loads voices in the background so tapping the speaker no longer freezes the screen; stopping or changing words also cancels a voice still loading.": "Android lädt Stimmen im Hintergrund, damit das Tippen auf den Lautsprecher den Bildschirm nicht mehr blockiert; beim Stoppen oder Wechseln des Wortes wird auch eine noch ladende Stimme abgebrochen."
 }

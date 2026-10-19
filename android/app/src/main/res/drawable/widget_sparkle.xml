@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A four-point twinkle scattered around the mascot. Static: a widget cannot
+     animate, and it is decoration, so it stays faint and small. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="12dp" android:height="12dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M12,0 C12.8,7 17,11.2 24,12 C17,12.8 12.8,17 12,24 C11.2,17 7,12.8 0,12 C7,11.2 11.2,7 12,0 Z"
+        android:fillColor="#E6FFFFFF" />
+</vector>

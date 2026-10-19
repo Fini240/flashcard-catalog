@@ -32,16 +32,18 @@
     <color name="widget_on_dark">#FFFFFFFF</color>
     <color name="widget_on_dark_muted">#D9FFFFFF</color>
     <color name="widget_on_dark_faint">#C9FFFFFF</color>
-    <color name="widget_streak">#F2C572</color>
-    <color name="widget_streak_core">#FFE6B0</color>
-    <color name="widget_frozen">#6FB7E8</color>
+    <!-- The headline once today is done: Duolingo turns its number orange
+         the moment the streak is extended. Pale gold rather than orange,
+         because it has to hold 4.4:1 on the green "happy" card. -->
+    <color name="widget_streak_lit">#FFD66B</color>
+    <color name="widget_frozen">#7CC4F2</color>
     <!-- A day with nothing on it. Black rather than white, because a day that
          hasn't happened should sit *below* the card, not glow on top of it —
          and a shadow works on all six moods where a tint does not. -->
-    <color name="widget_day_todo">#2E000000</color>
+    <color name="widget_day_todo">#33000000</color>
     <!-- The app's accent-warm token: the colour a streak is already drawn
          in everywhere else in the app. -->
     <color name="widget_day_met">#F2874E</color>
 
-    <dimen name="widget_corner_radius">20dp</dimen>
+    <dimen name="widget_corner_radius">22dp</dimen>
 </resources>

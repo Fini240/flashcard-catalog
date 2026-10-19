@@ -696,23 +696,32 @@ screenshot: a 4x2 card whose **whole background is tinted by the mood**
 (`widget_bg_<mood>.xml`), the streak and a one-line message down the left, a
 five-day strip of marks under them, and the mascot beside them on the right.
 
-**The proportions are measured, not guessed.** The third pass was drawn
-against a screenshot of Duolingo's widget sitting on the user's own home
-screen directly above this one, where a 4x2 cell is 324x153dp: headline 26sp,
-message 14sp, day labels 12.5sp, day marks 26dp, about 10dp of air above the
-headline and below the marks. That type ramp is much flatter than a phone
-screen's, and deliberately — the card is read at arm's length and in passing.
-If you change one of those numbers, change it against a screenshot, not by
-eye — `node scripts/widget_mockup.mjs` draws the card at exactly that size for
-the comparison.
+**The proportions are measured, not guessed — and the first measurement was
+wrong.** On the user's phone a 4x2 *cell* is 324x225dp; 153dp is the height of
+Duolingo's *card*, which wraps its content and is centred in the cell. Ours
+filled the whole cell until 1.8.9, so on the first real home-screen screenshot
+(2026-10-19) the same content floated in a card half again as tall and looked
+small. Since 1.8.9 the root is a transparent full-cell tap target and
+`widget_card` wraps at ~152dp. Numbers: headline 31sp `sans-serif-black`
+(autosizes down to 18sp), message 15sp, day labels 13sp on a 34dp pitch (26dp
+clipped "Mon" to "Mo"), marks 28dp, mascot 116dp wide. That type ramp is much
+flatter than a phone screen's, and deliberately — the card is read at arm's
+length and in passing. Depth comes from `widget_sheen.xml` (a glow behind the
+mascot, a vertical wash and a 1dp rim, shared by all six moods) plus three
+static `widget_sparkle`s. Today is the last strip column: bold label, and
+`widget_day_today` (a bright ring) while unfinished. The headline turns
+`widget_streak_lit` gold once the day is done. If you change a number, change
+it against a screenshot, not by eye — `node scripts/widget_mockup.mjs` draws
+the cell at 324x225 for the comparison, and `StreakWidgetProviderTest` inflates
+the real RemoteViews (catches the blank-widget failure on a disallowed view or
+setter).
 
 **The mascot is a sibling column, not a layer behind the text.** It has been
 all three ways now: bleeding off the edge (a negative margin, so it read as a
 character standing behind the numbers), contained but overlapping, and finally
 beside. On a real home screen next to Duolingo's, anything that ran past the
-edge read as a head sliced in half. Its 96dp box is about 30% of a 4x2 cell,
-which is where Duolingo's sits; the art is trimmed to a 4% margin, so the head
-inside it is ~88dp. Keep the art clear of the rounded corners: below Android
+edge read as a head sliced in half. Its box is 116dp wide; the art is trimmed
+to a 4% margin. Keep the art clear of the rounded corners: below Android
 12 the background shape does not clip its children.
 
 **Dark to bright, left to right.** Each mood background is a three-stop
@@ -725,11 +734,11 @@ first and looked dead next to Duolingo's.
 **A run of met days is one capsule, and that dictates the strip's structure.**
 The join cannot be a block drawn *between* two circles: a circle is at its
 narrowest exactly where the block would meet it, so a full-height block
-sprouts corners at both ends. So the four joins are their own row, inset half
-a mark (13dp) and 33dp long — centre to centre — sitting *under* the row of
-marks in a `FrameLayout`. Which is also why `widget_day_done.xml` draws a
+sprouts corners at both ends. So the four joins are their own row, inset to
+the first mark's centre (17dp) and 34dp long — centre to centre — sitting
+*under* the row of marks in a `FrameLayout`. Which is also why `widget_day_done.xml` draws a
 circle that fills its viewport edge to edge: any inset there and the capsule
-grows shoulders. An unmet day is a dark well (`widget_day_todo`, black at 18%)
+grows shoulders. An unmet day is a dark well (`widget_day_todo`, black at 20%)
 rather than a pale disc, because darker-than-the-card is the one thing that
 reads on all six moods.
 
@@ -756,7 +765,13 @@ Two things to know before editing:
 
 - **The mascot art is generated image art, cut from expression sheets.** Five
   sheets (one per animal, six moods in a 3x2 grid) were generated through the
-  Higgsfield MCP tools and cut up by `scripts/mascot_sheets.py`. It is not part
+  Higgsfield MCP tools and cut up by `scripts/mascot_sheets.py`. The second set
+  (2026-10-19, chest-up with paws, cel-shaded, dark outline) was made with
+  `gpt_image_2_5`, 3:2, 2k, opaque background, passing each animal's old six
+  faces as a 3x2 reference *and* the new fox sheet as a style reference so the
+  five match. Fox and owl at quality `high` (2.75 credits), the rest `medium`
+  (1 credit). Keep the outline dark: a white sticker outline would be eaten by
+  the white-background flood fill. It is not part
   of any build — it runs by hand, and both output directories are committed.
   Three things in that script exist because of specific failures, and its
   header explains each: the background needs a flood fill rather than a
@@ -775,17 +790,14 @@ Two things to know before editing:
   nothing references them from code.
 
 ## Open items
-- [ ] **The widget has never been placed on a real home screen** (added
-      1.2.3). It compiles, and the APK carries the receiver, the layout and all
-      30 mascot drawables — but no one has watched a launcher inflate it. The
-      parts that can only fail on a device: whether `RemoteViews` accepts the
-      VectorDrawable in `setImageViewResource` (it should on API 24+, but this
-      is the classic place a widget renders blank), whether the 2x2 cell is
-      actually tall enough for mascot + streak + bar + count, and whether the
-      mood advances with the app closed — which needs leaving it overnight,
-      since `updatePeriodMillis` has a 30-minute floor. Check the midnight
-      rollover too: the `nextDay` schedule is the one piece of this that is a
-      prediction rather than a fact.
+- [ ] **The widget has been seen on a real home screen (1.8.8, Samsung One UI,
+      2026-10-19)** — vectors, mascot, strip and message all rendered, which
+      is what prompted the 1.8.9 redesign. Still unwatched: the 1.8.9 layout
+      itself on the phone (gradient vector flame, autosize headline, wrapped
+      card), whether the mood advances with the app closed — leave it
+      overnight, `updatePeriodMillis` has a 30-minute floor — and the
+      midnight rollover: the `nextDay` schedule is the one piece of this that
+      is a prediction rather than a fact.
 - [ ] **The direct AnkiDroid import has never run against a real AnkiDroid.**
       The plugin compiles and is confirmed present in the packaged APK, and the
       permission and `<queries>` entries are in the merged manifest — but no one

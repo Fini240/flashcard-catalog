@@ -205,7 +205,11 @@ final class WidgetState {
             Calendar c = Calendar.getInstance();
             c.clear();
             c.set(Integer.parseInt(ymd[0]), Integer.parseInt(ymd[1]) - 1, Integer.parseInt(ymd[2]));
-            return format.format(c.getTime());
+            // German's short weekdays carry a full stop ("Do.", "Fr."), which
+            // under a mark reads as punctuation, not a label. Duolingo drops
+            // it too.
+            String text = format.format(c.getTime());
+            return text.endsWith(".") ? text.substring(0, text.length() - 1) : text;
         } catch (NumberFormatException e) {
             return "";
         }

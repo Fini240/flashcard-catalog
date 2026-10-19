@@ -1,258 +1,328 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The Duolingo shape, measured off a screenshot of theirs sitting next to this
-  one on the same home screen (a 4x2 cell is 324x153dp on that phone):
+  The Duolingo shape, measured off a screenshot of theirs on the user's home
+  screen, in the same 4x2 slot this one was in (2026-10-19):
 
+    - **the cell is 324x225dp, and the card is not.** Duolingo's card wraps
+      its content at ~153dp and the launcher centres it in the cell. Ours
+      used to fill the whole cell, which left the same content floating in
+      half again as much card and made everything on it look small. So the
+      root is a transparent, full-cell tap target and the card inside it
+      wraps its height and sits centred.
     - everything readable in a column down the left, the mascot beside it;
-    - the headline about 26sp, the message 14sp, the day labels 12.5sp — a
-      much flatter type ramp than a phone screen would use, because the card
-      is read at arm's length and in passing;
-    - the day marks 26dp, which is chunky enough to read as *marks* rather
-      than as punctuation under the labels;
-    - roughly 10dp of air above the headline and below the marks, so the
-      content fills the card instead of floating in the middle of it.
+    - headline 31sp black, message 15sp, day labels 13sp — a flat type ramp,
+      because the card is read at arm's length and in passing;
+    - day marks 28dp on a 34dp pitch: wide enough that "Mon" fits its label
+      (26dp clipped it to "Mo" on the phone).
 
-  The mascot is a sibling column, not a layer behind the text: it was tried
-  both ways, and next to Duolingo's on a real home screen the version that
-  bled off the edge read as a head sliced in half. Its 96dp box is about 30%
-  of a 4x2 cell, which is where theirs sits.
+  Depth comes from a shared overlay (widget_sheen) — a light behind the
+  mascot, a top-to-bottom wash and a thin rim — and three static sparkles,
+  which is most of what made Duolingo's read as finished next to ours.
+
+  The mascot is a sibling column, not a layer behind the text: next to
+  Duolingo's on a real home screen the version that bled off the edge read as
+  a head sliced in half.
 
   RemoteViews will only inflate a handful of view types, which is why the day
   strip is hand-written views rather than anything generated, and why the
   spacing between the marks is margins rather than a Space.
+
+  MIRRORS scripts/widget_mockup.mjs — change the two together.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:baselineAligned="false"
-    android:paddingStart="14dp"
-    android:paddingEnd="10dp"
-    android:paddingTop="10dp"
-    android:paddingBottom="10dp"
-    android:background="@drawable/widget_bg_neutral">
+    android:layout_height="match_parent">
 
-    <LinearLayout
-        android:layout_width="0dp"
+    <FrameLayout
+        android:id="@+id/widget_card"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:layout_gravity="center_vertical"
+        android:background="@drawable/widget_bg_neutral">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:src="@drawable/widget_sheen"
+            android:scaleType="fitXY"
+            android:importantForAccessibility="no" />
+
+        <ImageView
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="116dp"
+            android:src="@drawable/widget_sparkle"
+            android:importantForAccessibility="no" />
+        <ImageView
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="24dp"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/widget_sparkle"
+            android:importantForAccessibility="no" />
+        <ImageView
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginBottom="20dp"
+            android:layout_marginEnd="14dp"
+            android:src="@drawable/widget_sparkle"
+            android:importantForAccessibility="no" />
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:baselineAligned="false"
-            android:gravity="center_vertical">
-
-            <ImageView
-                android:id="@+id/widget_flame"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_marginEnd="5dp"
-                android:src="@drawable/widget_flame_out"
-                android:importantForAccessibility="no" />
-
-            <TextView
-                android:id="@+id/widget_streak"
-                android:text="@string/widget_preview_streak"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/widget_on_dark"
-                android:textSize="26sp"
-                android:textStyle="bold"
-                android:maxLines="1"
-                android:includeFontPadding="false" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/widget_message"
-            android:text="@string/widget_preview_message"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="7dp"
-            android:textColor="@color/widget_on_dark_muted"
-            android:textSize="14sp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:includeFontPadding="false" />
-
-        <!--
-          The day strip: labels in one row, marks in another, and the joins
-          between met days on a layer *underneath* the marks.
-
-          The join is the whole point of the strip — two met days in a row are
-          one capsule the way Duolingo draws them, which is what makes a run
-          read as a streak instead of five separate ticks. Drawn as a block
-          *between* two circles it doesn't work: a circle is at its narrowest
-          exactly where the block meets it, so a full-height block sprouts
-          corners. So the joins are their own row, inset half a mark (13dp)
-          and 33dp long, running centre-to-centre under the circles, and the
-          marks are painted over them.
-
-          Label boxes and mark boxes are both 26dp wide with the same 7dp gap,
-          so the two rows line up without any measuring.
-        -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="18dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp">
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:orientation="horizontal"
+                    android:baselineAligned="false"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:id="@+id/widget_flame"
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/widget_flame_out"
+                        android:importantForAccessibility="no" />
+
+                    <!-- Shrinks rather than ellipsises: "1234 days" must stay
+                         a number, never "1234 d…". Autosize needs a bounded
+                         box, hence the fixed row height and the 0dp width. -->
+                    <TextView
+                        android:id="@+id/widget_streak"
+                        android:text="@string/widget_preview_streak"
+                        android:layout_width="0dp"
+                        android:layout_height="38dp"
+                        android:layout_weight="1"
+                        android:gravity="center_vertical"
+                        android:textColor="@color/widget_on_dark"
+                        android:fontFamily="sans-serif-black"
+                        android:textSize="31sp"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="18sp"
+                        android:autoSizeMaxTextSize="31sp"
+                        android:maxLines="1"
+                        android:shadowColor="#38000000"
+                        android:shadowDy="1"
+                        android:shadowRadius="2"
+                        android:includeFontPadding="false" />
+                </LinearLayout>
+
                 <TextView
-                    android:id="@+id/widget_day0_label"
-                    android:text="@string/widget_preview_day1"
-                    android:layout_width="26dp"
+                    android:id="@+id/widget_message"
+                    android:text="@string/widget_preview_message"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="7dp"
-                    android:gravity="center_horizontal"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/widget_on_dark_muted"
+                    android:fontFamily="sans-serif-medium"
+                    android:textSize="15sp"
                     android:maxLines="1"
-                    android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="12.5sp"
+                    android:ellipsize="end"
+                    android:shadowColor="#2E000000"
+                    android:shadowDy="1"
+                    android:shadowRadius="2"
                     android:includeFontPadding="false" />
-                <TextView
-                    android:id="@+id/widget_day1_label"
-                    android:text="@string/widget_preview_day2"
-                    android:layout_width="26dp"
+
+                <!--
+                  The day strip: labels in one row, marks in another, and the
+                  joins between met days on a layer *underneath* the marks.
+
+                  Two met days in a row are one capsule, which is what makes a
+                  run read as a streak instead of five separate ticks. Drawn as
+                  a block *between* two circles it doesn't work: a circle is at
+                  its narrowest exactly where the block meets it, so a
+                  full-height block sprouts corners. So the joins are their own
+                  row, inset to the centre of the first mark (3dp margin + half
+                  of 28dp = 17dp) and 34dp long, running centre-to-centre under
+                  the circles, and the marks are painted over them.
+
+                  Label boxes are the full 34dp pitch and each mark is 28dp with
+                  3dp either side, so both rows centre on the same lines
+                  without any measuring.
+                -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="7dp"
-                    android:gravity="center_horizontal"
-                    android:maxLines="1"
-                    android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="12.5sp"
-                    android:includeFontPadding="false" />
-                <TextView
-                    android:id="@+id/widget_day2_label"
-                    android:text="@string/widget_preview_day3"
-                    android:layout_width="26dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="7dp"
-                    android:gravity="center_horizontal"
-                    android:maxLines="1"
-                    android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="12.5sp"
-                    android:includeFontPadding="false" />
-                <TextView
-                    android:id="@+id/widget_day3_label"
-                    android:text="@string/widget_preview_day4"
-                    android:layout_width="26dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="7dp"
-                    android:gravity="center_horizontal"
-                    android:maxLines="1"
-                    android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="12.5sp"
-                    android:includeFontPadding="false" />
-                <TextView
-                    android:id="@+id/widget_day4_label"
-                    android:text="@string/widget_preview_day5"
-                    android:layout_width="26dp"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_horizontal"
-                    android:maxLines="1"
-                    android:textColor="@color/widget_on_dark_faint"
-                    android:textSize="12.5sp"
-                    android:includeFontPadding="false" />
+                    android:orientation="vertical"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <TextView
+                            android:id="@+id/widget_day0_label"
+                            android:text="@string/widget_preview_day1"
+                            android:layout_width="34dp"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_horizontal"
+                            android:maxLines="1"
+                            android:textColor="@color/widget_on_dark_faint"
+                            android:textSize="13sp"
+                            android:includeFontPadding="false" />
+                        <TextView
+                            android:id="@+id/widget_day1_label"
+                            android:text="@string/widget_preview_day2"
+                            android:layout_width="34dp"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_horizontal"
+                            android:maxLines="1"
+                            android:textColor="@color/widget_on_dark_faint"
+                            android:textSize="13sp"
+                            android:includeFontPadding="false" />
+                        <TextView
+                            android:id="@+id/widget_day2_label"
+                            android:text="@string/widget_preview_day3"
+                            android:layout_width="34dp"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_horizontal"
+                            android:maxLines="1"
+                            android:textColor="@color/widget_on_dark_faint"
+                            android:textSize="13sp"
+                            android:includeFontPadding="false" />
+                        <TextView
+                            android:id="@+id/widget_day3_label"
+                            android:text="@string/widget_preview_day4"
+                            android:layout_width="34dp"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_horizontal"
+                            android:maxLines="1"
+                            android:textColor="@color/widget_on_dark_faint"
+                            android:textSize="13sp"
+                            android:includeFontPadding="false" />
+                        <TextView
+                            android:id="@+id/widget_day4_label"
+                            android:text="@string/widget_preview_day5"
+                            android:layout_width="34dp"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_horizontal"
+                            android:maxLines="1"
+                            android:textColor="@color/widget_on_dark_faint"
+                            android:textSize="13sp"
+                            android:includeFontPadding="false" />
+                    </LinearLayout>
+
+                    <FrameLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp">
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:paddingStart="17dp">
+                            <ImageView
+                                android:id="@+id/widget_day0_link"
+                                android:visibility="invisible"
+                                android:layout_width="34dp"
+                                android:layout_height="28dp"
+                                android:background="@color/widget_day_met"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:id="@+id/widget_day1_link"
+                                android:visibility="invisible"
+                                android:layout_width="34dp"
+                                android:layout_height="28dp"
+                                android:background="@color/widget_day_met"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:id="@+id/widget_day2_link"
+                                android:visibility="invisible"
+                                android:layout_width="34dp"
+                                android:layout_height="28dp"
+                                android:background="@color/widget_day_met"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:id="@+id/widget_day3_link"
+                                android:visibility="visible"
+                                android:layout_width="34dp"
+                                android:layout_height="28dp"
+                                android:background="@color/widget_day_met"
+                                android:importantForAccessibility="no" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+                            <ImageView
+                                android:id="@+id/widget_day0_dot"
+                                android:src="@drawable/widget_day_todo"
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:layout_marginStart="3dp"
+                                android:layout_marginEnd="3dp"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:id="@+id/widget_day1_dot"
+                                android:src="@drawable/widget_day_todo"
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:layout_marginStart="3dp"
+                                android:layout_marginEnd="3dp"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:id="@+id/widget_day2_dot"
+                                android:src="@drawable/widget_day_todo"
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:layout_marginStart="3dp"
+                                android:layout_marginEnd="3dp"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:id="@+id/widget_day3_dot"
+                                android:src="@drawable/widget_day_done"
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:layout_marginStart="3dp"
+                                android:layout_marginEnd="3dp"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:id="@+id/widget_day4_dot"
+                                android:src="@drawable/widget_day_done"
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:layout_marginStart="3dp"
+                                android:layout_marginEnd="3dp"
+                                android:importantForAccessibility="no" />
+                        </LinearLayout>
+                    </FrameLayout>
+                </LinearLayout>
             </LinearLayout>
 
-            <FrameLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp">
-
-                <!-- Under the marks. 13dp in, then 33dp per join: centre of one
-                     mark to the centre of the next. -->
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:paddingStart="13dp">
-                    <ImageView
-                        android:id="@+id/widget_day0_link"
-                        android:visibility="invisible"
-                        android:layout_width="33dp"
-                        android:layout_height="26dp"
-                        android:background="@color/widget_day_met"
-                        android:importantForAccessibility="no" />
-                    <ImageView
-                        android:id="@+id/widget_day1_link"
-                        android:visibility="invisible"
-                        android:layout_width="33dp"
-                        android:layout_height="26dp"
-                        android:background="@color/widget_day_met"
-                        android:importantForAccessibility="no" />
-                    <ImageView
-                        android:id="@+id/widget_day2_link"
-                        android:visibility="invisible"
-                        android:layout_width="33dp"
-                        android:layout_height="26dp"
-                        android:background="@color/widget_day_met"
-                        android:importantForAccessibility="no" />
-                    <ImageView
-                        android:id="@+id/widget_day3_link"
-                        android:layout_width="33dp"
-                        android:layout_height="26dp"
-                        android:background="@color/widget_day_met"
-                        android:importantForAccessibility="no" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <ImageView
-                        android:id="@+id/widget_day0_dot"
-                        android:src="@drawable/widget_day_todo"
-                        android:layout_width="26dp"
-                        android:layout_height="26dp"
-                        android:layout_marginEnd="7dp"
-                        android:importantForAccessibility="no" />
-                    <ImageView
-                        android:id="@+id/widget_day1_dot"
-                        android:src="@drawable/widget_day_todo"
-                        android:layout_width="26dp"
-                        android:layout_height="26dp"
-                        android:layout_marginEnd="7dp"
-                        android:importantForAccessibility="no" />
-                    <ImageView
-                        android:id="@+id/widget_day2_dot"
-                        android:src="@drawable/widget_day_todo"
-                        android:layout_width="26dp"
-                        android:layout_height="26dp"
-                        android:layout_marginEnd="7dp"
-                        android:importantForAccessibility="no" />
-                    <ImageView
-                        android:id="@+id/widget_day3_dot"
-                        android:src="@drawable/widget_day_done"
-                        android:layout_width="26dp"
-                        android:layout_height="26dp"
-                        android:layout_marginEnd="7dp"
-                        android:importantForAccessibility="no" />
-                    <ImageView
-                        android:id="@+id/widget_day4_dot"
-                        android:src="@drawable/widget_day_done"
-                        android:layout_width="26dp"
-                        android:layout_height="26dp"
-                        android:importantForAccessibility="no" />
-                </LinearLayout>
-            </FrameLayout>
+            <!-- Nudged down a little: centred exactly, a head with ears
+                 floats; a few dp low it stands on the card. Height follows
+                 the text column, so the card's height is set by the text
+                 alone and the art scales into whatever that leaves. -->
+            <ImageView
+                android:id="@+id/widget_mascot"
+                android:src="@drawable/mascot_owl_waiting"
+                android:layout_width="116dp"
+                android:layout_height="match_parent"
+                android:layout_marginTop="6dp"
+                android:scaleType="fitCenter"
+                android:importantForAccessibility="no" />
         </LinearLayout>
-    </LinearLayout>
-
-    <!-- Nudged down a little: centred exactly, a head with ears floats; a few
-         dp low it stands on the card. -->
-    <ImageView
-        android:id="@+id/widget_mascot"
-        android:src="@drawable/mascot_owl_waiting"
-        android:layout_width="96dp"
-        android:layout_height="match_parent"
-        android:layout_marginTop="8dp"
-        android:scaleType="fitCenter"
-        android:importantForAccessibility="no" />
-</LinearLayout>
+    </FrameLayout>
+</FrameLayout>

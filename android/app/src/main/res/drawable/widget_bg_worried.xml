@@ -10,9 +10,9 @@
      4.5:1 while the far end still lifts. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <gradient
-        android:startColor="#784810"
-        android:centerColor="#995F1C"
-        android:endColor="#E69436"
+        android:startColor="#7C3F05"
+        android:centerColor="#A55C0C"
+        android:endColor="#F09C34"
         android:angle="0" />
     <corners android:radius="@dimen/widget_corner_radius" />
 </shape>

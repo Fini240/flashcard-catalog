@@ -50,10 +50,11 @@ COLS, ROWS = 3, 2
 # obliged to — on the bunny sheet the worried and sad faces came out the other
 # way round, and on the panda sheet waiting and worried did. Reordering here
 # beats regenerating: the art is good, only the labels were wrong.
-CELL_ORDER = {
-    "bunny": [0, 1, 2, 4, 3, 5],
-    "panda": [0, 1, 3, 2, 4, 5],
-}
+#
+# The 2026-10-19 sheets all came out in reading order, so the map is empty
+# now. It was bunny [0,1,2,4,3,5] and panda [0,1,3,2,4,5] for the first set;
+# check every new sheet by eye before cutting, and add an entry if needed.
+CELL_ORDER = {}
 
 # Only near-pure white counts as background. Anti-aliased edge pixels are a
 # blend of the art and the white behind it, and leaving them opaque keeps a
@@ -70,10 +71,12 @@ OUT_SIZE = 576
 WEB_SIZE = 192
 PAD = 0.04          # breathing room around the trimmed art, as a fraction
 
-# Flat art with a handful of colours: a palette costs nothing visually and
-# takes the whole set from 12.6MB to something an APK can carry. FASTOCTREE is
-# the one PIL quantiser that keeps the alpha channel.
-PALETTE = 64
+# A palette takes the whole set from 12.6MB to something an APK can carry.
+# FASTOCTREE is the one PIL quantiser that keeps the alpha channel. 64 colours
+# was enough for the first, flat art; the shaded sheets (2026-10-19) banded
+# into visible blotches across the fur at 64, so it is the full 256 now —
+# still about 40KB an image.
+PALETTE = 256
 
 
 def _fill_runs(mask, reach, axis):
