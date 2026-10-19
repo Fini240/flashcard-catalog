@@ -18,12 +18,16 @@ const press = async (text) => {
   await act(async () => b.click());
 };
 // The content arrives through a dynamic import; give it a moment.
-const settle = async () => { for (let i = 0; i < 20 && host.textContent.includes("Loading the course"); i++) await act(() => new Promise((r) => setTimeout(r, 10))); };
+const until = async (fn) => { for (let i = 0; i < 40 && !fn(); i++) await act(() => new Promise((r) => setTimeout(r, 10))); };
+const settle = () => until(() => !host.textContent.includes("Loading the course"));
+let n = 0;
+const newId = () => `n${++n}`;
 
 it("asks the placement questions, then adds this half's topics to the library", async () => {
   const onAdd = vi.fn();
   await render(<CourseSheet subjects={[]} onAdd={onAdd} onClose={() => {}} />);
   expect(host.textContent).toContain("Question 1 of 5");
+  for (const c of C.COURSES) expect(host.textContent).toContain(c.name);
   await press("Spanisch");
   await press("Klasse 7");
   // Only the Klasse 7 track's years are offered.
@@ -40,27 +44,62 @@ it("asks the placement questions, then adds this half's topics to the library", 
   expect(course.id).toBe("es");
   expect(units.length).toBeGreaterThan(40);
   expect(picks.length).toBeGreaterThan(0);
-  expect(picks.every((p) => p.year === "8" && p.status === "now")).toBe(true);
+  expect(picks.every((p) => p.year === "8" && p.label === "Klasse 8" && p.status === "now")).toBe(true);
 });
 
-it("reopens on the saved plan, shows added topics as added, and can go back to the questions", async () => {
+it("skips the school questions for a self-study language", async () => {
+  const onAdd = vi.fn();
+  await render(<CourseSheet subjects={[]} onAdd={onAdd} onClose={() => {}} />);
+  await press("Japanisch");
+  expect(host.textContent).toContain("Question 2 of 3");
+  expect(host.textContent).toContain("Where do you want to start?");
+  await press("Stufe 1 · Kana");
+  await press("Just this level");
+  await settle();
+  expect(host.textContent).toContain("Self-study");
+  expect(host.textContent).not.toContain("half");
+  await press("Add what I need now");
+  const { picks, answers } = onAdd.mock.calls[0][0];
+  expect(answers).toMatchObject({ course: "ja", track: "self", year: "1", half: 1 });
+  expect(picks.some((p) => p.id === "v1-hiragana")).toBe(true);
+});
+
+it("reopens a saved plan from the language list, shows added topics, and can change answers", async () => {
   const answers = { course: "es", track: "abEF", year: "EF", half: 2, scope: "review" };
-  const units = await C.courseById("es").load();
-  const plan = C.buildPlan(answers);
-  const { subjects } = C.addUnits({ subjects: [], course: C.courseById("es"), units, picks: C.recommended(plan, "now").slice(0, 1), answers, newId: (() => { let i = 0; return () => `n${++i}`; })() });
+  const content = await C.courseById("es").load();
+  const plan = C.buildPlan(answers, content.blocks);
+  const { subjects } = C.addUnits({ subjects: [], course: C.courseById("es"), units: content.units, picks: C.recommended(plan, "now").slice(0, 1), answers, newId });
   await render(<CourseSheet subjects={subjects} onAdd={() => {}} onClose={() => {}} />);
+  expect(host.textContent).toContain("Your plan");
+  await press("Spanisch");
   await settle();
   expect(host.textContent).toContain("Oberstufe (neu einsetzend)");
   expect(host.textContent).toContain("Added");
   await press("Change");
-  expect(host.textContent).toContain("Question 1 of 5");
+  expect(host.textContent).toContain("Since when do you learn it at school?");
+  // One step back from the track question is the language list.
+  await press("Previous question");
+  expect(host.textContent).toContain("Which language do you want to learn?");
+});
+
+it("opens straight on a course's plan from inside its folder", async () => {
+  const answers = { course: "fr", track: "ab7", year: "9", half: 1, scope: "now" };
+  const subjects = [{ id: "s", name: "Französisch", children: [], course: { id: "fr", answers } }];
+  await render(<CourseSheet subjects={subjects} initialCourse="fr" onAdd={() => {}} onClose={() => {}} />);
+  await settle();
+  expect(host.textContent).toContain("Französisch");
+  expect(host.textContent).toContain("Klasse 9");
+  expect(host.textContent).not.toContain("Question 1");
 });
 
 it("shows a grammar folder's rule, and nothing for a vocabulary folder", async () => {
   await render(<GrammarNote courseId="es" unitId="g1-ser-estar-hay" />);
-  for (let i = 0; i < 20 && !host.textContent.includes("The rule"); i++) await act(() => new Promise((r) => setTimeout(r, 10)));
+  await until(() => host.textContent.includes("The rule"));
   expect(host.textContent).toContain("The rule");
   expect(host.textContent).toContain("soy · eres · es");
+  await render(<GrammarNote courseId="ru" unitId="g2-dvizhenie" />);
+  await until(() => host.textContent.includes("идти"));
+  expect(host.textContent).toContain("идти");
   await render(<GrammarNote courseId="es" unitId="v1-familia" />);
   expect(host.textContent).toBe("");
 });

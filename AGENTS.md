@@ -82,8 +82,8 @@ Ships as an Android app (Capacitor) **and** a web app on Firebase Hosting.
 | `src/gameUI.jsx` | The gamification surface: status bar, today card, quests, streak/goal/friends sheets |
 | `src/social.js` | Friend codes, usernames, public `profiles/` docs, nudges, friends + global leaderboards |
 | `src/reminders.js` | Daily study reminder — local notifications, scheduled on-device |
-| `src/courses.js` | **Language courses** (1.9.0): the syllabus (`BLOCKS`), the school tracks (`TRACKS`: start in Klasse 6, 7, 9 or a new start in the EF), placement (`QUESTIONS`, `buildPlan`, `recommended`), the content parser and `addUnits`, which files units as Subject › year › unit. Pure and unit-tested. |
-| `src/courses/es-*.js`, `src/courses/es.js` | The Spanish content in a small text format (header of `parseCourse`). Loaded on demand as its own chunk. `courses.test.js` validates all of it: every syllabus id exists, no word taught twice, every exercise a working cloze. |
+| `src/courses.js` | **Language courses** (1.9.0, nine languages since 1.10.0): `COURSES` (name, voices, tracks, loader), the school tracks (foreign language from Klasse 6/7/9 or EF, English from Klasse 5, Latin I/II/EF, one self-study track for ja/ko/zh), placement (`QUESTIONS` with skip rules, `withDefaults`, `buildPlan`, `recommended`), the content parser and `addUnits`, which files units as Subject › year › unit. Pure and unit-tested. |
+| `src/courses/<lang>.js` (+ `es-1..3.js`) | Each language's content in a small text format (header of `parseCourse`) **plus its syllabus** (`blocks`); default export `{ units, blocks }`. One lazy chunk per language. `courses.test.js` runs every language through the same checks: syllabus ids exist, tracks teach exactly the blocks there are, no word taught twice, every exercise a working cloze, both kinds in every half-year. |
 | `src/courseUI.jsx` | Placement questions, the year-by-year plan, and `GrammarNote` (the rule above a grammar folder's cards). |
 | `src/widget.js` | **The home-screen widget's brain.** The mascot catalogue, the mood ladder, and the snapshot handed to the native side. The widget itself decides nothing — read the header before changing either half. |
 | `public/mascots/*.png` | The mascot art for the picker in Settings. Referenced by URL, not imported, so it stays out of the JS bundle. |
@@ -712,9 +712,21 @@ device; `{id, year}` on a year; `{id, unit}` on a unit) — that is how the plan
 knows what is already added, and a deleted folder makes its unit addable
 again. Vocabulary cards are Spanish → German with the subject's voices set to
 manual es-ES / de-DE; grammar cards override the back side to es-ES because
-their answer is Spanish. **To add a language:** another `COURSES` entry with
-its own content files and `BLOCKS`-compatible unit ids (or its own syllabus),
-and the tests in `courses.test.js` pointed at it.
+their answer is Spanish.
+
+**Nine languages since 1.10.0.** School languages with an NRW year plan:
+English (Klasse 5–Q2, nine blocks), French, Spanish, Italian, Russian (the
+foreign-language tracks, seven blocks), Latin (Latein I/II/EF, seven blocks
+ending in Caesar/Cicero and Ovid/Seneca; cards carry the principal parts).
+Self-study, four levels, no half-years (`halves: false`, the track and half
+questions are skipped): Japanese, Korean, Chinese — each starts with its
+script (kana, Hangul, pinyin/tones). Japanese fronts are kana with the kanji
+on the back, Chinese fronts are characters with pinyin on the back, so the
+voice reads the front once. Latin's voice is `la`, which most phones lack;
+the speaker then reports the missing voice, which is correct — never swap in
+Italian. **To add a language:** a `COURSES` entry plus `src/courses/<id>.js`
+exporting `{ units, blocks }` with as many blocks as its tracks expect; the
+generic tests in `courses.test.js` pick it up automatically.
 
 ## The widget, in one paragraph
 

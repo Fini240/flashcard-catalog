@@ -11,67 +11,90 @@ import * as C from "./courses";
 const caption = { fontSize: 12, color: "var(--on-shell-muted)", marginTop: 2 };
 
 // Content is loaded on demand and kept for the session: opening the plan
-// twice should not parse a thousand cards twice.
+// twice should not parse a thousand cards twice. Resolves to { units, blocks }.
 const loaded = new Map();
-export function useCourseUnits(courseId) {
-  const [units, setUnits] = useState(() => loaded.get(courseId) || null);
+export function useCourseContent(courseId) {
+  const [content, setContent] = useState(() => loaded.get(courseId) || null);
   useEffect(() => {
+    setContent(loaded.get(courseId) || null);
     if (!courseId || loaded.has(courseId)) return;
     let live = true;
-    C.courseById(courseId)?.load().then((u) => {
-      loaded.set(courseId, u);
-      if (live) setUnits(u);
+    C.courseById(courseId)?.load().then((c) => {
+      loaded.set(courseId, c);
+      if (live) setContent(c);
     });
     return () => { live = false; };
   }, [courseId]);
-  return units;
+  return content;
 }
 
-export function CourseSheet({ subjects, onAdd, onClose }) {
-  // Reopening shows the plan as it was left; the answers ride on the course
-  // subject, so they are the same on every signed-in device.
-  const saved = C.courseSubject(subjects, "es")?.course?.answers;
-  const [answers, setAnswers] = useState(() => saved || { course: "es", half: C.halfForDate() });
-  const [step, setStep] = useState(() => (C.isComplete(saved) ? C.QUESTIONS.length : 0));
-  const done = step >= C.QUESTIONS.length;
+// `initialCourse` opens straight on that course's plan (the "Course plan"
+// button inside a course folder); without it the sheet starts at the language
+// question, where a language already in the library jumps to its saved plan.
+export function CourseSheet({ subjects, initialCourse, onAdd, onClose }) {
+  // The answers ride on the course subject, so a plan reopens as it was left
+  // on every signed-in device.
+  const saved = useMemo(() => C.savedAnswers(subjects), [subjects]);
+  const [answers, setAnswers] = useState(() =>
+    (initialCourse && saved[initialCourse]) || { course: initialCourse, half: C.halfForDate() });
+  const [step, setStep] = useState(() => (initialCourse && saved[initialCourse] ? Infinity : 0));
+  const questions = C.applicable(answers);
+  const done = step >= questions.length;
+
+  const pick = (value) => {
+    const q = questions[step];
+    if (q.id === "course" && saved[value]) {
+      setAnswers(saved[value]);
+      setStep(Infinity);
+      return;
+    }
+    let next = { ...answers, [q.id]: value };
+    if (q.id === "course") next = { course: value, half: answers.half || C.halfForDate() };
+    // A different start changes which years exist; drop a year the new
+    // track doesn't have rather than carry it along.
+    if (q.id === "track" && !C.trackFor(next)?.years.some(([y]) => y === next.year)) delete next.year;
+    next = C.withDefaults(next);
+    setAnswers(next);
+    // The skip rules depend on the answer just given, so find the next step
+    // in the new list, not the old one.
+    const list = C.applicable(next);
+    setStep(list.findIndex((x) => x.id === q.id) + 1);
+  };
 
   return (
     <Sheet title="Language courses" onClose={onClose}>
       {/* Sheet sets no face of its own, and the shell's default is a serif. */}
       <div style={{ fontFamily: "Inter, sans-serif" }}>
       {done
-        ? <CoursePlan answers={answers} subjects={subjects} onAdd={onAdd} onChange={() => setStep(0)} />
+        ? <CoursePlan answers={answers} subjects={subjects} onAdd={onAdd}
+            onChange={() => setStep(C.applicable(answers).length > 1 ? 1 : 0)}
+            onLanguages={() => setStep(0)} />
         : <Question
-            step={step}
+            question={questions[step]}
+            index={step}
+            count={questions.length}
             answers={answers}
+            saved={saved}
             onBack={step > 0 ? () => setStep(step - 1) : null}
-            onPick={(value) => {
-              const q = C.QUESTIONS[step];
-              const next = { ...answers, [q.id]: value };
-              // A different start changes which years exist; drop a year the
-              // new track doesn't have rather than carry it along.
-              if (q.id === "track" && !C.trackById(value)?.years.some(([y]) => y === next.year)) delete next.year;
-              setAnswers(next);
-              setStep(step + 1);
-            }}
+            onPick={pick}
           />}
       </div>
     </Sheet>
   );
 }
 
-function Question({ step, answers, onPick, onBack }) {
-  const q = C.QUESTIONS[step];
+function Question({ question: q, index, count, answers, saved, onPick, onBack }) {
   const options = q.options(answers);
   return (
     <div>
       <div style={{ ...caption, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: "'IBM Plex Mono', monospace" }}>
-        {t("Question {0} of {1}", [step + 1, C.QUESTIONS.length])}
+        {t("Question {0} of {1}", [index + 1, count])}
       </div>
-      <div style={{ fontSize: 19, fontWeight: 600, color: "var(--on-shell-strong)", margin: "6px 0 14px" }}>{t(q.title)}</div>
+      <div style={{ fontSize: 19, fontWeight: 600, color: "var(--on-shell-strong)", margin: "6px 0 14px" }}>{t(q.title(answers))}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {options.map((o) => {
           const chosen = answers[q.id] === o.value;
+          const mine = q.id === "course" && saved[o.value];
           return (
             <button key={String(o.value)} onClick={() => onPick(o.value)} style={{
               textAlign: "left", padding: "14px 16px", minHeight: 52, borderRadius: 12, cursor: "pointer",
@@ -79,9 +102,10 @@ function Question({ step, answers, onPick, onBack }) {
               color: chosen ? "#fff" : "var(--on-shell-strong)",
               border: "1px solid " + (chosen ? "var(--accent)" : "transparent"),
               fontFamily: "Inter, sans-serif", fontSize: 15, fontWeight: 500,
-              display: "flex", alignItems: "center", justifyContent: "space-between",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
             }}>
-              {t(o.label)}
+              <span style={{ flex: 1 }}>{t(o.label)}</span>
+              {mine && <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>{t("Your plan")}</span>}
               {chosen ? <Check size={18} /> : <ChevronRight size={18} color="var(--on-shell-muted)" />}
             </button>
           );
@@ -103,31 +127,35 @@ const STATUS = {
   next: { label: "Later", color: "var(--on-shell-muted)" },
 };
 
-function CoursePlan({ answers, subjects, onAdd, onChange }) {
+function CoursePlan(props) {
+  const content = useCourseContent(props.answers.course);
+  if (!content) return <div style={caption}>{t("Loading the course…")}</div>;
+  return <PlanBody {...props} content={content} />;
+}
+
+function PlanBody({ answers, subjects, onAdd, onChange, onLanguages, content }) {
   const course = C.courseById(answers.course);
-  const track = C.trackById(answers.track);
-  const units = useCourseUnits(answers.course);
-  const plan = useMemo(() => C.buildPlan(answers), [answers]);
+  const track = C.trackFor(answers);
+  const plan = useMemo(() => C.buildPlan(answers, content.blocks), [answers, content]);
   const added = useMemo(() => C.addedUnits(subjects, answers.course), [subjects, answers.course]);
-  const byId = useMemo(() => new Map((units || []).map((u) => [u.id, u])), [units]);
+  const byId = useMemo(() => new Map(content.units.map((u) => [u.id, u])), [content]);
   const [open, setOpen] = useState(() => new Set(plan.years.filter((y) => y.current).map((y) => y.year)));
   const [preview, setPreview] = useState(null);
 
   const recommended = C.recommended(plan, answers.scope).filter((u) => !added.has(u.id));
   const cards = recommended.reduce((n, u) => n + C.cardCount(byId.get(u.id)), 0);
-  const add = (picks) => onAdd({ course, units, picks, answers });
-
-  if (!units) return <div style={caption}>{t("Loading the course…")}</div>;
+  const add = (picks) => onAdd({ course, units: content.units, picks, answers });
+  const where = track.self
+    ? t("Self-study · {0}", [C.yearName(track, answers.year)])
+    : t("Since {0} · now {1}, {2}. half", [t(track.label), C.yearName(track, answers.year), answers.half]);
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontSize: 28 }}>{course.flag}</span>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 600, color: "var(--on-shell-strong)" }}>{course.name}</div>
-          <div style={caption}>
-            {t("Since {0} · now {1}, {2}. half", [t(track.label), C.yearLabel(answers.year), answers.half])}
-          </div>
+          <div style={caption}>{where}</div>
         </div>
         <GhostButton onClick={onChange}>{t("Change")}</GhostButton>
       </div>
@@ -138,9 +166,11 @@ function CoursePlan({ answers, subjects, onAdd, onChange }) {
           : t("Everything for now is in your library")}
       </PrimaryButton>
       <div style={{ ...caption, marginTop: 6 }}>
-        {answers.scope === "review"
-          ? t("This half of the year, plus everything from before it as review.")
-          : t("Just this half of the year. Add earlier topics below whenever you want to catch up.")}
+        {track.self
+          ? (answers.scope === "review" ? t("This level, plus the ones before it.") : t("Just this level. Earlier levels are below if you want them."))
+          : (answers.scope === "review"
+            ? t("This half of the year, plus everything from before it as review.")
+            : t("Just this half of the year. Add earlier topics below whenever you want to catch up."))}
       </div>
 
       {plan.years.map((y) => {
@@ -166,13 +196,14 @@ function CoursePlan({ answers, subjects, onAdd, onChange }) {
                   const unit = byId.get(u.id);
                   if (!unit) return null;
                   return (
-                    <UnitRow key={u.id} unit={unit} status={u.status} half={u.half} added={added.has(u.id)}
+                    <UnitRow key={u.id} unit={unit} status={u.status} half={plan.halves ? u.half : null} self={track.self}
+                      added={added.has(u.id)}
                       open={preview === u.id} onToggle={() => setPreview(preview === u.id ? null : u.id)}
-                      onAdd={() => add([{ ...u, year: y.year }])} />
+                      onAdd={() => add([{ ...u, year: y.year, label: y.label }])} />
                   );
                 })}
                 {missing.length > 1 && (
-                  <GhostButton onClick={() => add(missing.map((u) => ({ ...u, year: y.year })))}>
+                  <GhostButton onClick={() => add(missing.map((u) => ({ ...u, year: y.year, label: y.label })))}>
                     {t("Add all of {0}", [y.label])}
                   </GhostButton>
                 )}
@@ -181,12 +212,14 @@ function CoursePlan({ answers, subjects, onAdd, onChange }) {
           </div>
         );
       })}
+
+      <GhostButton onClick={onLanguages} style={{ marginTop: 18, width: "100%" }}>{t("Another language")}</GhostButton>
     </div>
   );
 }
 
-function UnitRow({ unit, status, half, added, open, onToggle, onAdd }) {
-  const s = STATUS[status];
+function UnitRow({ unit, status, half, self, added, open, onToggle, onAdd }) {
+  const s = status === "now" && self ? { ...STATUS.now, label: "This level" } : STATUS[status];
   const grammar = unit.kind === "grammar";
   return (
     <div style={{ background: "var(--card-bg)", borderRadius: 10, padding: "10px 12px" }}>
@@ -197,7 +230,7 @@ function UnitRow({ unit, status, half, added, open, onToggle, onAdd }) {
             <span style={{ fontSize: 14.5, fontWeight: 600, color: "var(--text-strong)" }}>{unit.title}</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            {grammar ? t("Grammar") : t("Vocabulary")} · {t("{0} cards", [C.cardCount(unit)])} · {t("{0}. half", [half])}
+            {grammar ? t("Grammar") : t("Vocabulary")} · {t("{0} cards", [C.cardCount(unit)])}{half ? ` · ${t("{0}. half", [half])}` : ""}
             {" · "}<span style={{ color: s.color, fontWeight: 600 }}>{t(s.label)}</span>
           </div>
         </button>
@@ -265,8 +298,8 @@ export function Explanation({ lines }) {
 // Above a grammar folder's cards: the rule, folded away once read. Folded
 // state is not saved; it is a reading aid, not a setting.
 export function GrammarNote({ courseId, unitId }) {
-  const units = useCourseUnits(courseId);
-  const unit = units?.find((u) => u.id === unitId);
+  const content = useCourseContent(courseId);
+  const unit = content?.units.find((u) => u.id === unitId);
   const [open, setOpen] = useState(true);
   if (!unit || unit.kind !== "grammar") return null;
   return (

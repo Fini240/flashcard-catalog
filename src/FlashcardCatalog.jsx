@@ -1159,9 +1159,10 @@ export default function FlashcardCatalog() {
           than inside Library — it is the one extra that doesn't need a folder
           to already be open. The others live in Library, which owns the card
           form and the delete path they drive. */}
-      {extra === "courses" && (
+      {typeof extra === "string" && extra.startsWith("courses") && (
         <CourseSheet
           subjects={subjects}
+          initialCourse={extra.split(":")[1] || null}
           onClose={() => setExtra(null)}
           onAdd={addCourseUnits}
         />
@@ -2047,7 +2048,7 @@ function Library({
       {/* A course folder: the subject opens its plan again, and a grammar
           topic shows its rule above the practice cards. */}
       {currentNode.course && !currentNode.course.unit && (
-        <GhostButton onClick={() => setExtra("courses")} style={{ marginBottom: 14 }}>
+        <GhostButton onClick={() => setExtra(`courses:${currentNode.course.id}`)} style={{ marginBottom: 14 }}>
           <GraduationCap size={16} />{t(" Course plan")}</GhostButton>
       )}
       {currentNode.course?.unit && <GrammarNote courseId={currentNode.course.id} unitId={currentNode.course.unit} />}
