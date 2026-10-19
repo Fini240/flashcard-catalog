@@ -304,7 +304,8 @@ describe("catalog data integrity", () => {
     expect(await store.getImage("last-image")).toBeNull();
   });
   it("pasting cards into an existing subject uses the latest catalog reference", async () => {
-    await start(); click(button(/^Import$/));
+    // The importer opens from the library's New menu.
+    await start(); click(button(/^New$/)); click(button(/^Paste cards$/));
     // The bulk importer is owned by Library, which must receive the sync
     // engine's current-data reference explicitly.
     const inputs = [...container.querySelectorAll("input")];

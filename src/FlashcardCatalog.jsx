@@ -1330,6 +1330,32 @@ const bannerStyle = {
   textAlign: "center",
 };
 
+// A small pop-up menu under a button: items are { icon, label, onClick } or
+// "divider". Tapping outside closes it, like the folder's + menu.
+function PopMenu({ items, onClose }) {
+  return (
+    <>
+      <div style={{ position: "fixed", inset: 0, zIndex: 39 }} onClick={onClose} />
+      <div role="menu" style={{
+        position: "absolute", top: "100%", right: 0, marginTop: 6, zIndex: 40,
+        background: "var(--card-bg)", border: "1px solid var(--card-border)", borderRadius: 10,
+        boxShadow: "0 8px 24px rgba(0,0,0,0.35)", padding: 6, minWidth: 210,
+        display: "flex", flexDirection: "column", gap: 2,
+      }}>
+        {items.map((item, i) => item === "divider"
+          ? <div key={i} style={{ height: 1, background: "var(--card-border)", margin: "2px 0" }} />
+          : (
+            <button key={i} role="menuitem" onClick={() => { onClose(); item.onClick(); }} style={addMenuItemStyle}
+              onMouseEnter={(e) => e.currentTarget.style.background = "var(--input-bg)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+            >
+              {item.icon}{t(item.label)}</button>
+          ))}
+      </div>
+    </>
+  );
+}
+
 const addMenuItemStyle = {
   display: "flex", alignItems: "center", gap: 8,
   background: "transparent", border: "none", borderRadius: 6,
@@ -1515,6 +1541,7 @@ function Library({
   const [cardForm, setCardForm] = useState(null); // {nodeId, editingId?}
   const [importOpen, setImportOpen] = useState(null); // null | { mode: "paste"|"file"|"photo" }
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState([]);
   // Picking cards to move. null when off; a Set of card ids when on, so the
   // list can go straight into selecting with the card the user long-pressed
@@ -1876,10 +1903,22 @@ function Library({
         {subjects.length > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" }}>
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--on-shell-muted)", letterSpacing: 0.8, textTransform: "uppercase" }}>{t("Your subjects")}</span>
-            <div style={{ display: "flex", gap: 6 }}>
-              <SmallButton onClick={() => setExtra("courses")}><GraduationCap size={14} />{t(" Courses")}</SmallButton>
-              <SmallButton onClick={() => setImportOpen({ mode: "paste" })}><Upload size={14} />{t(" Import")}</SmallButton>
-              <SmallButton onClick={() => setAddingSubject(true)}><Plus size={14} />{t(" New")}</SmallButton>
+            {/* One "New" button for everything that adds to the library: a subject
+                by hand, a course, or an import. Three buttons in a row crowded
+                the header on a phone. */}
+            <div style={{ position: "relative" }}>
+              <SmallButton onClick={() => setNewMenuOpen(v => !v)}><Plus size={14} />{t(" New")}</SmallButton>
+              {newMenuOpen && (
+                <PopMenu onClose={() => setNewMenuOpen(false)} items={[
+                  { icon: <Plus size={15} />, label: "New subject", onClick: () => setAddingSubject(true) },
+                  { icon: <GraduationCap size={15} />, label: "Learn for school", onClick: () => setExtra("courses") },
+                  "divider",
+                  { icon: <Upload size={15} />, label: "Paste cards", onClick: () => setImportOpen({ mode: "paste" }) },
+                  { icon: <FileUp size={15} />, label: "Import file", onClick: () => setImportOpen({ mode: "file" }) },
+                  { icon: <Camera size={15} />, label: "Import photo", onClick: () => setImportOpen({ mode: "photo" }) },
+                  { icon: <Layers size={15} />, label: "Add shared deck", onClick: () => setExtra("addShared") },
+                ]} />
+              )}
             </div>
           </div>
         )}
