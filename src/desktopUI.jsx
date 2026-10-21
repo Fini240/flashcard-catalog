@@ -1,6 +1,7 @@
 import { t } from "./i18n";
-import { BarChart3, BookOpen, Flame, Layers, Settings, Target, Trophy, Users, Zap } from "lucide-react";
+import { BarChart3, BookOpen, Flame, Gem, Layers, Settings, Target, Trophy, Users, Zap } from "lucide-react";
 import * as G from "./gamification";
+import * as R from "./rewards";
 import { QuestList, Ring } from "./gameUI";
 
 export function DesktopNavigation({ view, onNavigate, onOpenFriends, onOpenSettings, nudgeCount = 0 }) {
@@ -32,7 +33,7 @@ export function DesktopNavigation({ view, onNavigate, onOpenFriends, onOpenSetti
   );
 }
 
-export function DesktopProgress({ game, onOpenGoal, onOpenStreak, onOpenFriends }) {
+export function DesktopProgress({ game, onOpenGoal, onOpenStreak, onOpenFriends, onOpenRewards }) {
   const today = G.todayStats(game);
   const weekXp = G.weekXp(game);
   const rank = G.rankForWeekXp(weekXp);
@@ -40,6 +41,7 @@ export function DesktopProgress({ game, onOpenGoal, onOpenStreak, onOpenFriends 
   const goal = game.goalCards || G.DEFAULT_GOAL_CARDS;
   const complete = today.cards >= goal;
   const level = G.levelBounds(game.xp).level;
+  const rewards = R.normalizeRewards(game);
   return (
     <aside className="fc-progress-rail" aria-label={t("Your progress")}>
       <div className="fc-progress-summary">
@@ -48,6 +50,7 @@ export function DesktopProgress({ game, onOpenGoal, onOpenStreak, onOpenFriends 
           <span><strong>{game.streak}</strong>{t(" day streak")}</span>
         </button>
         <div><Zap size={19} color="var(--accent)" aria-hidden="true" /><span><strong>{game.xp}</strong>{t(" XP · L{0}", [level])}</span></div>
+        {onOpenRewards && <button onClick={onOpenRewards} title={t("Gems and chests")}><Gem size={18} color="#5FC5D8" aria-hidden="true" /><span><strong>{rewards.gems}</strong></span></button>}
       </div>
       <section className="fc-progress-panel">
         <div className="fc-panel-heading"><h2>{t("Daily goal")}</h2><Target size={18} aria-hidden="true" /></div>
@@ -65,7 +68,14 @@ export function DesktopProgress({ game, onOpenGoal, onOpenStreak, onOpenFriends 
         <p className="fc-rail-copy">{next ? t("{0} XP to {1}.", [next.min - weekXp, t(next.name)]) : t("You've reached the highest weekly rank.")}</p>
         <button className="fc-rail-action" onClick={onOpenFriends}>{t("Friends & leaderboard")}</button>
       </section>
-      <QuestList game={game} />
+      {onOpenRewards && rewards.chests.length > 0 && (
+        <section className="fc-progress-panel">
+          <div className="fc-panel-heading"><h2>{t("Rewards")}</h2><Gem size={18} color="#5FC5D8" aria-hidden="true" /></div>
+          <p className="fc-rail-copy">{rewards.chests.length === 1 ? t("A chest is waiting to be opened.") : t("{0} chests are waiting to be opened.", [rewards.chests.length])}</p>
+          <button className="fc-rail-action" onClick={onOpenRewards}>{t("Open chests")}</button>
+        </section>
+      )}
+      <QuestList game={game} onOpenRewards={onOpenRewards} />
     </aside>
   );
 }

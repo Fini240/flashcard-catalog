@@ -71,6 +71,8 @@ import {
   StatusBar, TodayCard, QuestList, StreakModal, GoalModal, FriendsModal,
   SessionReward, RiskBanner, MasteryPips, MasteryBar, Ring, UsernameNotice,
 } from "./gameUI";
+import * as R from "./rewards";
+import { RewardsModal } from "./rewardsUI";
 import { Walkthrough, WhatsNew } from "./onboarding";
 import { introFor, getSeenVersion, setSeenVersion, APP_VERSION } from "./whatsNew";
 
@@ -762,7 +764,10 @@ export default function FlashcardCatalog() {
   // answer log the Session screen hands back. The award object it returns is
   // what the reward screen renders — no second source of truth.
   const finishSession = (result) => {
-    const { game: nextGame, award } = G.recordSession(currentDataRef.current.game, currentDataRef.current.cards, result);
+    const recorded = G.recordSession(currentDataRef.current.game, currentDataRef.current.cards, result);
+    // Chests and any double-XP boost are layered on afterwards (rewards.js),
+    // so the receipt below covers them and undo takes them back too.
+    const { game: nextGame, award } = R.afterSession(recorded.game, recorded.award);
     finishReceiptRef.current = { before: currentDataRef.current.game, after: nextGame };
     // The final grade and the award are batched together. Preserve the review
     // log from those queued grades rather than replacing it with the ref's
@@ -775,6 +780,34 @@ export default function FlashcardCatalog() {
     // …and the mascot on the home screen owes the user a reaction.
     syncWidget(nextGame);
     return award;
+  };
+
+  // ---------- rewards ----------
+  // Each computes from the ref first so the caller gets an answer now, then
+  // applies the same pure step to the latest state.
+  const openChest = (id) => {
+    const res = R.openChest(currentDataRef.current.game, id);
+    if (res.opened) setGame(g => R.openChest(g, id).game);
+    return res.opened;
+  };
+  const buyItem = (id) => {
+    const res = R.buy(currentDataRef.current.game, id);
+    if (!res.ok) return res;
+    setGame(g => { const r = R.buy(g, id); return r.ok ? r.game : g; });
+    if (id === "repair") {
+      publishProfile(res.game);
+      syncWidget(res.game);
+      reminders.sync(res.game, res.game.reminder, currentDataRef.current.cards)
+        .catch((e) => report("reminders.syncAfterRepair", e));
+    }
+    return res;
+  };
+  const buyEmoji = (emoji) => {
+    const res = R.buyEmoji(currentDataRef.current.game, emoji);
+    if (!res.ok) return res;
+    setGame(g => { const r = R.buyEmoji(g, emoji); return r.ok ? r.game : g; });
+    publishProfile(res.game);
+    return res;
   };
 
   // The public scoreboard document. Best-effort: a failed write just means a
@@ -1052,6 +1085,15 @@ export default function FlashcardCatalog() {
           onOpenGoal={() => setSheet("goal")}
         />
       )}
+      {sheet === "rewards" && (
+        <RewardsModal
+          game={game}
+          onClose={() => setSheet(null)}
+          onOpenChest={openChest}
+          onBuy={buyItem}
+          onBuyEmoji={buyEmoji}
+        />
+      )}
       {sheet === "goal" && (
         <GoalModal game={game} onClose={() => setSheet(null)} onPick={setGoal} />
       )}
@@ -1125,6 +1167,7 @@ export default function FlashcardCatalog() {
           speechCards={cards}
           onGrade={gradeCard}
           onFinish={finishSession}
+          onOpenRewards={() => setSheet("rewards")}
           onExit={() => setView(sessionOriginRef.current)}
         />
       )}
@@ -1457,7 +1500,8 @@ function Shell({ children, googleUser, syncState, onSignIn, onSignOut, onOpenSet
         {children}
       </main>
       {game && <DesktopProgress game={game} onOpenGoal={() => onOpenSheet("goal")}
-        onOpenStreak={() => onOpenSheet("streak")} onOpenFriends={() => onOpenSheet("friends")} />}
+        onOpenStreak={() => onOpenSheet("streak")} onOpenFriends={() => onOpenSheet("friends")}
+        onOpenRewards={() => onOpenSheet("rewards")} />}
     </div>
   );
 }
@@ -1824,6 +1868,7 @@ function Library({
           nudgeCount={nudgeCount}
           onOpenStreak={() => onOpenSheet("streak")}
           onOpenFriends={() => onOpenSheet("friends")}
+          onOpenRewards={() => onOpenSheet("rewards")}
         /></div>
         <RiskBanner game={game} onStudyNow={onQuickStudy} />
 
@@ -1841,7 +1886,7 @@ function Library({
           />
         )}
 
-        {totalCards > 0 && <div className="fc-mobile-progress"><QuestList game={game} /></div>}
+        {totalCards > 0 && <div className="fc-mobile-progress"><QuestList game={game} onOpenRewards={() => onOpenSheet("rewards")} /></div>}
 
         {totalCards > 0 && (
           <div style={{ position: "relative", marginBottom: 14 }}>
@@ -4294,7 +4339,7 @@ const selectStyle = {
 };
 
 // ---------- SESSION ----------
-function Session({ initialQueue, initialState, rebuildQueue, game, subjects, speechCards, onGrade, onFinish, onExit, onCheckpoint, onUndo, shortcutsEnabled }) {
+function Session({ initialQueue, initialState, rebuildQueue, game, subjects, speechCards, onGrade, onFinish, onExit, onCheckpoint, onUndo, shortcutsEnabled, onOpenRewards }) {
   const [queue, setQueue] = useState(initialState?.queue || initialQueue);
   const [index, setIndex] = useState(initialState?.index || 0);
   const [missed, setMissed] = useState(initialState?.missed || []);
@@ -4438,6 +4483,7 @@ function Session({ initialQueue, initialState, rebuildQueue, game, subjects, spe
           <SessionReward
             award={award} game={game}
             onDone={onExit}
+            onOpenRewards={onOpenRewards}
             onExtra={perfect ? studyAgain : retryMissed}
           />
         ) : (

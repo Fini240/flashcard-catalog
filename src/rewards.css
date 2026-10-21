@@ -1,0 +1,91 @@
+/* Chest opening — the one place in the app that is allowed to make a fuss. */
+.fc-chest-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-bottom: 18px; }
+.fc-chest-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 12px;
+  padding: 12px 6px 10px; min-height: 104px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  font-family: Inter, sans-serif; font-size: 11px; font-weight: 600; color: var(--text-secondary);
+}
+.fc-chest-tile:hover .fc-chest-svg, .fc-chest-tile:focus-visible .fc-chest-svg { animation: chestWiggle 0.5s ease-in-out; }
+.fc-chest-svg { display: block; overflow: visible; }
+.fc-chest-svg .fc-chest-lid { transform-origin: 8px 30px; transition: transform 0.35s cubic-bezier(.3,1.6,.5,1); }
+.fc-chest-svg.is-open .fc-chest-lid { transform: rotate(-28deg) translate(-4px, -6px); }
+
+.fc-chest-stage {
+  position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; padding: 24px 16px;
+  background: rgba(10,16,30,0.86); animation: popIn 0.2s ease-out; text-align: center;
+}
+.fc-chest-stage .fc-chest-wrap { position: relative; padding-top: 44px; }
+.fc-chest-stage.is-shaking .fc-chest-svg { animation: chestShake 0.75s ease-in-out; }
+.fc-chest-glow {
+  position: absolute; left: 50%; top: 45%; width: 220px; height: 220px; margin: -110px 0 0 -110px;
+  border-radius: 50%; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle, rgba(242,197,114,0.55), rgba(242,197,114,0) 65%);
+}
+.fc-chest-stage.is-open .fc-chest-glow { animation: chestGlow 1.6s ease-out forwards; }
+.fc-gem-spark {
+  position: absolute; left: 50%; top: 40%; font-size: 18px; pointer-events: none; opacity: 0;
+  animation: gemBurst 0.9s ease-out forwards; animation-delay: var(--d, 0s);
+}
+.fc-chest-amount { font-family: Inter, sans-serif; font-size: 34px; font-weight: 800; color: #EDE6D3; margin: 6px 0 0; min-height: 42px; }
+.fc-chest-title { font-family: Fraunces, serif; font-style: italic; font-weight: 600; font-size: 21px; color: #EDE6D3; margin: 0; }
+.fc-chest-note { font-family: Inter, sans-serif; font-size: 13px; color: #B8C6DC; margin: 0; max-width: 300px; }
+.fc-chest-jackpot { font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); animation: popIn 0.3s ease-out; }
+
+.fc-challenge { background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+.fc-challenge-head { display: flex; justify-content: space-between; gap: 8px; font-family: Inter, sans-serif; font-size: 13.5px; color: var(--text-strong); font-weight: 600; }
+.fc-challenge-head span:last-child { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-faint); font-weight: 400; flex-shrink: 0; }
+.fc-challenge-bar { height: 5px; background: var(--card-border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+.fc-challenge-bar > div { height: 100%; background: var(--accent); transition: width 0.5s; }
+.fc-challenge p { font-family: Inter, sans-serif; font-size: 11.5px; color: var(--text-faint); margin: 6px 0 0; }
+
+.fc-shop-item {
+  width: 100%; display: flex; align-items: center; gap: 12px; text-align: left;
+  background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 10px;
+  padding: 11px 12px; margin-bottom: 8px; min-height: 56px;
+}
+.fc-shop-item .fc-shop-icon { font-size: 22px; width: 30px; text-align: center; flex-shrink: 0; }
+.fc-shop-item strong { display: block; font-family: Inter, sans-serif; font-size: 14px; color: var(--text-strong); }
+.fc-shop-item small { display: block; font-family: Inter, sans-serif; font-size: 11.5px; color: var(--text-faint); line-height: 1.3; margin-top: 2px; }
+.fc-shop-buy {
+  flex-shrink: 0; display: flex; align-items: center; gap: 4px; border: none; border-radius: 8px;
+  padding: 8px 11px; min-height: 40px; background: var(--accent); color: var(--shell-bg);
+  font-family: Inter, sans-serif; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.fc-shop-buy:disabled { background: var(--card-border); color: var(--text-faint); cursor: default; }
+.fc-emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; }
+.fc-emoji-grid button {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; min-height: 60px;
+  background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 10px; cursor: pointer;
+  font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--text-faint);
+}
+.fc-emoji-grid button span { font-size: 22px; }
+.fc-emoji-grid button.is-on { border: 2px solid var(--accent); }
+.fc-emoji-grid button:disabled { opacity: 0.45; cursor: default; }
+
+.fc-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.fc-badges span { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--text-secondary); background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 4px 9px; }
+
+@keyframes chestWiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
+@keyframes chestShake {
+  0%,100% { transform: translate(0,0) rotate(0); }
+  15% { transform: translate(-3px,0) rotate(-4deg); } 30% { transform: translate(3px,-1px) rotate(4deg); }
+  45% { transform: translate(-4px,0) rotate(-6deg); } 60% { transform: translate(4px,-2px) rotate(6deg); }
+  75% { transform: translate(-2px,0) rotate(-3deg) scale(1.04); } 90% { transform: translate(0,-4px) scale(1.08); }
+}
+@keyframes chestGlow { 0% { opacity: 0; transform: scale(0.4); } 30% { opacity: 1; } 100% { opacity: 0.5; transform: scale(1.15); } }
+@keyframes gemBurst {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(0.4); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--x, 0px)), var(--y, -90px)) scale(1) rotate(var(--r, 0deg)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-chest-stage.is-shaking .fc-chest-svg, .fc-chest-tile:hover .fc-chest-svg { animation: none; }
+  .fc-gem-spark { display: none; }
+  .fc-chest-stage.is-open .fc-chest-glow { animation: none; opacity: 0.5; }
+}
+
+/* Four chips don't fit with their labels on a phone; the icons carry it. */
+.fc-status-bar.has-gems > button { min-width: 0; }
+@media (max-width: 520px) { .fc-status-bar.has-gems .fc-chip-label { display: none; } }

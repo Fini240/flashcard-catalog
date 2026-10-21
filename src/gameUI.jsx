@@ -14,6 +14,7 @@ import {
 import * as G from "./gamification";
 import * as social from "./social";
 import { planDescription } from './studyPlan';
+import { GemChip, QuestChestRow, SessionChests } from "./rewardsUI";
 
 // ---------- small shared primitives ----------
 
@@ -94,27 +95,28 @@ export function MasteryBar({ cards, height = 7, showLegend }) {
 
 // ---------- the top status bar ----------
 
-export function StatusBar({ game, onOpenStreak, onOpenFriends, nudgeCount }) {
+export function StatusBar({ game, onOpenStreak, onOpenFriends, onOpenRewards, nudgeCount }) {
   const lvl = G.levelBounds(game.xp);
   const wk = G.weekXp(game);
   const rank = G.rankForWeekXp(wk);
   const atRisk = G.streakAtRisk(game);
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+    <div className={onOpenRewards ? "fc-status-bar has-gems" : "fc-status-bar"} style={{ display: "flex", gap: 8, marginBottom: 14 }}>
       <button onClick={onOpenStreak} style={{ ...chipStyle, flex: 1, borderColor: atRisk && game.streak > 0 ? "rgba(242,197,114,0.5)" : "rgba(255,255,255,0.12)" }}>
         <Flame size={16} color={game.streak > 0 ? "var(--accent-warm)" : "var(--on-shell-faint)"} fill={game.streak > 0 && !atRisk ? "var(--accent-warm)" : "none"} />
         <span style={chipValue}>{game.streak}</span>
-        <span style={chipLabel}>{t("day{0}", [game.streak !== 1 ? "s" : ""])}</span>
+        <span className="fc-chip-label" style={chipLabel}>{t("day{0}", [game.streak !== 1 ? "s" : ""])}</span>
       </button>
       <button onClick={onOpenStreak} style={{ ...chipStyle, flex: 1 }}>
         <Zap size={16} color="var(--accent)" />
         <span style={chipValue}>{game.xp}</span>
-        <span style={chipLabel}>{t("lvl {0}", [lvl.level])}</span>
+        <span className="fc-chip-label" style={chipLabel}>{t("lvl {0}", [lvl.level])}</span>
       </button>
+      {onOpenRewards && <GemChip game={game} onOpen={onOpenRewards} style={{ ...chipStyle, flex: 1 }} valueStyle={chipValue} labelStyle={chipLabel} />}
       <button onClick={onOpenFriends} style={{ ...chipStyle, flex: 1, position: "relative" }}>
         <Trophy size={16} color={rank.color} />
         <span style={chipValue}>{wk}</span>
-        <span style={chipLabel}>{t(rank.name)}</span>
+        <span className="fc-chip-label" style={chipLabel}>{t(rank.name)}</span>
         {nudgeCount > 0 && (
           <span style={{
             position: "absolute", top: 4, right: 6, minWidth: 16, height: 16, borderRadius: 8,
@@ -204,7 +206,7 @@ export function TodayCard({ game, dueCount, totalCards, onStudyNow, onOpenGoal, 
 
 // ---------- daily quests ----------
 
-export function QuestList({ game }) {
+export function QuestList({ game, onOpenRewards }) {
   const quests = (game.quests || []).map(q => ({ q, def: G.questDef(q.id) })).filter(x => x.def);
   if (!quests.length) return null;
   return (
@@ -241,13 +243,14 @@ export function QuestList({ game }) {
           </div>
         );
       })}
+      {onOpenRewards && <QuestChestRow game={game} onOpen={onOpenRewards} />}
     </div>
   );
 }
 
 // ---------- modals ----------
 
-function ModalShell({ title, onClose, children, wide }) {
+export function ModalShell({ title, onClose, children, wide }) {
   return (
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "rgba(10,16,30,0.72)", zIndex: 60,
@@ -375,7 +378,7 @@ function ACHIEVEMENTS_SORTED(game) {
     .map(a => ({ ...a, earned: !!game.achievements[a.id] }))
     .sort((a, b) => (b.earned ? 1 : 0) - (a.earned ? 1 : 0));
 }
-function SectionLabel({ children }) {
+export function SectionLabel({ children }) {
   return (
     <p style={{
       fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-faint)",
@@ -806,7 +809,7 @@ export function UsernameNotice({ username, onChange, onKeep }) {
   );
 }
 
-export function SessionReward({ award, game, onDone, onExtra }) {
+export function SessionReward({ award, game, onDone, onExtra, onOpenRewards }) {
   const lvl = G.levelBounds(game.xp);
   const rows = [
     { label: `${award.correct}/${award.answered} recalled`, xp: award.base },
@@ -814,6 +817,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
     { label: award.perfect ? "Perfect session" : "Session finished", xp: award.bonus },
     award.goalBonus > 0 && { label: "Daily goal reached", xp: award.goalBonus },
     award.questXp > 0 && { label: `${award.questsDone.length} quest${award.questsDone.length !== 1 ? "s" : ""} completed`, xp: award.questXp },
+    award.boostXp > 0 && { label: "Double XP boost", xp: award.boostXp },
   ].filter(Boolean);
 
   return (
@@ -853,6 +857,7 @@ export function SessionReward({ award, game, onDone, onExtra }) {
       {!award.goalMet && (
         <p style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--text-secondary)", margin: "12px 0 0" }}>{t("{0}{1} more card{2} for your daily goal bonus.", [award.habitMet ? t('Streak safe for today. ') : '', award.goalCards - award.cardsToday, award.goalCards - award.cardsToday !== 1 ? "s" : ""])}</p>
       )}
+      {onOpenRewards && <SessionChests award={award} onOpen={onOpenRewards} />}
       {award.freezeEarned && (
         <p style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "Inter, sans-serif", fontSize: 12.5, color: "var(--info)", margin: "10px 0 0" }}>
           <Snowflake size={14} />{t(" Streak freeze earned — one missed day is covered.")}</p>

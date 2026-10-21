@@ -106,6 +106,16 @@ export function emptyGame() {
     // Null means "the defaults"; srs.normalizeSettings fills them in, so this
     // stays small in every save file that never changed them.
     srs: null,
+    // Rewards (rewards.js): gem balance, unopened chests, the keys of every
+    // chest already paid out, monthly badges, bought profile emojis, the
+    // double-XP window and the last streak that broke (for a repair).
+    gems: 0,
+    chests: [],
+    claims: {},
+    badges: {},
+    emojis: [],
+    boostUntil: 0,
+    lostStreak: null,
   };
 }
 
@@ -223,9 +233,12 @@ export function rollOver(game, today = dayKey()) {
     // The jump can carry the streak past a multiple of 7; recordSession only
     // ever sees the post-jump number, so the award has to happen here.
     const earned = freezesEarnedBetween(game.streak, next.streak);
-    if (earned > 0) next.freezes = Math.min(MAX_FREEZES, next.freezes + earned);
+    // Bought freezes can sit above the free cap; an award must never trim them.
+    if (earned > 0) next.freezes = Math.max(next.freezes, Math.min(MAX_FREEZES, next.freezes + earned));
     next.lastStudyDay = addDays(game.lastStudyDay, missed);
   } else {
+    // Remembered for a few days so the shop can sell it back (rewards.js).
+    if (game.streak > 0) next.lostStreak = { streak: game.streak, last: game.lastStudyDay, on: today };
     next.streak = 0;
   }
   return next;

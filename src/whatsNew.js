@@ -18,7 +18,7 @@
 // Bump this with every user-visible release and add a RELEASES entry to
 // match, or the update note stays silent. Keep it in step with versionName
 // in android/app/build.gradle.
-export const APP_VERSION = "1.11.1";
+export const APP_VERSION = "1.12.0";
 
 export const SEEN_VERSION_KEY = "flashcard-catalog-seen-version";
 
@@ -60,6 +60,14 @@ export const WALKTHROUGH = [
 // Newest first. Keep each line to one sentence — this is a note, not a
 // changelog, and a user who skimmed it should still know what changed.
 export const RELEASES = [
+  {
+    version: "1.12.0",
+    date: "2026-10-21",
+    items: [
+      "New: chests and gems. Finish all three daily quests, hit a streak milestone, or complete the weekly and monthly challenges to earn a chest. Sometimes a session drops one too, and a flawless session always does.",
+      "Spend gems in the new Rewards shop: extra streak freezes (up to 5), 15 minutes of double XP, a repair for a streak that broke in the last two days, and emojis for the leaderboard. Tap the gem counter to open it.",
+    ],
+  },
   {
     version: "1.11.1",
     date: "2026-10-19",
